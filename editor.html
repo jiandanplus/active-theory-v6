@@ -1,0 +1,1832 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Zeta | 卡片可视化编辑器 & 一键打包中心</title>
+    <!-- 引入 Outfit 极具科技感的现代无衬线字体 -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700&family=Noto+Sans+SC:wght@300;400;700&display=swap" rel="stylesheet">
+    <style>
+        /* ==============================================================================
+         * 🌌 Zeta 极致科幻深色磨砂美学系统 (Zeta Glassmorphism Style v6.0)
+         * ============================================================================== */
+        :root {
+            --primary: #00ff96;       /* 霓虹翡翠绿 */
+            --primary-glow: rgba(0, 255, 150, 0.4);
+            --bg-glow: rgba(10, 25, 20, 0.95);
+            --panel-bg: rgba(255, 255, 255, 0.03);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --text: #f5f5f7;
+            --text-muted: #86868b;
+            --accent-glow: 0 0 20px var(--primary-glow);
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+            -webkit-user-drag: none;
+        }
+
+        body, html {
+            width: 100%;
+            height: 100%;
+            font-family: 'Outfit', 'Noto Sans SC', sans-serif;
+            background: radial-gradient(circle at 50% 50%, #0a1f18 0%, #020705 100%);
+            color: var(--text);
+            overflow: hidden;
+        }
+
+        /* 极高档的流光背景线特效 */
+        body::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: linear-gradient(rgba(18, 18, 18, 0) 50%, rgba(0, 0, 0, 0.25) 50%), 
+                        linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
+            background-size: 100% 4px, 6px 100%;
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0.3;
+        }
+
+        /* 主容器布局 */
+        .app-container {
+            display: flex;
+            width: 100vw;
+            height: 100vh;
+            padding: 20px;
+            gap: 20px;
+        }
+
+        /* ==============================================================================
+         * 📂 左侧边栏：项目选择与分类检索 (Sidebar Component)
+         * ============================================================================== */
+        .sidebar {
+            flex: 0 0 380px;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 20px;
+            overflow: hidden;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        .logo-area {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--panel-border);
+            padding-bottom: 15px;
+        }
+
+        .logo-area h1 {
+            font-size: 24px;
+            font-weight: 700;
+            letter-spacing: 2px;
+            background: linear-gradient(135deg, #fff 0%, var(--primary) 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .logo-area .version {
+            font-size: 10px;
+            background: var(--primary-glow);
+            color: var(--primary);
+            padding: 2px 6px;
+            border-radius: 20px;
+            border: 1px solid var(--primary);
+            font-weight: bold;
+        }
+
+        /* 搜索框设计 */
+        .search-wrapper {
+            position: relative;
+            margin-bottom: 15px;
+        }
+
+        .search-input {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid var(--panel-border);
+            padding: 12px 16px;
+            border-radius: 10px;
+            color: #fff;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .search-input:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        /* 分类过滤器按钮 */
+        .filter-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+        }
+
+        .filter-btn {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            color: var(--text-muted);
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        .filter-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.05);
+        }
+
+        .filter-btn.active {
+            background: var(--primary);
+            color: #000;
+            border-color: var(--primary);
+            font-weight: bold;
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+
+        /* 卡片列表列表 */
+        .card-list {
+            flex: 1;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            padding-right: 5px;
+        }
+
+        /* 自定义滚动条 */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--primary-glow);
+        }
+
+        /* 单个列表卡片项 */
+        .card-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 16px;
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            cursor: pointer;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .card-item:hover {
+            background: rgba(255, 255, 255, 0.03);
+            border-color: rgba(255, 255, 255, 0.2);
+            transform: translateX(3px);
+        }
+
+        .card-item.active {
+            background: rgba(0, 255, 150, 0.03);
+            border-color: var(--primary);
+            box-shadow: inset 0 0 10px rgba(0, 255, 150, 0.05);
+        }
+
+        .card-info {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            overflow: hidden;
+            width: 75%;
+        }
+
+        .card-name {
+            font-size: 14px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .card-slug {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-family: monospace;
+        }
+
+        .card-meta {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 6px;
+        }
+
+        .card-priority {
+            font-size: 10px;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: var(--text-muted);
+        }
+
+        .card-tag-badge {
+            font-size: 9px;
+            background: rgba(0, 255, 150, 0.1);
+            color: var(--primary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            max-width: 80px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+
+        /* ==============================================================================
+         * 🖥️ 右侧工作区：高级编辑器面板 (Workspace Component)
+         * ============================================================================== */
+        .workspace {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            background: var(--panel-bg);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 30px;
+            overflow-y: auto;
+            position: relative;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
+        }
+
+        /* 欢迎占位屏 */
+        .welcome-screen {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle at 50% 50%, #0a1f18 0%, #020705 100%);
+            z-index: 10;
+            gap: 15px;
+            transition: all 0.5s ease;
+        }
+
+        .welcome-screen h2 {
+            font-size: 26px;
+            letter-spacing: 3px;
+            font-weight: 300;
+        }
+
+        .welcome-screen p {
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        /* 编辑表单结构 */
+        .editor-form {
+            display: grid;
+            grid-template-columns: 1.2fr 0.8fr;
+            gap: 30px;
+            height: 100%;
+            overflow-y: auto;
+            opacity: 0;
+            transform: translateY(15px);
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .editor-form.loaded {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .form-left {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+        }
+
+        .form-right {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            border-left: 1px solid var(--panel-border);
+            padding-left: 30px;
+        }
+
+        /* 输入组样式 */
+        .input-group {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .input-group label {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1.5px;
+            color: var(--text-muted);
+            font-weight: bold;
+        }
+
+        .input-group input[type="text"], 
+        .input-group input[type="date"],
+        .input-group input[type="url"],
+        .input-group textarea {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.4);
+            border: 1px solid var(--panel-border);
+            border-radius: 8px;
+            padding: 10px 14px;
+            color: #fff;
+            font-size: 13px;
+            outline: none;
+            transition: all 0.3s ease;
+        }
+
+        .input-group input[type="text"]:focus, 
+        .input-group input[type="date"]:focus,
+        .input-group input[type="url"]:focus,
+        .input-group textarea:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 8px rgba(0, 255, 150, 0.2);
+        }
+
+        .input-group textarea {
+            resize: vertical;
+            height: 100px;
+            line-height: 1.6;
+            font-family: inherit;
+            min-height: 60px;
+        }
+
+        /* 分组标题分隔线 */
+        .section-divider {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin: 8px 0 4px;
+        }
+
+        .section-divider::after {
+            content: '';
+            flex: 1;
+            height: 1px;
+            background: var(--panel-border);
+        }
+
+        .section-divider span {
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--primary);
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        /* 可选字段提示样式 */
+        .optional-badge {
+            font-size: 9px;
+            color: var(--text-muted);
+            background: rgba(255,255,255,0.03);
+            padding: 1px 5px;
+            border-radius: 3px;
+            margin-left: 6px;
+            letter-spacing: 0;
+            text-transform: none;
+            font-weight: 400;
+        }
+
+        /* 三列布局 */
+        .input-row-3 {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 15px;
+        }
+
+        /* 双列输入 */
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+        }
+
+        /* 颜色与滑动调节器组 */
+        .color-priority-row {
+            display: grid;
+            grid-template-columns: 0.8fr 1.2fr;
+            gap: 20px;
+            background: rgba(255, 255, 255, 0.01);
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
+            padding: 15px;
+        }
+
+        .color-picker-wrapper {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .color-preview-circle {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            position: relative;
+            cursor: pointer;
+            transition: transform 0.2s ease;
+        }
+
+        .color-preview-circle:hover {
+            transform: scale(1.1);
+        }
+
+        .color-preview-circle input[type="color"] {
+            position: absolute;
+            top: 0; left: 0; width: 100%; height: 100%;
+            opacity: 0;
+            cursor: pointer;
+        }
+
+        .color-hex {
+            font-family: monospace;
+            font-size: 13px;
+        }
+
+        /* 优先级滑动条 */
+        .priority-slider-group {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            width: 100%;
+        }
+
+        .priority-slider-group input[type="range"] {
+            flex: 1;
+            accent-color: var(--primary);
+            cursor: pointer;
+        }
+
+        .priority-val {
+            font-size: 14px;
+            font-weight: bold;
+            color: var(--primary);
+            min-width: 20px;
+        }
+
+        /* ==============================================================================
+         * 🎬 媒体资源实时预览卡片 (所见即所得)
+         * ============================================================================== */
+        .media-preview-container {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+            position: relative;
+            min-height: 200px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            transition: border-color 0.4s ease, box-shadow 0.4s ease;
+        }
+
+        .preview-header {
+            padding: 10px 15px;
+            background: rgba(255, 255, 255, 0.02);
+            border-bottom: 1px solid var(--panel-border);
+            font-size: 11px;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            color: var(--text-muted);
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .preview-body {
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            background: #000;
+        }
+
+        .preview-media-obj {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            position: absolute;
+            top: 0; left: 0;
+            opacity: 0;
+            transition: opacity 0.5s ease;
+        }
+
+        .preview-media-obj.active {
+            opacity: 1;
+        }
+
+        .no-preview-text {
+            color: var(--text-muted);
+            font-size: 13px;
+        }
+
+        /* 警告横幅：3D 文字指南 */
+        .warning-banner {
+            background: rgba(255, 179, 0, 0.03);
+            border: 1px solid rgba(255, 179, 0, 0.2);
+            border-radius: 8px;
+            padding: 12px 16px;
+            display: flex;
+            gap: 12px;
+            font-size: 12px;
+            line-height: 1.5;
+            color: #ffcc00;
+        }
+
+        /* 操作动作按钮栏 */
+        .actions-bar {
+            display: flex;
+            justify-content: flex-end;
+            gap: 15px;
+            margin-top: 25px;
+            border-top: 1px solid var(--panel-border);
+            padding-top: 20px;
+        }
+
+        .btn {
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            outline: none;
+            transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+            font-weight: 600;
+        }
+
+        .btn-secondary {
+            background: rgba(255, 255, 255, 0.02);
+            border: 1px solid var(--panel-border);
+            color: var(--text);
+        }
+
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.05);
+            border-color: rgba(255, 255, 255, 0.2);
+        }
+
+        .btn-primary {
+            background: var(--primary);
+            border: 1px solid var(--primary);
+            color: #000;
+            box-shadow: 0 0 15px var(--primary-glow);
+            letter-spacing: 1px;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 0 25px var(--primary);
+        }
+
+        .btn-primary:active {
+            transform: translateY(0);
+        }
+
+        .btn-danger {
+            background: rgba(255, 0, 60, 0.08);
+            border: 1px solid rgba(255, 0, 60, 0.3);
+            color: #ff3b30;
+        }
+
+        .btn-danger:hover {
+            background: rgba(255, 0, 60, 0.18);
+            border-color: #ff453a;
+            box-shadow: 0 0 15px rgba(255, 69, 58, 0.3);
+            transform: translateY(-2px);
+        }
+
+        .btn-danger:active {
+            transform: translateY(0);
+        }
+
+        /* ==============================================================================
+         * 🔄 终极一键打包构建遮罩层 (Build Pipeline Loader Overlay)
+         * ============================================================================== */
+        .build-overlay {
+            position: fixed;
+            top: 0; left: 0; width: 100vw; height: 100vh;
+            background: rgba(0, 0, 0, 0.95);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.5s ease;
+        }
+
+        .build-overlay.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        .build-panel {
+            width: 600px;
+            background: rgba(10, 25, 20, 0.9);
+            border: 1px solid var(--primary-glow);
+            border-radius: 16px;
+            padding: 40px;
+            box-shadow: 0 0 50px rgba(0, 255, 150, 0.15);
+            text-align: center;
+            display: flex;
+            flex-direction: column;
+            gap: 25px;
+        }
+
+        .build-panel h2 {
+            font-size: 22px;
+            letter-spacing: 2px;
+            color: var(--primary);
+            text-transform: uppercase;
+        }
+
+        /* 进度轨道 */
+        .progress-track {
+            width: 100%;
+            height: 6px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .progress-bar {
+            width: 0%;
+            height: 100%;
+            background: var(--primary);
+            box-shadow: 0 0 10px var(--primary);
+            border-radius: 10px;
+            transition: width 0.4s ease;
+        }
+
+        .build-status-text {
+            font-size: 14px;
+            color: var(--text);
+            min-height: 20px;
+        }
+
+        /* 流水线阶段列表 */
+        .pipeline-steps {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            text-align: left;
+            background: rgba(0, 0, 0, 0.3);
+            padding: 20px;
+            border-radius: 10px;
+            border: 1px solid var(--panel-border);
+        }
+
+        .step-item {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-size: 13px;
+            color: var(--text-muted);
+            transition: color 0.3s ease;
+        }
+
+        .step-item.active {
+            color: var(--primary);
+            font-weight: bold;
+        }
+
+        .step-item.done {
+            color: var(--text);
+        }
+
+        .step-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: var(--text-muted);
+            transition: all 0.3s ease;
+        }
+
+        .step-item.active .step-dot {
+            background: var(--primary);
+            box-shadow: 0 0 8px var(--primary);
+        }
+
+        .step-item.done .step-dot {
+            background: #fff;
+        }
+
+        /* Toast 吐司提示框 */
+        .toast {
+            position: fixed;
+            bottom: 30px;
+            right: 30px;
+            background: rgba(10, 25, 20, 0.9);
+            border: 1px solid var(--primary);
+            box-shadow: 0 0 20px rgba(0, 255, 150, 0.15);
+            padding: 15px 25px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 14px;
+            z-index: 1100;
+            transform: translateY(100px);
+            opacity: 0;
+            transition: all 0.4s cubic-bezier(0.25, 0.8, 0.25, 1);
+        }
+
+        .toast.active {
+            transform: translateY(0);
+            opacity: 1;
+        }
+
+        /* ==============================================================================
+         * ⚡ 极客 JSON 极奢华样式 & Tab 切换样式
+         * ============================================================================== */
+        .editor-tabs {
+            display: none;
+            gap: 15px;
+            margin-bottom: 20px;
+            border-bottom: 1px solid var(--panel-border);
+            padding-bottom: 10px;
+            width: 100%;
+        }
+
+        .tab-btn {
+            padding: 8px 16px;
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+
+        .tab-btn:hover {
+            color: #fff;
+            background: rgba(255, 255, 255, 0.03);
+        }
+
+        .tab-btn.active {
+            color: var(--primary);
+            background: rgba(0, 255, 150, 0.06);
+            box-shadow: 0 0 10px rgba(0, 255, 150, 0.1);
+        }
+
+        .json-workspace {
+            display: flex;
+            flex-direction: column;
+            gap: 20px;
+            height: calc(100% - 100px);
+            width: 100%;
+        }
+
+        .json-raw-area {
+            flex: 1;
+            width: 100%;
+            font-family: 'Courier New', Courier, monospace;
+            background: rgba(0, 0, 0, 0.6);
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 20px;
+            color: #00ff96;
+            font-size: 13px;
+            line-height: 1.5;
+            resize: none;
+            outline: none;
+            transition: border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .json-raw-area:focus {
+            border-color: var(--primary);
+            box-shadow: 0 0 10px var(--primary-glow);
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        
+        <!-- 左侧项目列表选择边栏 -->
+        <aside class="sidebar">
+            <div class="logo-area">
+                <h1>ZETA ENGINE</h1>
+                <span class="version">v6.0</span>
+            </div>
+
+            <!-- 搜索框 -->
+            <div class="search-wrapper">
+                <input type="text" class="search-input" id="search" placeholder="输入名称、缩写或关键词检索...">
+            </div>
+
+            <!-- 分类标签过滤器 -->
+            <div class="filter-tags" id="filters">
+                <div class="filter-btn active" data-tag="all">全部卡片</div>
+                <!-- 动态获取 -->
+            </div>
+
+            <!-- 65个卡片滚动列表容器 -->
+            <div class="card-list" id="cardList">
+                <!-- 动态载入 -->
+            </div>
+        </aside>
+
+        <!-- 右侧编辑工作区 -->
+        <main class="workspace" id="workspace">
+            
+            <!-- 卡片编辑器 Tab 切换导航 -->
+            <div class="editor-tabs" id="editorTabs">
+                <div class="tab-btn active" data-tab="visual">🎨 可视化配置</div>
+                <div class="tab-btn" data-tab="json">⚡ JSON 源码配置</div>
+            </div>
+
+            <!-- 初始欢迎展示屏幕 -->
+            <div class="welcome-screen" id="welcome">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="1.5">
+                    <rect x="3" y="3" width="7" height="9" rx="1" />
+                    <rect x="14" y="3" width="7" height="5" rx="1" />
+                    <rect x="14" y="12" width="7" height="9" rx="1" />
+                    <rect x="3" y="16" width="7" height="5" rx="1" />
+                </svg>
+                <h2>选择卡片开启配置</h2>
+                <p>在左侧列表中点击任何一个项目，在此处开始深度定制。</p>
+            </div>
+
+            <!-- 卡片编辑器表单 (初始隐藏) -->
+            <form class="editor-form" id="editorForm" onsubmit="event.preventDefault();">
+                
+                <!-- 表单左侧输入区 -->
+                <div class="form-left">
+
+                    <!-- ===== 基础信息区 ===== -->
+                    <div class="section-divider"><span>📋 基础信息</span></div>
+                    
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label>项目中文名称 (name)</label>
+                            <input type="text" id="projName" autocomplete="off">
+                        </div>
+                        <div class="input-group">
+                            <label>英文路由标识 (slug - 只读)</label>
+                            <input type="text" id="projSlug" readonly style="color: var(--text-muted); cursor: not-allowed; background: rgba(0,0,0,0.5);">
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>3D空间详情描述 (description)</label>
+                        <textarea id="projDesc" placeholder="输入卡片的 3D 详细中文描述介绍..."></textarea>
+                    </div>
+
+                    <div class="input-row-3">
+                        <div class="input-group">
+                            <label>分类键标签 (tags)</label>
+                            <input type="text" id="projTags" placeholder="多个标签用逗号隔开">
+                        </div>
+                        <div class="input-group">
+                            <label>客户名称 (clientName)</label>
+                            <input type="text" id="projClient">
+                        </div>
+                        <div class="input-group">
+                            <label>完成日期 (completionDate)</label>
+                            <input type="date" id="projDate">
+                        </div>
+                    </div>
+
+                    <!-- ===== 链接信息区 ===== -->
+                    <div class="section-divider"><span>🔗 链接与外部资源</span></div>
+
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label>项目外链 URL (projectURL) <span class="optional-badge">可选</span></label>
+                            <input type="url" id="projURL" placeholder="https://example.com">
+                        </div>
+                        <div class="input-group">
+                            <label>案例研究链接 (caseStudyURL) <span class="optional-badge">可选</span></label>
+                            <input type="url" id="projCaseStudy" placeholder="https://medium.com/...">
+                        </div>
+                    </div>
+
+                    <!-- ===== 统计描述区 ===== -->
+                    <div class="section-divider"><span>📊 项目统计</span></div>
+
+                    <div class="input-group">
+                        <label>统计描述 (stats) <span class="optional-badge">可选 · 仅 4/65 项目有此字段</span></label>
+                        <textarea id="projStats" placeholder="例如：该体验在 YouTube 上获得了超过 300 万次观看..." style="height: 70px; min-height: 50px;"></textarea>
+                    </div>
+
+                    <!-- 3D 字体字形安全提示 -->
+                    <div class="warning-banner">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+                            <line x1="12" y1="9" x2="12" y2="13" />
+                            <line x1="12" y1="17" x2="12.01" y2="17" />
+                        </svg>
+                        <div>
+                            <strong>3D 几何字体排版建议：</strong><br>
+                            3D 空间内的字段（如 description）建议填入英文或数字；普通网页文字（如分类按钮和聊天框）可完美支持全中文。
+                        </div>
+                    </div>
+
+                </div>
+
+                <!-- 表单右侧媒体预览与配色发光反射区 -->
+                <div class="form-right">
+
+                    <!-- ===== 外观与权重区 ===== -->
+                    <div class="section-divider"><span>🎨 外观与权重</span></div>
+                    
+                    <div class="color-priority-row">
+                        <div class="input-group">
+                            <label>3D UI 主题色</label>
+                            <div class="color-picker-wrapper">
+                                <div class="color-preview-circle" id="colorPreview">
+                                    <input type="color" id="projColor">
+                                </div>
+                                <span class="color-hex" id="colorHex">#00ff96</span>
+                            </div>
+                        </div>
+
+                        <div class="input-group">
+                            <label>卡片优先级 (priority)</label>
+                            <div class="priority-slider-group">
+                                <input type="range" id="projPriority" min="1" max="10">
+                                <span class="priority-val" id="priorityVal">5</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- ===== 媒体资源配置区 ===== -->
+                    <div class="section-divider"><span>🎬 媒体资源</span></div>
+
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label>缩略图文件名 (projectLogo)</label>
+                            <input type="text" id="projLogo" placeholder="dream.jpg">
+                        </div>
+                        <div class="input-group">
+                            <label>缩略图完整 URL</label>
+                            <input type="url" id="projLogoUrl" placeholder="https://...">
+                        </div>
+                    </div>
+
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label>视频文件名 (video)</label>
+                            <input type="text" id="projVideo" placeholder="demo.mp4">
+                        </div>
+                        <div class="input-group">
+                            <label>视频完整 URL</label>
+                            <input type="url" id="projVideoUrl" placeholder="https://...">
+                        </div>
+                    </div>
+
+                    <div class="input-row">
+                        <div class="input-group">
+                            <label>视频缩略图 URL <span class="optional-badge">可选</span></label>
+                            <input type="url" id="projVideoThumb" placeholder="https://...">
+                        </div>
+                        <div class="input-group">
+                            <label>额外图片文件名 (image) <span class="optional-badge">可选</span></label>
+                            <input type="text" id="projImage" placeholder="64541e77a726efwa3.png">
+                        </div>
+                    </div>
+
+                    <div class="input-group">
+                        <label>额外图片完整 URL <span class="optional-badge">可选</span></label>
+                        <input type="url" id="projImageUrl" placeholder="https://storage.googleapis.com/...">
+                    </div>
+
+                    <!-- 动态高精媒体渲染预览区 -->
+                    <div class="media-preview-container" id="previewContainer">
+                        <div class="preview-header">
+                            <span>所见即所得实时预览</span>
+                            <span id="previewType">N/A</span>
+                        </div>
+                        <div class="preview-body">
+                            <div class="no-preview-text" id="noPreviewText">暂无媒体预览</div>
+                            <img class="preview-media-obj" id="imgPreview" alt="卡片缩略图预览">
+                            <video class="preview-media-obj" id="videoPreview" autoplay loop muted></video>
+                        </div>
+                    </div>
+
+                    <!-- 底部保存发布动作栏 -->
+                    <div class="actions-bar">
+                        <button class="btn btn-danger" id="deleteBtn" style="margin-right: auto;">🗑️ 删除该项目</button>
+                        <button class="btn btn-secondary" id="saveLocalBtn">仅存盘本地</button>
+                        <button class="btn btn-primary" id="saveBuildBtn">保存并一键同步编译</button>
+                    </div>
+
+                </div>
+
+            </form>
+
+            <!-- 极客 JSON 源码配置容器 (初始隐藏) -->
+            <div class="json-workspace" id="jsonWorkspace" style="display: none;">
+                <div class="input-group" style="flex: 1; display: flex; flex-direction: column;">
+                    <label style="margin-bottom: 8px;">卡片原始完整 JSON 属性 (可在此直接修改、配置任意自定义字段)</label>
+                    <textarea class="json-raw-area" id="jsonRawArea" placeholder="正在加载原始 JSON 属性..."></textarea>
+                </div>
+                
+                <div class="warning-banner" style="margin-top: 5px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    <div>
+                        <strong>极客 JSON 模式使用须知：</strong><br>
+                        在这里，你可以自由配置所有的底层高级字段（如 sizes、mimeType、createdAt 等）。修改后可直接点击下方的保存或同步编译按钮，系统将自动进行格式正确性校验并完美热应用！
+                    </div>
+                </div>
+                
+                <div class="actions-bar" style="margin-top: 10px;">
+                    <button class="btn btn-danger" id="deleteBtnJson" style="margin-right: auto;">🗑️ 删除该项目</button>
+                    <button class="btn btn-secondary" id="saveLocalBtnJson">仅存盘本地</button>
+                    <button class="btn btn-primary" id="saveBuildBtnJson">保存并一键同步编译</button>
+                </div>
+            </div>
+
+        </main>
+
+    </div>
+
+    <!-- ==============================================================================
+     * 🔄 终极编译进行中流水线 Loading 遮罩层 HTML
+     * ============================================================================== -->
+    <div class="build-overlay" id="buildOverlay">
+        <div class="build-panel">
+            <h2>Zeta 编译管道封包中...</h2>
+            
+            <div class="progress-track">
+                <div class="progress-bar" id="progressBar"></div>
+            </div>
+            
+            <div class="build-status-text" id="buildStatus">正在准备触发 Zeta 终极打包构建管线...</div>
+            
+            <div class="pipeline-steps">
+                <div class="step-item" id="step1">
+                    <div class="step-dot"></div>
+                    <span>阶段一：注入 JS 全局英文属性与歌曲列表配置...</span>
+                </div>
+                <div class="step-item" id="step2">
+                    <div class="step-dot"></div>
+                    <span>阶段二：复原 index.html 原生 body、移除 DOM 劫持...</span>
+                </div>
+                <div class="step-item" id="step3">
+                    <div class="step-dot"></div>
+                    <span>阶段三：卡片中文数据写入、全自动映射 tags 分类键...</span>
+                </div>
+                <div class="step-item" id="step4">
+                    <div class="step-dot"></div>
+                    <span>阶段四：分析并重新编译全站中文字形字符集...</span>
+                </div>
+                <div class="step-item" id="step5">
+                    <div class="step-dot"></div>
+                    <span>阶段五：从原装包无损恢复 3D 几何英文字体与贴图...</span>
+                </div>
+                <div class="step-item" id="step6">
+                    <div class="step-dot"></div>
+                    <span>阶段六：终极增量重打包 active-theory-custom.zip...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast 弹窗 -->
+    <div class="toast" id="toast">提示信息</div>
+
+
+    <!-- ==============================================================================
+     * ⚡ 前端交互 JS 核心引擎 (Zeta Editor Client Engine)
+     * ============================================================================== -->
+    <script>
+        let allProjects = [];      // 缓存全量卡片数据
+        let activeProject = null;  // 当前编辑的卡片对象
+        let tagsSet = new Set();   // 缓存卡片的所有底层标签，用以生成过滤器按钮
+
+        // DOM 元素引用
+        const searchInput = document.getElementById('search');
+        const filtersContainer = document.getElementById('filters');
+        const cardListContainer = document.getElementById('cardList');
+        const welcomeScreen = document.getElementById('welcome');
+        const editorForm = document.getElementById('editorForm');
+        
+        // 表单元素引用
+        const projNameInput = document.getElementById('projName');
+        const projSlugInput = document.getElementById('projSlug');
+        const projDescInput = document.getElementById('projDesc');
+        const projTagsInput = document.getElementById('projTags');
+        const projClientInput = document.getElementById('projClient');
+        const projColorInput = document.getElementById('projColor');
+        const colorPreview = document.getElementById('colorPreview');
+        const colorHexSpan = document.getElementById('colorHex');
+        const projPriorityInput = document.getElementById('projPriority');
+        const priorityValSpan = document.getElementById('priorityVal');
+        const projLogoInput = document.getElementById('projLogo');
+        const projVideoInput = document.getElementById('projVideo');
+        
+        // 补全遗漏的表单元素
+        const projURLInput = document.getElementById('projURL');
+        const projCaseStudyInput = document.getElementById('projCaseStudy');
+        const projDateInput = document.getElementById('projDate');
+        const projStatsInput = document.getElementById('projStats');
+        const projLogoUrlInput = document.getElementById('projLogoUrl');
+        const projVideoUrlInput = document.getElementById('projVideoUrl');
+        const projVideoThumbInput = document.getElementById('projVideoThumb');
+        const projImageInput = document.getElementById('projImage');
+        const projImageUrlInput = document.getElementById('projImageUrl');
+
+        // 新增 Tab 与 JSON 编辑模式 DOM 引用
+        const editorTabs = document.getElementById('editorTabs');
+        const jsonWorkspace = document.getElementById('jsonWorkspace');
+        const jsonRawArea = document.getElementById('jsonRawArea');
+        const saveLocalBtnJson = document.getElementById('saveLocalBtnJson');
+        const saveBuildBtnJson = document.getElementById('saveBuildBtnJson');
+        
+        // 预览元素引用
+        const previewContainer = document.getElementById('previewContainer');
+        const previewTypeSpan = document.getElementById('previewType');
+        const noPreviewText = document.getElementById('noPreviewText');
+        const imgPreview = document.getElementById('imgPreview');
+        const videoPreview = document.getElementById('videoPreview');
+
+        // 按钮及遮罩引用
+        const saveLocalBtn = document.getElementById('saveLocalBtn');
+        const saveBuildBtn = document.getElementById('saveBuildBtn');
+        const deleteBtn = document.getElementById('deleteBtn');
+        const deleteBtnJson = document.getElementById('deleteBtnJson');
+        const buildOverlay = document.getElementById('buildOverlay');
+        const progressBar = document.getElementById('progressBar');
+        const buildStatusText = document.getElementById('buildStatus');
+
+        // 初始化：获取后端 JSON 数据
+        async function init() {
+            try {
+                showToast('正在从本地加载卡片数据库...', 1500);
+                const res = await fetch('/api/projects');
+                if (!res.ok) throw new Error('网络响应失败，未能读取 JSON！');
+                allProjects = await res.json();
+                
+                // 分析获取所有的标签
+                tagsSet.clear();
+                allProjects.forEach(p => {
+                    if (p.tags) {
+                        if (Array.isArray(p.tags)) {
+                            p.tags.forEach(t => tagsSet.add(t));
+                        } else if (typeof p.tags === 'string') {
+                            tagsSet.add(p.tags);
+                        }
+                    }
+                });
+
+                // 生成过滤器按钮
+                renderFilterButtons();
+                // 渲染项目卡片列表
+                renderCardList();
+                showToast('数据载入成功，共包含 ' + allProjects.length + ' 个项目！');
+            } catch (err) {
+                console.error(err);
+                showToast('数据库载入失败，请确认 server.js API 接口是否启用。', 4000);
+            }
+        }
+
+        // 渲染过滤器按钮
+        function renderFilterButtons() {
+            // 清理原有动态按钮 (保留"全部卡片")
+            const staticBtn = filtersContainer.firstElementChild;
+            filtersContainer.innerHTML = '';
+            filtersContainer.appendChild(staticBtn);
+
+            tagsSet.forEach(tag => {
+                const btn = document.createElement('div');
+                btn.className = 'filter-btn';
+                btn.setAttribute('data-tag', tag);
+                btn.textContent = tag;
+                filtersContainer.appendChild(btn);
+            });
+
+            // 重新绑定过滤器点击事件
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.onclick = () => {
+                    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    renderCardList();
+                };
+            });
+        }
+
+        // 渲染卡片列表 (模糊搜索与标签过滤器双路并行)
+        function renderCardList() {
+            const query = searchInput.value.toLowerCase().trim();
+            const activeFilter = document.querySelector('.filter-btn.active').getAttribute('data-tag');
+            
+            cardListContainer.innerHTML = '';
+
+            allProjects.forEach((proj, idx) => {
+                // 标签匹配
+                let matchFilter = false;
+                if (activeFilter === 'all') {
+                    matchFilter = true;
+                } else {
+                    if (proj.tags) {
+                        if (Array.isArray(proj.tags) && proj.tags.includes(activeFilter)) matchFilter = true;
+                        if (typeof proj.tags === 'string' && proj.tags === activeFilter) matchFilter = true;
+                    }
+                }
+
+                // 模糊匹配
+                let matchQuery = false;
+                if (!query) {
+                    matchQuery = true;
+                } else {
+                    const nameMatch = proj.name && proj.name.toLowerCase().includes(query);
+                    const slugMatch = proj.slug && proj.slug.toLowerCase().includes(query);
+                    const descMatch = proj.description && proj.description.toLowerCase().includes(query);
+                    if (nameMatch || slugMatch || descMatch) matchQuery = true;
+                }
+
+                if (matchFilter && matchQuery) {
+                    const item = document.createElement('div');
+                    item.className = 'card-item';
+                    if (activeProject && activeProject.slug === proj.slug) {
+                        item.classList.add('active');
+                    }
+
+                    const info = document.createElement('div');
+                    info.className = 'card-info';
+                    
+                    const name = document.createElement('span');
+                    name.className = 'card-name';
+                    name.textContent = proj.name || '未命名卡片';
+                    
+                    const slug = document.createElement('span');
+                    slug.className = 'card-slug';
+                    slug.textContent = proj.slug;
+                    
+                    info.appendChild(name);
+                    info.appendChild(slug);
+
+                    const meta = document.createElement('div');
+                    meta.className = 'card-meta';
+                    
+                    const prio = document.createElement('span');
+                    prio.className = 'card-priority';
+                    prio.textContent = 'P' + (proj.priority || 5);
+                    
+                    meta.appendChild(prio);
+
+                    if (proj.tags) {
+                        const tagBadge = document.createElement('span');
+                        tagBadge.className = 'card-tag-badge';
+                        tagBadge.textContent = Array.isArray(proj.tags) ? proj.tags[0] : proj.tags;
+                        meta.appendChild(tagBadge);
+                    }
+
+                    item.appendChild(info);
+                    item.appendChild(meta);
+
+                    // 绑定点击加载事件
+                    item.onclick = () => selectProject(proj, item);
+                    cardListContainer.appendChild(item);
+                }
+            });
+        }
+
+        // 选择并加载当前编辑的项目
+        function selectProject(proj, itemElem) {
+            activeProject = proj;
+            
+            // 切换列表选中高亮
+            if (itemElem) {
+                document.querySelectorAll('.card-item').forEach(item => item.classList.remove('active'));
+                itemElem.classList.add('active');
+            }
+
+            // 隐藏欢迎屏，显示 Tab 导航栏
+            welcomeScreen.style.display = 'none';
+            editorTabs.style.display = 'flex';
+            
+            const activeTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
+            
+            if (activeTab === 'visual') {
+                editorForm.style.display = 'grid';
+                jsonWorkspace.style.display = 'none';
+                editorForm.classList.remove('loaded');
+                
+                setTimeout(() => {
+                    // 填充表单字段
+                    projNameInput.value = proj.name || '';
+                    projSlugInput.value = proj.slug || '';
+                    projDescInput.value = proj.description || '';
+                    projTagsInput.value = Array.isArray(proj.tags) ? proj.tags.join(', ') : (proj.tags || '');
+                    projClientInput.value = proj.clientName || '';
+                    
+                    // 补全所有被遗漏的表单字段！
+                    projDateInput.value = proj.completionDate ? proj.completionDate.split('T')[0] : '';
+                    projURLInput.value = proj.projectURL || '';
+                    projCaseStudyInput.value = proj.caseStudyURL || '';
+                    projStatsInput.value = proj.stats || '';
+                    
+                    // UI 颜色与拾色器同步
+                    const colorHex = proj.uiColor ? (proj.uiColor.startsWith('#') ? proj.uiColor : '#' + proj.uiColor) : '#00ff96';
+                    projColorInput.value = colorHex;
+                    colorHexSpan.textContent = colorHex.toUpperCase();
+                    colorPreview.style.background = colorHex;
+                    
+                    // 滑动条同步
+                    projPriorityInput.value = proj.priority || 5;
+                    priorityValSpan.textContent = proj.priority || 5;
+
+                    // 媒体资源填充
+                    projLogoInput.value = (proj.projectLogo && proj.projectLogo.filename) ? proj.projectLogo.filename : '';
+                    projLogoUrlInput.value = (proj.projectLogo && proj.projectLogo.url) ? proj.projectLogo.url : '';
+                    projVideoInput.value = (proj.video && proj.video.filename) ? proj.video.filename : '';
+                    projVideoUrlInput.value = (proj.video && proj.video.url) ? proj.video.url : '';
+                    projVideoThumbInput.value = (proj.video && proj.video.thumbnail) ? proj.video.thumbnail : '';
+                    projImageInput.value = (proj.image && proj.image.filename) ? proj.image.filename : '';
+                    projImageUrlInput.value = (proj.image && proj.image.url) ? proj.image.url : '';
+
+                    // 更新反射预览和卡片立体阴影色！
+                    updateMediaPreview();
+                    updateColorReflection(colorHex);
+
+                    editorForm.classList.add('loaded');
+                }, 50);
+            } else {
+                editorForm.style.display = 'none';
+                jsonWorkspace.style.display = 'flex';
+                jsonRawArea.value = JSON.stringify(proj, null, 4);
+                
+                const colorHex = proj.uiColor ? (proj.uiColor.startsWith('#') ? proj.uiColor : '#' + proj.uiColor) : '#00ff96';
+                updateColorReflection(colorHex);
+            }
+        }
+
+        // 动态根据 uiColor 改变表单配色和预览框的发光效果，达成极奢华体验
+        function updateColorReflection(colorHex) {
+            // 直接将预览框的边框和发光阴影与主题色强制联动！
+            previewContainer.style.borderColor = colorHex + '55';
+            previewContainer.style.boxShadow = `0 10px 30px rgba(0, 0, 0, 0.4), 0 0 20px ${colorHex}25`;
+            colorPreview.style.boxShadow = `0 0 15px ${colorHex}`;
+        }
+
+        // 动态所见即所得预览逻辑
+        function updateMediaPreview() {
+            const logoFile = projLogoInput.value.trim();
+            const videoFile = projVideoInput.value.trim();
+
+            noPreviewText.style.display = 'none';
+            imgPreview.classList.remove('active');
+            videoPreview.classList.remove('active');
+
+            // 优先预览视频资源
+            if (videoFile) {
+                previewTypeSpan.textContent = 'MP4 视频';
+                videoPreview.src = `/assets/video/${videoFile}`;
+                videoPreview.classList.add('active');
+            } 
+            // 其次预览缩略图
+            else if (logoFile) {
+                previewTypeSpan.textContent = 'JPG/PNG 图片';
+                imgPreview.src = `/assets/images/${logoFile}`;
+                imgPreview.classList.add('active');
+            } 
+            // 降级无预览
+            else {
+                previewTypeSpan.textContent = '无媒体';
+                noPreviewText.style.display = 'block';
+            }
+        }
+
+        // 监听表单输入变化，进行 60fps 实时渲染预览和色彩发光反射
+        projColorInput.oninput = (e) => {
+            const hex = e.target.value;
+            colorHexSpan.textContent = hex.toUpperCase();
+            colorPreview.style.background = hex;
+            updateColorReflection(hex);
+        };
+
+        projPriorityInput.oninput = (e) => {
+            priorityValSpan.textContent = e.target.value;
+        };
+
+        projLogoInput.onchange = updateMediaPreview;
+        projVideoInput.onchange = updateMediaPreview;
+
+        // 搜索框过滤事件
+        searchInput.oninput = renderCardList;
+
+        // 收集表单修改并同步回内存数组
+        function saveToMemory() {
+            if (!activeProject) return false;
+
+            const activeTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
+            if (activeTab === 'json') {
+                // 如果是 JSON 模式，直接把 jsonRawArea 里的内容解析回对象
+                try {
+                    const parsed = JSON.parse(jsonRawArea.value);
+                    
+                    // 安全校验：不能改写 slug 或 id (至少不能改成空)
+                    if (!parsed.slug) throw new Error("JSON 属性中缺少必要的 'slug' 路由标识！");
+                    if (!parsed.name) throw new Error("JSON 属性中缺少必要的 'name' 名称！");
+                    
+                    // 将解析后的数据完全混入原有 activeProject 中
+                    Object.assign(activeProject, parsed);
+                    
+                    // 重新在左侧列表刷一下属性
+                    renderCardList();
+                    return true;
+                } catch (err) {
+                    showToast('❌ JSON 语法错误，保存失败：' + err.message, 4000);
+                    return false;
+                }
+            }
+
+            // 可视化表单模式下的存盘
+            activeProject.name = projNameInput.value.trim();
+            activeProject.description = projDescInput.value.trim();
+            activeProject.clientName = projClientInput.value.trim();
+            activeProject.priority = parseInt(projPriorityInput.value);
+            
+            // 补全外链、案例链接及统计
+            activeProject.projectURL = projURLInput.value.trim();
+            activeProject.caseStudyURL = projCaseStudyInput.value.trim();
+            activeProject.stats = projStatsInput.value.trim();
+
+            // 补全日期存盘
+            if (projDateInput.value) {
+                activeProject.completionDate = projDateInput.value + 'T12:00:00.000Z';
+            } else {
+                activeProject.completionDate = '';
+            }
+
+            // 覆写 uiColor
+            let cleanColor = projColorInput.value;
+            if (cleanColor.startsWith('#')) cleanColor = cleanColor.slice(1);
+            activeProject.uiColor = cleanColor;
+
+            // 覆写 tags 标签
+            const rawTags = projTagsInput.value.trim();
+            if (rawTags) {
+                if (rawTags.includes(',')) {
+                    activeProject.tags = rawTags.split(',').map(t => t.trim()).filter(t => t);
+                } else {
+                    activeProject.tags = rawTags;
+                }
+            } else {
+                activeProject.tags = '';
+            }
+
+            // 更新 logo 结构 (带完整 URL 覆写)
+            if (projLogoInput.value.trim() || projLogoUrlInput.value.trim()) {
+                if (!activeProject.projectLogo) activeProject.projectLogo = { prefix: "media" };
+                activeProject.projectLogo.filename = projLogoInput.value.trim();
+                activeProject.projectLogo.url = projLogoUrlInput.value.trim();
+            } else {
+                delete activeProject.projectLogo;
+            }
+
+            // 更新 video 结构 (带完整 URL 及缩略图覆写)
+            if (projVideoInput.value.trim() || projVideoUrlInput.value.trim() || projVideoThumbInput.value.trim()) {
+                if (!activeProject.video) activeProject.video = { prefix: "media" };
+                activeProject.video.filename = projVideoInput.value.trim();
+                activeProject.video.url = projVideoUrlInput.value.trim();
+                activeProject.video.thumbnail = projVideoThumbInput.value.trim();
+            } else {
+                delete activeProject.video;
+            }
+
+            // 更新 image 结构 (带完整 URL 覆写)
+            if (projImageInput.value.trim() || projImageUrlInput.value.trim()) {
+                if (!activeProject.image) activeProject.image = { prefix: "media" };
+                activeProject.image.filename = projImageInput.value.trim();
+                activeProject.image.url = projImageUrlInput.value.trim();
+            } else {
+                delete activeProject.image;
+            }
+
+            // 重新在左侧列表刷一下属性
+            renderCardList();
+            return true;
+        }
+
+        // 保存到本地落盘的 POST 交互
+        async function commitToBackend() {
+            if (!saveToMemory()) return false;
+            
+            try {
+                const res = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(allProjects)
+                });
+                
+                if (!res.ok) throw new Error('接口覆写失败！');
+                const result = await res.json();
+                
+                // 重新分析一遍标签，刷新过滤器
+                tagsSet.clear();
+                allProjects.forEach(p => {
+                    if (p.tags) {
+                        if (Array.isArray(p.tags)) {
+                            p.tags.forEach(t => tagsSet.add(t));
+                        } else if (typeof p.tags === 'string') {
+                            tagsSet.add(p.tags);
+                        }
+                    }
+                });
+                renderFilterButtons();
+                
+                showToast('🚀 [落盘保存] 卡片数据修改已安全保存回 projects-dev.json 数据库！');
+                return true;
+            } catch (err) {
+                console.error(err);
+                showToast('❌ 保存失败：' + err.message, 4000);
+                return false;
+            }
+        }
+
+        // 仅本地保存按钮事件
+        saveLocalBtn.onclick = async () => {
+            await commitToBackend();
+        };
+
+        // Tab 导航事件注册
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.onclick = () => {
+                if (!activeProject) return;
+                
+                const targetTab = btn.getAttribute('data-tab');
+                const currentTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
+                if (targetTab === currentTab) return;
+                
+                // 从可视化表单切到 JSON 时，先保存表单数据到内存，然后序列化为 JSON 字符串放入源码区
+                if (targetTab === 'json') {
+                    if (!saveToMemory()) return; // 保存出错（如验证未通过）则阻止切换
+                    
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    selectProject(activeProject, null);
+                } 
+                // 从 JSON 源码切回可视化时，需要做 JSON.parse 校验，解析回内存，再回填表单
+                else if (targetTab === 'visual') {
+                    // 我们尝试在 saveToMemory 中解析 JSON
+                    if (!saveToMemory()) return;
+                    
+                    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+                    btn.classList.add('active');
+                    
+                    selectProject(activeProject, null);
+                }
+            };
+        });
+
+        // 绑定 JSON 模式按钮事件
+        saveLocalBtnJson.onclick = async () => {
+            await commitToBackend();
+        };
+
+        saveBuildBtnJson.onclick = async () => {
+            // 先进行本地落盘
+            const saved = await commitToBackend();
+            if (!saved) return;
+
+            // 亮起遮罩层
+            buildOverlay.classList.add('active');
+            progressBar.style.width = '5%';
+            buildStatusText.textContent = '正在启动 Zeta 终极构建打包流水线...';
+            
+            // 模拟流水线进度
+            runFrontEndLoadingSim();
+
+            try {
+                const buildRes = await fetch('/api/build', { method: 'POST' });
+                if (!buildRes.ok) throw new Error('构建服务响应失败！');
+                const buildResult = await buildRes.json();
+                
+                // 完成构建
+                progressBar.style.width = '100%';
+                buildStatusText.textContent = '🏆 构建成功！active-theory-custom.zip 增量部署压缩包已刷新就绪！';
+                
+                // 标记所有步骤为完成
+                document.querySelectorAll('.step-item').forEach(step => {
+                    step.classList.remove('active');
+                    step.classList.add('done');
+                });
+
+                setTimeout(() => {
+                    buildOverlay.classList.remove('active');
+                    showToast('🎉 一键重打包构建成功！请按住 Cmd+Shift+R 强刷主页预览完美效果！', 5000);
+                }, 2500);
+
+            } catch (err) {
+                console.error(err);
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#ff003c';
+                progressBar.style.boxShadow = '0 0 10px #ff003c';
+                buildStatusText.textContent = '❌ 构建失败：' + err.message;
+                setTimeout(() => {
+                    buildOverlay.classList.remove('active');
+                }, 5000);
+            }
+        };
+
+        /* ==============================================================================
+         * 🔄 一键保存并触发 6 大流水线同步重编译打包
+         * ============================================================================== */
+        saveBuildBtn.onclick = async () => {
+            // 1. 先进行本地落盘
+            const saved = await commitToBackend();
+            if (!saved) return;
+
+            // 2. 亮起遮罩层
+            buildOverlay.classList.add('active');
+            progressBar.style.width = '5%';
+            buildStatusText.textContent = '正在启动 Zeta 终极构建打包流水线...';
+            
+            // 模拟炫酷的前端阶段进度
+            runFrontEndLoadingSim();
+
+            try {
+                const buildRes = await fetch('/api/build', { method: 'POST' });
+                if (!buildRes.ok) throw new Error('构建服务响应失败！');
+                const buildResult = await buildRes.json();
+                
+                // 完成构建
+                progressBar.style.width = '100%';
+                buildStatusText.textContent = '🏆 构建成功！active-theory-custom.zip 增量部署压缩包已刷新就绪！';
+                
+                // 标记所有步骤为完成
+                document.querySelectorAll('.step-item').forEach(step => {
+                    step.classList.remove('active');
+                    step.classList.add('done');
+                });
+
+                setTimeout(() => {
+                    buildOverlay.classList.remove('active');
+                    showToast('🎉 一键重打包构建成功！请按住 Cmd+Shift+R 强刷主页预览完美效果！', 5000);
+                }, 2500);
+
+            } catch (err) {
+                console.error(err);
+                progressBar.style.width = '100%';
+                progressBar.style.background = '#ff003c';
+                progressBar.style.boxShadow = '0 0 10px #ff003c';
+                buildStatusText.textContent = '❌ 构建失败：' + err.message;
+                setTimeout(() => {
+                    buildOverlay.classList.remove('active');
+                }, 5000);
+            }
+        };
+
+        // 模拟流水线阶段高亮显示的炫酷逻辑
+        function runFrontEndLoadingSim() {
+            const steps = ['step1', 'step2', 'step3', 'step4', 'step5', 'step6'];
+            let current = 0;
+
+            document.querySelectorAll('.step-item').forEach(step => {
+                step.classList.remove('active', 'done');
+            });
+
+            function nextStep() {
+                if (current > 0) {
+                    document.getElementById(steps[current - 1]).classList.remove('active');
+                    document.getElementById(steps[current - 1]).classList.add('done');
+                }
+                if (current < steps.length) {
+                    const el = document.getElementById(steps[current]);
+                    el.classList.add('active');
+                    progressBar.style.width = ((current + 1) * 15) + '%';
+                    
+                    const messages = [
+                        '正在注入全局 JS 文本、超链接与歌曲配置列表...',
+                        '正在完全复原 index.html 原始 DOM 骨架结构...',
+                        '正在写入卡片数据库，自动将底层过滤标签全量批量重映射...',
+                        '正在高速分析并更新全站去重中文字符集...',
+                        '正在强力无损解压并部署原厂 3D 几何英文字体与高清贴图...',
+                        '正在增量压缩并生成 active-theory-custom.zip 全量部署包...'
+                    ];
+                    buildStatusText.textContent = messages[current];
+                    current++;
+                    setTimeout(nextStep, 2500); // 每2.5秒递进
+                } else {
+                    progressBar.style.width = '95%';
+                    buildStatusText.textContent = '正在等待服务器输出压缩包并做最终签名检验...';
+                }
+            }
+            nextStep();
+        }
+
+        // 🗑️ 核心删除当前项目交互与物理落盘机制
+        async function deleteActiveProject() {
+            if (!activeProject) {
+                showToast('❌ 没有选中任何需要删除的项目！', 3000);
+                return;
+            }
+
+            const projName = activeProject.name || activeProject.slug || '未命名项目';
+            
+            // 弹出极其醒目的二次确认框
+            const confirmed = confirm(`⚠️ 警告 [物理毁灭操作]\n\n确定要彻底删除项目记录【${projName}】吗？\n\n此操作将不可逆地从数据库中抹除该项目！\n(系统将自动创建 .bak 副本用以紧急防灾备用)`);
+            
+            if (!confirmed) return;
+
+            try {
+                // 1. 从内存数据库数组中移除该项目
+                const targetSlug = activeProject.slug;
+                allProjects = allProjects.filter(p => p.slug !== targetSlug);
+
+                // 2. 物理覆盖保存项目列表到后端 JSON 中 (这会自动触发后端的 .bak 物理防灾备份)
+                const saved = await fetch('/api/projects', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(allProjects)
+                });
+
+                if (!saved.ok) throw new Error('同步到后端数据库失败！');
+                
+                // 3. 内存回收，退出编辑状态并回到欢迎屏幕
+                activeProject = null;
+                welcomeScreen.style.display = 'flex';
+                editorForm.style.display = 'none';
+                jsonWorkspace.style.display = 'none';
+                editorTabs.style.display = 'none';
+
+                // 4. 重置左侧卡片列表与过滤器标签
+                tagsSet.clear();
+                allProjects.forEach(p => {
+                    if (p.tags) {
+                        if (Array.isArray(p.tags)) {
+                            p.tags.forEach(t => tagsSet.add(t));
+                        } else if (typeof p.tags === 'string') {
+                            tagsSet.add(p.tags);
+                        }
+                    }
+                });
+                renderFilterButtons();
+                renderCardList();
+
+                showToast(`🗑️ 项目【${projName}】已安全从本地数据库中移除！`);
+
+                // 5. 极客提示：引导是否立即触发打包构建管线以应用到 3D 空间
+                setTimeout(() => {
+                    const rebuild = confirm(`🏆 数据库已成功更新！\n\n是否需要立刻启动 Zeta 终极打包构建管线，将此删除操作同步并重新编译发布到 3D 空间？`);
+                    if (rebuild) {
+                        // 触发一键同步编译
+                        saveBuildBtn.click();
+                    }
+                }, 500);
+
+            } catch (err) {
+                console.error(err);
+                showToast('❌ 删除操作失败：' + err.message, 4000);
+            }
+        }
+
+        // 绑定删除按钮事件
+        deleteBtn.onclick = deleteActiveProject;
+        deleteBtnJson.onclick = deleteActiveProject;
+
+        // Toast 消息浮层控制器
+        function showToast(msg, duration = 3000) {
+            const t = document.getElementById('toast');
+            t.textContent = msg;
+            t.classList.add('active');
+            setTimeout(() => {
+                t.classList.remove('active');
+            }, duration);
+        }
+
+        // 启动加载
+        init();
+    </script>
+</body>
+</html>
