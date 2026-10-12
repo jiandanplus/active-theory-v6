@@ -1,0 +1,252 @@
+{
+  "assets": [
+    {
+      "owner": "runtime",
+      "slot": "runtime:app",
+      "url": "assets/js/app.1778129964370.js",
+      "type": "program",
+      "required": true,
+      "group": "runtime"
+    },
+    {
+      "owner": "runtime",
+      "slot": "runtime:shaders",
+      "url": "assets/shaders/compiled.vs",
+      "type": "program",
+      "required": true,
+      "group": "runtime"
+    },
+    {
+      "owner": "GLTextGeometry",
+      "slot": "font:regular",
+      "url": "assets/fonts/NBArchitektStd-Regular.json",
+      "type": "font",
+      "required": true,
+      "group": "font:regular"
+    },
+    {
+      "owner": "GLTextGeometry",
+      "slot": "font:bold",
+      "url": "assets/fonts/NBArchitektStd-Bold.json",
+      "type": "font",
+      "required": true,
+      "group": "font:bold"
+    },
+    {
+      "owner": "GLTextGeometry",
+      "slot": "font:light",
+      "url": "assets/fonts/NBArchitektStd-Light.json",
+      "type": "font",
+      "required": true,
+      "group": "font:light"
+    },
+    {
+      "owner": "Navigation",
+      "slot": "ui:globe",
+      "url": "assets/images/ui/globe.png",
+      "type": "image",
+      "required": true,
+      "group": "ui"
+    },
+    {
+      "owner": "Navigation",
+      "slot": "ui:arrow",
+      "url": "assets/images/ui/arrow.png",
+      "type": "image",
+      "required": true,
+      "group": "ui"
+    },
+    {
+      "owner": "Navigation",
+      "slot": "ui:star",
+      "url": "assets/images/ui/star.png",
+      "type": "image",
+      "required": true,
+      "group": "ui"
+    },
+    {
+      "owner": "Contact",
+      "slot": "ui:ig",
+      "url": "assets/images/ui/ig.png",
+      "type": "image",
+      "required": false,
+      "group": "contact"
+    },
+    {
+      "owner": "Contact",
+      "slot": "ui:in",
+      "url": "assets/images/ui/in.png",
+      "type": "image",
+      "required": false,
+      "group": "contact"
+    },
+    {
+      "owner": "Contact",
+      "slot": "ui:tw",
+      "url": "assets/images/ui/tw.png",
+      "type": "image",
+      "required": false,
+      "group": "contact"
+    },
+    {
+      "owner": "Reel",
+      "slot": "ui:close",
+      "url": "assets/images/ui/close.svg",
+      "type": "image",
+      "required": false,
+      "group": "reel"
+    },
+    {
+      "owner": "Reel",
+      "slot": "reel:video",
+      "url": "assets/video/reel.mp4",
+      "type": "video",
+      "required": false,
+      "group": "reel"
+    },
+    {
+      "owner": "Reel",
+      "slot": "reel:thumbnail",
+      "url": "assets/video/reel-frame.jpg",
+      "type": "image",
+      "required": false,
+      "group": "reel"
+    },
+    {
+      "owner": "Lab",
+      "slot": "lab:image",
+      "url": "assets/images/lab.gif",
+      "type": "image",
+      "required": false,
+      "group": "lab"
+    },
+    {
+      "owner": "HexGrid",
+      "slot": "hexgrid:geometry",
+      "url": "assets/geometry/hexgrid/hexagon_gem.bin",
+      "type": "model",
+      "required": true,
+      "group": "hexgrid"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:normal-png",
+      "url": "assets/images/pbr/damaged_road_normal.png",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:normal-jpg",
+      "url": "assets/images/pbr/damaged_road_normal.jpg",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:basecolor",
+      "url": "assets/images/pbr/damaged_road_basecolor.png",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:mro",
+      "url": "assets/images/pbr/damaged_road_mro.png",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:diffuse",
+      "url": "assets/images/pbr/corsica_beach-diffuse-RGBM.png",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:specular",
+      "url": "assets/images/pbr/corsica_beach-specular-RGBM.png",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "PBR",
+      "slot": "pbr:lut",
+      "url": "assets/images/pbr/lut.png",
+      "type": "image",
+      "required": false,
+      "group": "pbr"
+    },
+    {
+      "owner": "Lighting",
+      "slot": "lighting:areas",
+      "url": "assets/images/_lighting/arealights.json",
+      "type": "image",
+      "required": false,
+      "group": "lighting"
+    },
+    {
+      "owner": "LightVolume",
+      "slot": "lightvolume:light",
+      "url": "assets/images/_lightvolume/light.jpg",
+      "type": "image",
+      "required": false,
+      "group": "lightvolume"
+    },
+    {
+      "owner": "LightVolume",
+      "slot": "lightvolume:mask",
+      "url": "assets/images/_lightvolume/light-mask.jpg",
+      "type": "image",
+      "required": false,
+      "group": "lightvolume"
+    },
+    {
+      "owner": "SceneLayout",
+      "slot": "scene:uv",
+      "url": "assets/images/_scenelayout/uv.jpg",
+      "type": "image",
+      "required": false,
+      "group": "scene-layout"
+    },
+    {
+      "owner": "SceneLayout",
+      "slot": "scene:black",
+      "url": "assets/images/_scenelayout/black.jpg",
+      "type": "image",
+      "required": false,
+      "group": "scene-layout"
+    },
+    {
+      "owner": "SceneLayout",
+      "slot": "scene:mask",
+      "url": "assets/images/_scenelayout/mask.jpg",
+      "type": "image",
+      "required": false,
+      "group": "scene-layout"
+    },
+    {
+      "owner": "SceneLayout",
+      "slot": "scene:lut",
+      "url": "assets/images/_scenelayout/invert.cube",
+      "type": "image",
+      "required": false,
+      "group": "scene-layout"
+    },
+    {
+      "owner": "Room",
+      "slot": "room:matcap",
+      "url": "assets/images/room/matcap-test.jpg",
+      "type": "image",
+      "required": false,
+      "group": "room"
+    }
+  ]
+}
