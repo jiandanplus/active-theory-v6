@@ -9,7 +9,8 @@
     "download:cms": "node download-cms.js",
     "dev": "node server.js",
     "start": "node server.js",
-    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.js",
+    "test": "node scripts/test-postgres.js",
+    "test:postgres": "node scripts/test-postgres.js tests/postgres.test.js",
     "admin:init": "node scripts/admin-account.js",
     "admin:reset": "node scripts/admin-account.js --reset",
     "admin:key": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\""
@@ -26,6 +27,7 @@
     "draco3d": "^1.5.7",
     "express": "^4.19.2",
     "express-http-proxy": "^2.0.0",
-    "file-type": "^22.1.1"
+    "file-type": "^22.1.1",
+    "pg": "^8.23.1"
   }
 }
