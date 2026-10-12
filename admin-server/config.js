@@ -208,7 +208,83 @@ async function saveDraft(store, config, revision, actor = null) {
     const repo = contentRepository(tx);
     const draft = await repo.getDraft({ lock: true });
     assertRevision(draft, revision);
-    validateConfig(config, (await repo.getTemplate()).schema);
+    const savedTemplate = await repo.getTemplate();
+    validateConfig(config, savedTemplate.schema);
+    // Freeze the media identities chosen by this save into the next snapshot.
+    // The catalogue may contain unrelated rows; only selected media enters here.
+    const resources = require("./repositories/resources").resourceRepository(
+      tx,
+    );
+    const rows = await resources.list();
+    const urls = [
+      ...config.projects.flatMap((p) =>
+        ["video", "image", "projectLogo"].flatMap((k) => [
+          p[k]?.url,
+          p[k]?.thumbnail,
+        ]),
+      ),
+      ...config.scenes.flatMap((s) =>
+        s.fields
+          .filter((f) => ["resource", "geometry"].includes(f.type))
+          .map((f) => f.value),
+      ),
+      ...config.songs.map((s) => s.src),
+    ].filter(Boolean);
+    const { resourceAsset } = require("./snapshots");
+    for (const url of new Set(urls)) {
+      if (resourceAsset(savedTemplate, url)) continue;
+      const id =
+        /^\/media\/([^/?#]+)/.exec(url)?.[1] ||
+        /^\/(?:models\/|assets\/geometry\/admin\/)([^/?#]+)\.bin/.exec(
+          url,
+        )?.[1];
+      let row = rows.find((r) => r.id === id || r.url === url);
+      if (!row && /^https:\/\//.test(url)) {
+        const resourceId =
+          "external-" + require("./resource-catalog").digest(url).slice(0, 32);
+        const kind = config.songs.some((s) => s.src === url)
+          ? "audio"
+          : config.projects.some((p) => p.video?.url === url)
+            ? "video"
+            : config.scenes.some((s) =>
+                  s.fields.some(
+                    (f) => f.type === "geometry" && f.value === url,
+                  ),
+                )
+              ? "model"
+              : "image";
+        row = await resources.insert({
+          id: resourceId,
+          source: "external",
+          url,
+          name: new URL(url).pathname.split("/").at(-1) || "external",
+          kind,
+          status: "unverified",
+        });
+        rows.push(row);
+      }
+      if (!row) continue; // Missing managed IDs are rejected by writeDraft references.
+      const slot = `selected:${row.id}`;
+      savedTemplate.assets[slot] = {
+        resourceId: row.id,
+        fileName: require("node:path").posix.basename(
+          row.key || row.path || row.name || row.id,
+        ),
+        url,
+        owner: "selected",
+      };
+      savedTemplate.legacyMap[url] = slot;
+    }
+    await tx.query(
+      "UPDATE personal_site.templates SET content=$1 WHERE id=(SELECT template_id FROM personal_site.site_settings WHERE id=true)",
+      [
+        {
+          template: savedTemplate.template,
+          assets: savedTemplate.assets,
+          legacyMap: savedTemplate.legacyMap,
+        },
+      ],
+    );
     const next = await repo.writeDraft(config, revision);
     await auditRepository(tx).append("config.save", actor);
     return next;

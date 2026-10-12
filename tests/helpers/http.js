@@ -8,6 +8,21 @@ const { createAccount } = require("../../admin-server/security");
 const password = "a-valid-long-password-2026";
 async function httpFixture(t, { store, options = {}, installed = true } = {}) {
   if (!store) ({ store } = await postgresFixture(t));
+  // The PostgreSQL fixture owns final disposal. Keep its original cleanup hook
+  // capable of closing every replacement pool before it drops this database.
+  const ownerStore = store,
+    closers =
+      typeof store.close === "function" ? [store.close.bind(store)] : [];
+  const closed = new Map();
+  async function closeOnce(close) {
+    if (!closed.has(close)) closed.set(close, close());
+    return closed.get(close);
+  }
+  if (closers.length) {
+    ownerStore.close = async () => {
+      for (const close of closers) await closeOnce(close);
+    };
+  }
   const content = contentFixture(t);
   if (installed) {
     const bundle = structuredClone(content.bundle);
@@ -77,7 +92,9 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
     get app() {
       return app;
     },
-    store,
+    get store() {
+      return store;
+    },
     root: content.root,
     bundle: content.bundle,
     get base() {
@@ -91,7 +108,21 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
       await createAccount(store, "owner", password);
     },
     async restart() {
+      if (!closers.length)
+        throw new Error("Restart requires a closable PostgreSQL fixture store");
       await new Promise((resolve) => server.close(resolve));
+      const database = (
+        await store.query("SELECT pg_catalog.current_database() AS name")
+      ).rows[0].name;
+      const url = new URL(process.env.TEST_DATABASE_URL);
+      if (!/^site_test_[a-f0-9]{32}$/.test(database))
+        throw new Error("Restart requires an isolated fixture database");
+      url.pathname = "/" + database;
+      await closeOnce(closers.at(-1));
+      store = require("../../admin-server/postgres").openPostgres({
+        databaseUrl: url.href,
+      });
+      closers.push(store.close.bind(store));
       await start();
     },
   };

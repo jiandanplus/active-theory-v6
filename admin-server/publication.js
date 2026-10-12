@@ -2,7 +2,11 @@ const fs = require("node:fs/promises");
 const path = require("node:path");
 const { localFile } = require("./storage");
 const { fail } = require("./security");
-const { collectReferences } = require("./snapshots");
+const {
+  collectReferences,
+  inactiveUIL,
+  resourceAsset,
+} = require("./snapshots");
 const { resourceRepository } = require("./repositories/resources");
 const { storageRepository } = require("./repositories/storages");
 function resourceId(snapshot, url) {
@@ -11,12 +15,7 @@ function resourceId(snapshot, url) {
     /^\/(?:models\/|assets\/geometry\/admin\/)([^/?#]+)\.bin(?:[?#]|$)/.exec(
       url,
     )?.[1];
-  const slot = snapshot.legacyMap[url],
-    asset =
-      snapshot.assets[slot] ||
-      Object.values(snapshot.assets).find(
-        (a) => a.fileName === url || a.url === url,
-      );
+  const asset = resourceAsset(snapshot, url);
   return direct || asset?.resourceId;
 }
 
@@ -27,7 +26,9 @@ async function checkPublicationState(store, snapshot) {
   const geometry = new Set(
     snapshot.config.scenes
       .flatMap((s) => s.fields)
-      .filter((f) => f.type === "geometry")
+      .filter(
+        (f) => f.type === "geometry" && !inactiveUIL(snapshot.template, f.key),
+      )
       .map((f) => resourceId(snapshot, f.value)),
   );
   const rows = [];
@@ -65,7 +66,10 @@ async function validatePublication(store, options = {}, snapshot) {
         if (p[kind]?.[key]) media.push(p[kind][key]);
   for (const scene of snapshot.config.scenes)
     for (const field of scene.fields)
-      if (["geometry", "resource"].includes(field.type))
+      if (
+        ["geometry", "resource"].includes(field.type) &&
+        !inactiveUIL(snapshot.template, field.key)
+      )
         media.push(field.value);
   media.push(...snapshot.config.songs.map((s) => s.src));
   for (const url of media) {
@@ -75,12 +79,7 @@ async function validatePublication(store, options = {}, snapshot) {
     }
     if (!/^(?:\/?assets\/|\/media\/|\/models\/|room\/|bush\.bin\/)/.test(url))
       continue;
-    const slot = snapshot.legacyMap[url],
-      mapped =
-        snapshot.assets[slot] ||
-        Object.values(snapshot.assets).find(
-          (a) => a.fileName === url || a.url === url,
-        );
+    const mapped = resourceAsset(snapshot, url);
     if (
       !mapped &&
       !rows.some((r) => r.url === url || r.id === resourceId(snapshot, url))
@@ -116,7 +115,12 @@ async function validatePublication(store, options = {}, snapshot) {
   const uil = snapshot.template.baseUIL;
   for (const scene of snapshot.config.scenes)
     for (const field of scene.fields) {
-      if (field.type !== "text" || field.value === uil[field.key]) continue;
+      if (
+        field.type !== "text" ||
+        field.value === uil[field.key] ||
+        inactiveUIL(snapshot.template, field.key)
+      )
+        continue;
       const name = uil[field.key.replace(/_text$/, "_fontStyle")]?.match?.(
         /(?:^|\n)font:\s*([\w-]+)/,
       )?.[1];

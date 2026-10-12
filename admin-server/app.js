@@ -88,11 +88,31 @@ function createApp(options = {}) {
   );
   app.use(
     route(async (req, res, next) => {
-      const state = await installationStatus(store);
-      if (state.state !== "installed")
+      const publicPage = /^(?:\/|\/work(?:\/[^/]+)?)$/.test(req.path);
+      let state;
+      try {
+        state = await installationStatus(store);
+      } catch (error) {
+        if (!publicPage) throw error;
+        return res
+          .status(503)
+          .type("html")
+          .send(
+            '<!doctype html><meta charset="utf-8"><title>网站暂时不可用</title><p>网站暂时不可用，请稍后重试。</p><a href="/admin">管理后台</a>',
+          );
+      }
+      if (state.state !== "installed") {
+        if (publicPage)
+          return res
+            .status(503)
+            .type("html")
+            .send(
+              '<!doctype html><meta charset="utf-8"><title>网站尚未就绪</title><p>网站尚未完成安装或暂时不可用，请通过管理后台检查状态。</p><a href="/admin">管理后台</a>',
+            );
         return res
           .status(503)
           .json({ error: "网站尚未安装或暂时不可用", state: state.state });
+      }
       next();
     }),
   );

@@ -1,5 +1,39 @@
 {
+  "inactiveLayouts": ["Tester"],
+  "loaderEntries": {
+    "imageTexture": "Assets.getPath",
+    "videoAudio": "AssetLoader fetch(path), Video texture Assets.getPath",
+    "fontJSON": "GLTextGeometry.loadFont through Assets.getPath",
+    "fontAtlas": "GLText texture through Assets.getPath; pair by legacy alias before mapping",
+    "geometryWorker": "Thread.absolutePath before Worker dispatch",
+    "pointCloudWorker": "ParticleDistributor.generatePointCloud; preserve version URL before geometry prefix and Thread.absolutePath",
+    "programs": "JS/CSS/WASM remain separate static runtime files"
+  },
   "assets": [
+    {
+      "owner": "ParticleDistributor",
+      "slot": "particles:flower-spine",
+      "url": "assets/geometry/particles/flower_spine-512.bin",
+      "type": "model",
+      "required": true,
+      "group": "particles"
+    },
+    {
+      "owner": "ParticleDistributor",
+      "slot": "particles:forest",
+      "url": "assets/geometry/particles/forest-1024.bin",
+      "type": "model",
+      "required": true,
+      "group": "particles"
+    },
+    {
+      "owner": "ParticleDistributor",
+      "slot": "particles:tree",
+      "url": "assets/geometry/particles/tree-256.bin",
+      "type": "model",
+      "required": true,
+      "group": "particles"
+    },
     {
       "owner": "runtime",
       "slot": "runtime:app",

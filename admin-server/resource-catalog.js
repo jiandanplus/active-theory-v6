@@ -2,6 +2,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { createHash } = require("node:crypto");
 const defaultManifest = require("./engine-assets.json");
+const { inactiveUIL } = require("./snapshots");
 const EPOCH = "1970-01-01T00:00:00.000Z";
 const conflict = (message) =>
   Object.assign(new Error(message), { status: 409 });
@@ -202,6 +203,8 @@ async function inventoryResources({
       owner: entry.owner,
       required: !!entry.required,
       group: entry.group,
+      available: exists,
+      inactive: !!entry.inactive,
       dependencies: [...(entry.dependencies || [])],
     };
     for (const alias of [entry.url, info.path, "/" + info.path])
@@ -288,7 +291,8 @@ async function inventoryResources({
               ? template.baseUIL[field.key].relative
               : field.value,
           type: field.type === "geometry" ? "model" : undefined,
-          required: true,
+          required: !inactiveUIL(template, field.key),
+          inactive: inactiveUIL(template, field.key),
         });
   const effective = structuredClone(template.baseUIL || {});
   for (const scene of config.scenes || [])
@@ -319,7 +323,8 @@ async function inventoryResources({
         url: value.src || file,
         resolvedURL: file,
         type: model ? "model" : undefined,
-        required: true,
+        required: !inactiveUIL(template, key),
+        inactive: inactiveUIL(template, key),
       });
     }
   // Only declared icon/font HTML slots are resources; links and scripts are not
@@ -339,19 +344,32 @@ async function inventoryResources({
       url = /\bhref=["']([^"']+)["']/i.exec(tag)?.[1];
     if (!url || !/(?:icon|manifest)/i.test(rel || "")) continue;
     if (/manifest/i.test(rel)) {
+      const manifestSlot = `html:manifest:${i}`;
+      await register({
+        owner: "html",
+        slot: manifestSlot,
+        url,
+        type: "manifest",
+        required: false,
+      });
       const info = await resolve(url);
       if (info?.checksum) {
         const data = JSON.parse(
           await fs.promises.readFile(path.join(root, info.path), "utf8"),
         );
-        for (const [j, icon] of (data.icons || []).entries())
+        assets[manifestSlot].document = data;
+        for (const [j, icon] of (data.icons || []).entries()) {
+          const slot = `${manifestSlot}:icon:${j}`;
+          icon.src = joinedURL(info.path, icon.src);
+          assets[manifestSlot].dependencies.push(slot);
           await register({
             owner: "html-manifest",
-            slot: `html:manifest:${j}`,
-            url: joinedURL(info.path, icon.src),
+            slot,
+            url: icon.src,
             type: "image",
             required: false,
           });
+        }
       }
     } else
       await register({

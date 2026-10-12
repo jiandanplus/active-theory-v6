@@ -4,7 +4,19 @@ const express = require("express");
 const { buildUIL, appFile } = require("./config");
 const { fail } = require("./security");
 const { route } = require("./http");
-const { contentRepository } = require("./repositories/content");
+const {
+  resolveVersion,
+  resolvePublishedResource,
+  sendResource,
+} = require("./frontend-resources");
+const {
+  publicSnapshot,
+  collectReferences,
+  resourceAsset,
+  mapResourceURL,
+  mapResourceTree,
+  canonicalResourceURL,
+} = require("./snapshots");
 const quote = (value) => JSON.stringify(value ?? "");
 function replaceClass(source, name, transform) {
   const start = source.indexOf(`Class((function ${name}(`);
@@ -23,7 +35,35 @@ function patchAppSource(source, config) {
   // Keep managed media/model URLs anchored to the actual origin (and port).
   source = source.replace(
     "this.absolutePath = function (path) {",
-    'this.absolutePath = function (path) { if (path.startsWith("/")) return new URL(path, location.origin).href;',
+    'this.absolutePath = function (path) { path = typeof window !== "undefined" && window.__SITE_RESOURCE_URL__ ? window.__SITE_RESOURCE_URL__(path) : path; if (path.startsWith("/")) return new URL(path, location.origin).href;',
+  );
+  source = source.replace(
+    "this.getPath = function (path) {",
+    "this.getPath = function (path) { const mapped = window.__SITE_RESOURCE_URL__?.(path); if (mapped && mapped !== path) return mapped;",
+  );
+  source = replaceClass(source, "AssetLoader", (code) =>
+    code.replaceAll(
+      "fetch(path)",
+      "fetch(window.__SITE_RESOURCE_URL__?.(path) || path)",
+    ),
+  );
+  source = replaceClass(source, "GeomThread", (code) =>
+    code.replaceAll(
+      'path.includes("assets/geometry/")',
+      '(path.includes("assets/geometry/") || path.startsWith("/api/site/"))',
+    ),
+  );
+  source = replaceClass(source, "InstanceMesh", (code) =>
+    code.replaceAll(
+      'file.includes("assets/geometry")',
+      '(file.includes("assets/geometry") || file.startsWith("/api/site/"))',
+    ),
+  );
+  source = replaceClass(source, "ParticleDistributor", (code) =>
+    code.replaceAll(
+      'path.includes("assets/geometry")',
+      '(path.includes("assets/geometry") || path.startsWith("/api/site/"))',
+    ),
   );
   source = replaceClass(source, "ViewController", (code) =>
     code
@@ -91,16 +131,35 @@ function patchAppSource(source, config) {
     );
   return source;
 }
-function bridgeSource(version, config) {
-  return `(()=>{const base=${quote(`/api/site/${version}`)};
-    function map(value){try{const u=new URL(value,location.href);if(u.pathname.includes('/api/site/'))return value;
+function bridgeSource(
+  version,
+  config,
+  snapshot = { assets: {}, legacyMap: {} },
+) {
+  const allowed = snapshot.config
+    ? new Set(collectReferences(snapshot).map((r) => r.resourceId))
+    : new Set();
+  const mappings = Object.fromEntries(
+    Object.entries(snapshot.legacyMap || {})
+      .filter(([, slot]) => allowed.has(snapshot.assets[slot]?.resourceId))
+      .map(([alias]) => [
+        canonicalResourceURL(alias),
+        mapResourceURL(snapshot, version, alias).split(/[?#]/)[0],
+      ]),
+  );
+  return `(()=>{const base=${quote(`/api/site/${version}`)}, mappings=${quote(mappings)};
+    function map(value){try{if(typeof value!=='string')return value;const u=new URL(value.replace(/^~/,''),location.origin+'/');if(u.pathname.includes('/api/site/'))return value;
+      let key=u.origin===location.origin?decodeURIComponent(u.pathname).replace(/^\\//,''):u.origin+u.pathname;
+      if(Object.hasOwn(mappings,key))return mappings[key]+(/\\.ktx2?$/i.test(mappings[key])?u.search:u.search.replace(/-compressedKtx2?/g,''))+u.hash;
+      if(u.origin!==location.origin)return value;
       if(/\\/cms\\/projects-[^/]+\\.json$/.test(u.pathname))return base+'/projects.json';
       if(/\\/cms\\/metadata-[^/]+\\.json$/.test(u.pathname))return base+'/metadata.json';
       if(/\\/cms\\/contact-[^/]+\\.json$/.test(u.pathname))return base+'/contact.json';
       if(u.origin===location.origin&&/\\/assets\\/data\\/uil\\.[^/]+\\.json$/.test(u.pathname))return base+'/uil.json';
       if(u.origin===location.origin&&u.pathname==='/assets/shaders/compiled.vs')return base+'/compiled.vs';
       return value;}catch{return value;}}
-    const fetchOriginal=window.fetch;window.fetch=function(input,init){const old=input instanceof Request?input.url:String(input);const next=map(old);return fetchOriginal.call(this,next!==old&&input instanceof Request?new Request(next,input):next!==old?next:input,init);};
+    window.__SITE_RESOURCE_URL__=map;
+    const fetchOriginal=window.fetch;window.fetch=function(input,init){const old=input instanceof Request?input.url:String(input);const next=map(old);return fetchOriginal.call(this,next!==old&&input instanceof Request?new Request(new URL(next,location.origin).href,input):next!==old?next:input,init);};
     const open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(method,url,...args){return open.call(this,method,map(url),...args);};
     window.__SITE_VERSION__=${quote(String(version))};document.title=${quote(config.site.title)};
   })();`;
@@ -168,27 +227,24 @@ function safeStatic(directory) {
 }
 function mountFrontend(app, store, options) {
   async function versionConfig(req) {
-    const repo = contentRepository(store);
-    const id = String(
-      req.params.version ||
-        req.query.preview ||
-        (await repo.getDraft())?.published,
-    );
-    if (id.startsWith("preview-")) {
-      if (!req.adminSession) throw fail(401, "预览需要登录");
-      const data = await store.transaction(async (tx) => {
-        const content = contentRepository(tx);
-        await content.prunePreviews(new Date());
-        return content.getPreview(id, req.adminSession.username, new Date());
-      });
-      if (!data) throw fail(404, "预览已过期");
-      return { id, config: data.snapshot.config, snapshot: data.snapshot };
-    }
-    if (!/^\d+$/.test(id)) throw fail(404, "版本不存在");
-    const row = await repo.getVersion(Number(id));
-    if (!row) throw fail(404, "版本不存在");
-    return { id, config: row.snapshot.config, snapshot: row.snapshot };
+    const { id, snapshot } = await resolveVersion(store, {
+      version: req.params.version,
+      preview: req.query.preview,
+      admin: req.adminSession,
+    });
+    return { id, snapshot, config: publicSnapshot(snapshot, id) };
   }
+  app.get(
+    "/api/site/:version/resources/:id/:fileName",
+    route(async (req, res, next) => {
+      const resource = await resolvePublishedResource(store, {
+        version: req.params.version,
+        id: req.params.id,
+        admin: req.adminSession,
+      });
+      return sendResource(req, res, next, resource, options);
+    }),
+  );
   app.get(
     "/api/site/:version/:file",
     route(async (req, res, next) => {
@@ -199,7 +255,7 @@ function mountFrontend(app, store, options) {
           case "config":
             return res.json(config);
           case "bridge.js":
-            return res.type("js").send(bridgeSource(id, config));
+            return res.type("js").send(bridgeSource(id, config, snapshot));
           case "app.js": {
             const file = appFile(options.root);
             if (!file) throw fail(503, "缺少前台运行资源，请阅读部署说明");
@@ -216,7 +272,7 @@ function mountFrontend(app, store, options) {
               );
           }
           case "uil.json":
-            return res.json(buildUIL(snapshot));
+            return res.json(versionedUIL(snapshot, id));
           case "projects.json":
             return res.json(config.projects);
           case "compiled.vs":
@@ -234,7 +290,11 @@ function mountFrontend(app, store, options) {
           case "metadata.json":
           case "contact.json": {
             return res.json(
-              snapshot.template[req.params.file.replace(".json", "")] || {},
+              mapResourceTree(
+                snapshot,
+                id,
+                snapshot.template[req.params.file.replace(".json", "")] || {},
+              ),
             );
           }
           default:
@@ -249,7 +309,29 @@ function mountFrontend(app, store, options) {
     ["/", "/work", "/work/:slug"],
     route(async (req, res, next) => {
       try {
-        const { id, config } = await versionConfig(req);
+        let resolved;
+        try {
+          resolved = await versionConfig(req);
+        } catch (error) {
+          if (error.status !== 404 || req.query.preview) throw error;
+          return res
+            .status(503)
+            .type("html")
+            .send(
+              '<!doctype html><meta charset="utf-8"><title>网站尚未发布</title><p>网站尚未发布，请在管理后台完成安装并发布内容。</p>',
+            );
+        }
+        const { id, config, snapshot } = resolved;
+        if (
+          !appFile(options.root) ||
+          !fs.existsSync(path.join(options.root, "index.html"))
+        )
+          return res
+            .status(503)
+            .type("html")
+            .send(
+              '<!doctype html><meta charset="utf-8"><title>缺少前台运行资源</title><p>缺少前台运行资源，请阅读部署说明并安装完整运行包。</p>',
+            );
         let html = fs.readFileSync(
           path.join(options.root, "index.html"),
           "utf8",
@@ -257,6 +339,20 @@ function mountFrontend(app, store, options) {
         html = html.replace(
           /<title>[\s\S]*?<\/title>/,
           () => `<title>${escapeHTML(config.site.title)}</title>`,
+        );
+        html = html.replace(
+          /(<link\b[^>]*\bhref=["'])([^"']+)(["'][^>]*>)/gi,
+          (all, start, url, end) =>
+            /\brel=["'][^"']*(?:icon|manifest)/i.test(all)
+              ? start + mapResourceURL(snapshot, id, url) + end
+              : all,
+        );
+        html = html.replace(
+          /url\(\s*(["']?)([^"')]+)\1\s*\)/g,
+          (all, q, url) =>
+            /\.(?:woff2?|ttf|otf)(?:[?#]|$)/i.test(url)
+              ? `url(${q}${mapResourceURL(snapshot, id, url)}${q})`
+              : all,
         );
         html = html.replace(
           /s = "assets\/js\/app\." \+ window\._CACHE_ \+ "\.js"/,
@@ -274,19 +370,57 @@ function mountFrontend(app, store, options) {
       }
     }),
   );
-  app.get("/assets/images/room/1234.ktx2", (req, res) => res.sendStatus(404));
-  app.use("/assets", safeStatic(path.join(options.root, "assets")));
-  for (const folder of ["room", "bush.bin"])
-    if (
-      fs.existsSync(path.join(options.root, folder)) &&
-      fs.statSync(path.join(options.root, folder)).isDirectory()
-    )
-      app.use("/" + folder, safeStatic(path.join(options.root, folder)));
+  const programs = safeStatic(path.join(options.root, "assets"));
+  app.use("/assets", (req, res, next) =>
+    /^\/(?:js|css)\/.*\.(?:js|css|wasm)$/i.test(req.path)
+      ? programs(req, res, next)
+      : next(),
+  );
+  app.get(
+    ["/assets/*", "/room/*", "/bush.bin/*"],
+    route(async (req, res, next) => {
+      const { id, snapshot } = await versionConfig(req);
+      const asset = resourceAsset(snapshot, req.path);
+      if (!asset) throw fail(404, "资源不存在");
+      const resource = await resolvePublishedResource(store, {
+        version: id,
+        id: asset.resourceId,
+        admin: req.adminSession,
+      });
+      return sendResource(req, res, next, resource, options);
+    }),
+  );
   app.get("/unsupported.html", (req, res) =>
     res.sendFile(path.join(options.root, "unsupported.html")),
   );
 }
+function versionedUIL(snapshot, id) {
+  const data = buildUIL(snapshot);
+  for (const [key, value] of Object.entries(data)) {
+    if (!value || typeof value !== "object" || typeof value.src !== "string")
+      continue;
+    const original =
+      /(?:geometry|initialPositions)$/.test(key) &&
+      value.relative?.includes(".")
+        ? value.relative
+        : value.src;
+    const src = mapResourceURL(snapshot, id, original);
+    if (src !== original)
+      data[key] = {
+        ...value,
+        src,
+        relative: "",
+        prefix: "",
+        filename: src.split("/").at(-1).split("?")[0],
+        compressed: false,
+        useCompressed: false,
+        hotreload: false,
+      };
+  }
+  return data;
+}
 module.exports = {
+  versionedUIL,
   bridgeSource,
   patchAppSource,
   patchShaders,

@@ -110,7 +110,12 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
     await fetch(base + `/api/site/${published.version}/uil.json`)
   ).json();
   const url = uil.image.src;
-  assert.match(url, /^\/assets\/geometry\/admin\//);
+  assert.match(
+    url,
+    new RegExp(
+      `^/api/site/${published.version}/resources/${resource.id}/.*\\.bin$`,
+    ),
+  );
   const model = await fetch(base + url);
   assert.equal(model.status, 200);
   assert((await model.arrayBuffer()).byteLength > 90);
