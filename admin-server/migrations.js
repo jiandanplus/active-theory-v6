@@ -1,11 +1,12 @@
-const {readFileSync} = require('node:fs');
-const {join} = require('node:path');
-const {createHash} = require('node:crypto');
-const sql = readFileSync(join(__dirname, 'migrations/001-initial.sql'), 'utf8');
-const digest = value => createHash('sha256').update(value).digest('hex');
+const { readFileSync } = require("node:fs");
+const { join } = require("node:path");
+const { createHash } = require("node:crypto");
+const sql = readFileSync(join(__dirname, "migrations/001-initial.sql"), "utf8");
+const digest = (value) => createHash("sha256").update(value).digest("hex");
 const checksum = digest(sql);
 // PostgreSQL 18 catalog signature of the exact 001 schema, excluding row data.
-const schemaSignature = 'd707b879563d88ac731f0e95982187542f1d260bec0ad866110bc3f155f90534';
+const schemaSignature =
+  "d707b879563d88ac731f0e95982187542f1d260bec0ad866110bc3f155f90534";
 
 // Catalog definitions, not row data or object OIDs, detect structural drift.
 const signatureQuery = `
@@ -36,22 +37,45 @@ const signatureQuery = `
  ) definitions ORDER BY kind COLLATE "C", name COLLATE "C"`;
 
 async function inspectInstallation(store) {
-  const exists = (await store.query("SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present")).rows[0].present;
-  if (!exists) return {state:'uninstalled', schemaVersion:null};
-  const signature = digest(JSON.stringify((await store.query(signatureQuery)).rows));
-  if (signature !== schemaSignature) return {state:'incompatible', schemaVersion:null};
-  const versions = (await store.query('SELECT version,checksum FROM personal_site.schema_migrations ORDER BY version')).rows;
-  if (versions.length !== 1 || versions[0].version !== 1 || versions[0].checksum !== checksum) return {state:'incompatible', schemaVersion:null};
-  const rows = (await store.query('SELECT schema_version FROM personal_site.installation')).rows;
-  if (rows.length > 1 || (rows.length && rows[0].schema_version !== 1)) return {state:'incompatible', schemaVersion:1};
-  return {state:rows.length ? 'installed':'uninstalled', schemaVersion:1};
+  const exists = (
+    await store.query(
+      "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
+    )
+  ).rows[0].present;
+  if (!exists) return { state: "uninstalled", schemaVersion: null };
+  const signature = digest(
+    JSON.stringify((await store.query(signatureQuery)).rows),
+  );
+  if (signature !== schemaSignature)
+    return { state: "incompatible", schemaVersion: null };
+  const versions = (
+    await store.query(
+      "SELECT version,checksum FROM personal_site.schema_migrations ORDER BY version",
+    )
+  ).rows;
+  if (
+    versions.length !== 1 ||
+    versions[0].version !== 1 ||
+    versions[0].checksum !== checksum
+  )
+    return { state: "incompatible", schemaVersion: null };
+  const rows = (
+    await store.query("SELECT schema_version FROM personal_site.installation")
+  ).rows;
+  if (rows.length > 1 || (rows.length && rows[0].schema_version !== 1))
+    return { state: "incompatible", schemaVersion: 1 };
+  return { state: rows.length ? "installed" : "uninstalled", schemaVersion: 1 };
 }
 async function migrate(tx) {
-  await tx.query('SELECT pg_advisory_xact_lock($1)', [734216901]);
+  await tx.query("SELECT pg_advisory_xact_lock($1)", [734216901]);
   const state = await inspectInstallation(tx);
-  if (state.state === 'incompatible') throw new Error('Incompatible personal_site schema');
+  if (state.state === "incompatible")
+    throw new Error("Incompatible personal_site schema");
   if (state.schemaVersion !== null) return;
   await tx.query(sql);
-  await tx.query('INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)', [1,checksum]);
+  await tx.query(
+    "INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)",
+    [1, checksum],
+  );
 }
-module.exports = {migrate, inspectInstallation};
+module.exports = { migrate, inspectInstallation, checksum };

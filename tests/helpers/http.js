@@ -25,6 +25,7 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
       root: content.root,
       dataDir: content.root + "/data",
       origin: "http://localhost:3000",
+      setupToken: "ab".repeat(32),
       ...options,
       store,
     });
@@ -58,6 +59,20 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
       "X-CSRF-Token": (await response.json()).csrfToken,
     };
   }
+  async function setupSession() {
+    const response = await request("/api/setup/authorize", {
+      method: "POST",
+      headers: json,
+      body: JSON.stringify({ token: options.setupToken || "ab".repeat(32) }),
+    });
+    if (response.status !== 200)
+      throw new Error(`Setup authorization failed: ${response.status}`);
+    return {
+      ...json,
+      Cookie: response.headers.get("set-cookie").split(";")[0],
+      "X-CSRF-Token": (await response.json()).csrfToken,
+    };
+  }
   return {
     get app() {
       return app;
@@ -70,6 +85,7 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
     },
     request,
     login,
+    setupSession,
     json,
     async createAdmin() {
       await createAccount(store, "owner", password);

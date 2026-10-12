@@ -40,9 +40,15 @@ async function secret(prompt) {
   });
 }
 async function main() {
+  const reset = process.argv.includes("--reset");
+  if (!reset) {
+    console.log(
+      "首次管理员只能通过网页安装创建，请访问 /admin/；本命令仅支持 --reset。",
+    );
+    return;
+  }
   const options = loadOptions(),
-    store = openPostgres({ databaseUrl: process.env.DATABASE_URL }),
-    reset = process.argv.includes("--reset");
+    store = openPostgres({ databaseUrl: options.databaseUrl });
   try {
     if ((await inspectInstallation(store)).state !== "installed")
       throw new Error("请先完成网页安装，再使用本地管理员命令");

@@ -1,15 +1,10 @@
 const path = require("node:path");
 const fs = require("node:fs");
 const express = require("express");
-const { openStore } = require("./database");
+const { openPostgres } = require("./database");
+const { mountInstallation, installationStatus } = require("./installation");
 const { mountAuth } = require("./security");
-const {
-  initializeConfig,
-  saveDraft,
-  publish,
-  restore,
-  createPreview,
-} = require("./config");
+const { saveDraft, publish, restore, createPreview } = require("./config");
 const { route, publicError } = require("./http");
 const { contentRepository } = require("./repositories/content");
 const { resourceRepository } = require("./repositories/resources");
@@ -59,7 +54,12 @@ function createApp(options = {}) {
   if (options.production && !options.origin.startsWith("https://"))
     throw new Error("生产环境 SITE_ORIGIN 必须为 HTTPS");
   const app = express(),
-    store = options.store || openStore(options.dataDir);
+    store =
+      options.store ||
+      openPostgres({
+        databaseUrl: options.databaseUrl,
+        ssl: options.databaseSSL,
+      });
   app.locals.store = store;
   app.disable("x-powered-by");
   if (options.trustProxy) app.set("trust proxy", options.trustProxy);
@@ -78,8 +78,25 @@ function createApp(options = {}) {
       res.set("Cache-Control", "no-store");
     next();
   });
+  mountInstallation(app, { store, options });
+  app.use(
+    "/admin",
+    express.static(path.join(__dirname, "../admin-ui"), {
+      index: "index.html",
+      dotfiles: "deny",
+    }),
+  );
+  app.use(
+    route(async (req, res, next) => {
+      const state = await installationStatus(store);
+      if (state.state !== "installed")
+        return res
+          .status(503)
+          .json({ error: "网站尚未安装或暂时不可用", state: state.state });
+      next();
+    }),
+  );
   app.use(express.json({ limit: "5mb" }));
-  if (!options.store) initializeConfig(store, options.root);
   const { requireAuth, csrfGuard } = mountAuth(app, store, options);
   const admin = express.Router();
   app.use("/api/admin", requireAuth, csrfGuard, admin);
@@ -174,13 +191,6 @@ function createApp(options = {}) {
   mountModels({ app, admin, store, options });
   app.use(["/api/projects", "/api/build"], requireAuth, (req, res) =>
     res.status(410).json({ error: "旧接口已停用，请使用 /admin" }),
-  );
-  app.use(
-    "/admin",
-    express.static(path.join(__dirname, "../admin-ui"), {
-      index: "index.html",
-      dotfiles: "deny",
-    }),
   );
   mountFrontend(app, store, options);
   app.use((req, res) => res.status(404).json({ error: "未找到资源" }));

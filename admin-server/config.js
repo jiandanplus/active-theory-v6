@@ -198,19 +198,6 @@ function buildUIL(snapshot) {
       `\npos *= ${size.toFixed(4)};`;
   return data;
 }
-function initializeConfig(store, root) {
-  if (store.get("draft")) return;
-  const config = initialConfig(root);
-  store.transaction(() => {
-    store.set("schema", config);
-    store.set("draft", config);
-    store.set("revision", 0);
-    const result = store.db
-      .prepare("INSERT INTO versions(created,config) VALUES(?,?)")
-      .run(new Date().toISOString(), JSON.stringify(config));
-    store.set("published", Number(result.lastInsertRowid));
-  });
-}
 function assertRevision(draft, revision) {
   if (!draft || revision !== draft.revision)
     throw fail(409, "配置版本冲突，请刷新后重新编辑");
@@ -303,7 +290,6 @@ module.exports = {
   initialConfig,
   validateConfig,
   buildUIL,
-  initializeConfig,
   saveDraft,
   publish,
   restore,

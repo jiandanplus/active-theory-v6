@@ -10,6 +10,9 @@ function loadOptions(root = path.resolve(__dirname, "..")) {
     origin:
       process.env.SITE_ORIGIN || `http://localhost:${process.env.PORT || 3000}`,
     masterKey: process.env.SITE_MASTER_KEY,
+    databaseUrl: process.env.DATABASE_URL,
+    setupToken: process.env.SETUP_TOKEN,
+    legacyPath: process.env.LEGACY_SQLITE_PATH,
     endpointAllowlist: (process.env.S3_ENDPOINT_ALLOWLIST || "")
       .split(",")
       .map((s) => s.trim())
