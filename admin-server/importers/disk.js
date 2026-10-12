@@ -18,7 +18,10 @@ function read(root, file, fallback = "") {
     return fs.readFileSync(actual, "utf8");
   } catch (error) {
     if (error.status) throw error;
-    return fallback;
+    if (error.code === "ENOENT") return fallback;
+    throw Object.assign(new Error("Import source could not be read"), {
+      status: 409,
+    });
   }
 }
 function uilFile(root) {

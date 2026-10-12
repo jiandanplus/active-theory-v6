@@ -26,6 +26,144 @@ const sourceHashes = (root) =>
       }),
   );
 
+test("geometry aliases use engine paths, retain aliases and report missing required slots", async (t) => {
+  const f = contentFixture(t);
+  const aliases = [
+    "room/floor.bin",
+    "room/walls.bin",
+    "room/prop.bin",
+    "room/land.bin",
+    "room/light.bin",
+    "caustic_plane.bin",
+    "bush.bin/caustic_plane.bin",
+    "room/extensionless",
+  ];
+  const baseUIL = Object.fromEntries(
+    aliases.map((src, i) => [`test_${i}_geometry`, { src }]),
+  );
+  const missing = await inventoryResources({
+    root: f.root,
+    template: { baseUIL },
+    manifest: [],
+  });
+  for (const [i, alias] of aliases.entries()) {
+    const slot = `uil:test_${i}_geometry`;
+    assert.ok(missing.report.missingRequired.includes(slot));
+    assert.equal(missing.legacyMap[alias], slot);
+    const file = `assets/geometry/${alias}${alias.includes(".") ? "" : ".json"}`;
+    fs.mkdirSync(path.dirname(path.join(f.root, file)), { recursive: true });
+    fs.writeFileSync(path.join(f.root, file), "geometry");
+  }
+  const present = await inventoryResources({
+    root: f.root,
+    template: { baseUIL },
+    manifest: [],
+  });
+  assert.deepEqual(present.report.missingRequired, []);
+  for (const [i, alias] of aliases.entries()) {
+    const slot = `uil:test_${i}_geometry`;
+    assert.equal(present.assets[slot].url, alias);
+    assert.equal(present.legacyMap[alias], slot);
+    assert.equal(
+      present.resources.find((r) => r.id === present.assets[slot].resourceId)
+        .status,
+      "ready",
+    );
+  }
+});
+
+test("unsupported required media slots cannot silently disappear", async (t) => {
+  const f = contentFixture(t);
+  const result = await inventoryResources({
+    root: f.root,
+    manifest: [
+      {
+        owner: "engine",
+        slot: "unsupported",
+        url: "unknown.png",
+        required: true,
+      },
+    ],
+  });
+  assert.ok(result.report.missingRequired.includes("unsupported"));
+});
+
+test("UIL engine relative-file fallback is used while builtins and unset fields are not media", async (t) => {
+  const f = contentFixture(t);
+  const baseUIL = {
+    builtin_geometry: { src: "", relative: "World.SPHERE" },
+    fallback_geometry: { src: "", relative: "tree_room/walls.bin" },
+    alias_geometry: { src: "bush.bin/caustic_plane.bin", relative: "bush.bin" },
+    unset_geometry: { src: "", relative: "assets/geometry/room" },
+    config_initialPositions: { src: "", relative: "null" },
+  };
+  fs.mkdirSync(path.join(f.root, "assets/geometry/tree_room"), {
+    recursive: true,
+  });
+  fs.writeFileSync(
+    path.join(f.root, "assets/geometry/tree_room/walls.bin"),
+    "geometry",
+  );
+  const result = await inventoryResources({
+    root: f.root,
+    template: { baseUIL },
+    manifest: [],
+  });
+  assert.deepEqual(result.report.missingRequired, ["uil:alias_geometry"]);
+  assert.equal(
+    result.resources.find(
+      (r) => r.id === result.assets["uil:fallback_geometry"].resourceId,
+    ).status,
+    "ready",
+  );
+  assert.equal(
+    result.resources.find(
+      (r) => r.id === result.assets["uil:alias_geometry"].resourceId,
+    ).path,
+    "assets/geometry/bush.bin",
+  );
+  assert.equal(
+    result.legacyMap["bush.bin/caustic_plane.bin"],
+    "uil:alias_geometry",
+  );
+  assert.equal(result.assets["uil:builtin_geometry"], undefined);
+  assert.equal(result.assets["uil:unset_geometry"], undefined);
+});
+
+test("disk fallback is limited to absent files and other read failures are safe conflicts", (t) => {
+  const f = contentFixture(t);
+  const { read } = require("../admin-server/importers/disk");
+  assert.equal(read(f.root, "absent", "fallback"), "fallback");
+  assert.throws(() => read(f.root, "assets", "fallback"), {
+    status: 409,
+    message: "Import source could not be read",
+  });
+});
+
+test("check CLI decrypts storage using canonical SITE_MASTER_KEY without exposing credentials", (t) => {
+  const f = importFixture(t);
+  const env = { ...process.env, SITE_MASTER_KEY: f.masterKey };
+  delete env.STORAGE_MASTER_KEY;
+  const result = spawnSync(
+    process.execPath,
+    [
+      path.join(__dirname, "../scripts/import-site.js"),
+      "--check",
+      "--root",
+      f.root,
+      "--legacy",
+      f.legacyPath,
+    ],
+    { encoding: "utf8", env },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  assert.deepEqual(JSON.parse(result.stdout).credentialsUnavailable, []);
+  assert.doesNotMatch(
+    result.stdout,
+    /private-access|private-secret|preserved-password-hash/,
+  );
+});
+
 test("legacy import preserves IDs, account, history, ciphertext, audit and source bytes", async (t) => {
   const f = importFixture(t);
   const b = await readLegacy({

@@ -22,7 +22,7 @@ async function main(args = process.argv.slice(2)) {
     ? await readLegacy({
         root,
         legacyPath: path.resolve(options.legacy),
-        masterKey: process.env.STORAGE_MASTER_KEY,
+        masterKey: process.env.SITE_MASTER_KEY,
       })
     : await readBundle({ root, mode: options.mode || "empty" });
   process.stdout.write(JSON.stringify(bundle.report, null, 2) + "\n");

@@ -125,7 +125,18 @@ async function inventoryResources({
       typeof entry.url !== "string"
     )
       throw conflict("Invalid engine asset manifest");
-    const info = await resolve(entry.url);
+    // GeomThread.loadGeometry prefixes relative UIL geometry names and adds
+    // .json only when no extension is present. Keep the source alias intact.
+    let resolvedURL = entry.resolvedURL ?? entry.url;
+    if (
+      entry.type === "model" &&
+      !/^(?:https?:\/\/|\/|assets\/)/.test(resolvedURL)
+    ) {
+      const [file] = resolvedURL.split(/[?#]/);
+      resolvedURL =
+        "assets/geometry/" + file + (file.includes(".") ? "" : ".json");
+    }
+    const info = await resolve(resolvedURL);
     if (!info) {
       if (/^https:\/\//.test(entry.url)) {
         if (entry.required) missingRequired.push(entry.slot);
@@ -152,6 +163,11 @@ async function inventoryResources({
           group: entry.group,
         };
         legacyMap[entry.url] = entry.slot;
+      } else if (
+        !/^\/(?:media\/|models\/|assets\/geometry\/admin\/)/.test(entry.url)
+      ) {
+        if (entry.required) missingRequired.push(entry.slot);
+        warnings.push(`Unsupported resource URL: ${entry.slot}`);
       }
       return;
     }
@@ -264,25 +280,48 @@ async function inventoryResources({
           owner: "scene",
           slot: `scene:${scene.id}:${digest([field.key, field.value]).slice(0, 24)}`,
           url: field.value,
+          resolvedURL:
+            field.type === "geometry" &&
+            template.baseUIL?.[field.key]?.src === field.value &&
+            typeof template.baseUIL[field.key].relative === "string" &&
+            template.baseUIL[field.key].relative.includes(".")
+              ? template.baseUIL[field.key].relative
+              : field.value,
           type: field.type === "geometry" ? "model" : undefined,
           required: true,
         });
   const effective = structuredClone(template.baseUIL || {});
   for (const scene of config.scenes || [])
     for (const field of scene.fields || [])
-      if (!field.key.startsWith("__"))
+      if (
+        !field.key.startsWith("__") &&
+        effective[field.key]?.src !== field.value
+      )
         effective[field.key] = ["resource", "geometry"].includes(field.type)
           ? { src: field.value }
           : field.value;
   for (const [key, value] of Object.entries(effective))
-    if (value && typeof value === "object" && typeof value.src === "string")
+    if (value && typeof value === "object" && typeof value.src === "string") {
+      // InputUIL.getFilePath prefers a dotted relative value (including
+      // engine builtins) to src; otherwise empty src means no file is loaded.
+      const model = /(?:geometry|initialPositions)$/.test(key);
+      const file =
+        model &&
+        typeof value.relative === "string" &&
+        value.relative.includes(".")
+          ? value.relative
+          : value.src;
+      if (!file || (model && /^(?:World|SceneLayout)\.[\w]+$/.test(file)))
+        continue;
       await register({
         owner: "uil",
         slot: `uil:${key}`,
-        url: value.src,
-        type: /geometry$/.test(key) ? "model" : undefined,
+        url: value.src || file,
+        resolvedURL: file,
+        type: model ? "model" : undefined,
         required: true,
       });
+    }
   // Only declared icon/font HTML slots are resources; links and scripts are not
   // inferred from arbitrary strings in minified source.
   let html = "";
