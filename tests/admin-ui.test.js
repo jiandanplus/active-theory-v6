@@ -29,3 +29,11 @@ test('admin DOM has no HTML injection sinks and includes navigation and dirty gu
   assert.match(source,/beforeunload/);
   for(const section of ['overview','site','scenes','projects','resources','storage','versions','security']) assert.ok(source.includes(section));
 });
+test('deployment and font guidance names actual env and explicit validation limits', () => {
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  assert.doesNotMatch(source,/ADMIN_MASTER_KEY/);
+  assert.match(source,/SITE_MASTER_KEY/);
+  assert.match(source,/字形.*验证.*拒绝/);
+  assert.match(source,/CORS/);
+  assert.match(source,/前台预览/);
+});
