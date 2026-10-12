@@ -43,3 +43,12 @@ test('uploaded local and S3 models can convert but external and ready models can
   assert.equal(ui.canConvert({kind:'model',source:'external',status:'unverified'}),false);
   assert.equal(ui.canConvert({kind:'model',source:'local',status:'ready'}),false);
 });
+test('confirmations use asynchronous accessible in-page dialogs without native blockers',()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  assert.doesNotMatch(source,/\bconfirm\(/);
+  assert.match(source,/function confirmAction\(/);
+  assert.match(source,/aria-labelledby/);
+  assert.match(source,/aria-describedby/);
+  assert.match(source,/await confirmAction\(/);
+  assert.match(source,/addEventListener\('cancel'/);
+});
