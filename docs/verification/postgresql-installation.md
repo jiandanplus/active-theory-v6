@@ -1,6 +1,6 @@
 # PostgreSQL 安装与部署：实际验证记录
 
-验证日期：2026-10-13（Asia/Shanghai）。这是 Task9 的带阻断项 checkpoint，不是全项目已通过验收、生产已迁移或可以立即切换的声明。空白站点的真实 3D 前台仍有阻断缺陷，见下文；完整内容包流程的成功不能替代空白模式验收。
+验证日期：2026-10-13（Asia/Shanghai）。这是 Task9 的实际验证记录，不是全项目已通过独立审查、生产已迁移或可以立即切换的声明。原空白站点 75% 阻断已由独立有界修复完成真实浏览器复验（见下文）；整分支独立审查仍是最终 gate。
 
 ## 测试边界
 
@@ -98,11 +98,15 @@ Playwright CLI 驱动真实浏览器和真实 PG/Compose API，不拦截安装/�
 
 旧站流程另用 UUID PG 与临时 root/dataDir 的只读 SQLite 样本：选择旧站来源 → 预检 → 保留原管理员（没有新账号/密码字段）→ 安装 → 用原密码手动登录。实证 1管理员、保留版本42、40资源。临时 runner 初次漏用 tty 导致 stdin 关闭，无法从该运行取回安装前 SHA 基线；**不声称这次 UI 导入已做前后字节比对**。后来用独一生成密码/盐化 hash 严格识别拥有的测试库与临时 root，只读再次导入，前后 SHA 一致：`fbac126aa65f55d03083314e242e6f2d6bb28291ee6f13367e80227b2d4c5beb`。自动化导入用例另有自己的前后源字节验证。该临时进程、UUID 库与 root 已严格定目标清理，不触碰真实 SQLite。
 
-### 未通过且必须修复：默认空白模式的前台
+### 已修复并独立复验：默认空白模式的前台
 
-空白安装/登录/上传/保存/预览 API/发布持久化正常，但完整素材下的真实 3D 预览卡在 75%。这不是“可接受限制”，而是 Task9 最终 gate 的阻断项，内容包成功不能掩盖。
+原空白预览卡在 75% 的三个独立原因是 CMSData 对空作品调用 mockData 数组、ContactUI 空串动画/真值宽度等待，以及 Text3D 跳过空文本的对象创建。生成兼容层现保留真正空 StateArray，以 loaded 生命周期替代非零尺寸等待，允许正常字体/零顶点几何/shader 初始化，并修复 nonempty→empty 的底层文本更新。原 assets 未修改，没有伪造项目、占位文字或强制 ready。缺少外链的联系页不实例化旧个人二维码/同步组件，也不启用无目标按钮；已有配置分支保留。
 
-真实 console 确认 `mockData is not a function`、空 Contact 文案 glitch、Text3D `.text`/`.alpha` 未构造对象等；只读诊断已找到 CMSData、ContactUI、Text3D 的独立空内容假设。截图 `output/playwright/task9/new-preview.png`，诊断工作记录 `.git/sdd/pg-empty-diagnosis.md`。本 checkpoint 未追加空白生产补丁；需独立有界修复、真实空白浏览器复验及整分支审查后才可移除阻断。
+新临时 root/dataDir 与独立 UUID PostgreSQL（`site_test_646b170e0f074790ba1e603ad5ef327c`）实际经过普通 UI 空白安装、手动登录、仅编辑标题 `EmptyRuntimeVerified`、保存、预览、确认发布 v1。预检 310 资源/0 作品/0 歌曲、missingRequired=[]；预览 App/ViewController 与全部场景真实 ready、Global/loadFinished，加载器退出，Home/Work/Contact 可用。随后新应用进程重新打开相同独立库和 dataDir，匿名独立浏览器同样完成加载，admin/me=401。公开配置仍为 0 作品/0 歌曲，5 个场景文案和全部 8 个 UIL 文案仍为空；没有恢复旧个人/样例文案。
+
+真实 Text3D 实例在重启后执行 empty→`After restart`→empty：position 数组长度 0→144→0，空字符串宽高/包围盒 min/max/球半径均为有限 0，shader 就绪。非空内容包另用独立 UUID/root/dataDir 回归：16 作品/8 歌曲，原 Logo、TreeScene 黑洞和已配置联系行为保持。截图 `output/playwright/pg-empty-home.png`、`pg-empty-contact-final.png`、`pg-nonempty-home.png`、`pg-nonempty-tree.png` 均实际查看。原六类空内容 TypeError 未再出现；仍保留原 stylesheet、纹理、字体和媒体告警，不能声称网络/音频全零错误。
+
+最后代码变更后完整 `rtk proxy node scripts/test-postgres.js` 为 **190/190、0 fail、0 skipped**（约13.51秒）。新增 7 项明确命名的 authorized runtime 测试执行真实原包函数；干净 checkout 若没有授权运行包会明确 skip 这 7 项并提示引擎兼容性未验证，有原包而关键源码 anchor 缺失仍失败。PostgreSQL 集成测试不因此跳过。RED/GREEN 与浏览器明细见本地工作记录 `.git/sdd/pg-empty-fix-report.md`；初始诊断 `.git/sdd/pg-empty-diagnosis.md` 保留为历史失败证据。
 
 ### 其他未验证/原有内容问题
 

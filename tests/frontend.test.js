@@ -1,5 +1,119 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
+const runtimeRoot = require("node:path").join(__dirname, "..");
+const licensedRuntime = require("../admin-server/config").appFile(runtimeRoot);
+const runtimeTest = (name, fn) => test(`authorized runtime: ${name}`, {
+  skip: !licensedRuntime && "Authorized original runtime bundle absent; engine compatibility is not verified",
+}, fn);
+const runtimeSource = () => require("node:fs").readFileSync(
+  require("node:path").join(runtimeRoot, "assets/js", licensedRuntime), "utf8");
+function runtimeClass(source, name) {
+  const start = source.indexOf(`Class((function ${name}(`);
+  assert(start >= 0, `Missing original ${name} source anchor`);
+  const end = source.indexOf("Class((function ", start + 20);
+  return source.slice(start, end < 0 ? source.length : end);
+}
+runtimeTest("ContactUI empty and one-character text are safe and zero-width layout completes", async () => {
+  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const code = runtimeClass(source, "ContactUI");
+  const helper = code.slice(code.indexOf("function replaceRandomLetters"), code.indexOf(" _this.element &&"));
+  const replace = new Function(`${helper};return replaceRandomLetters;`)();
+  assert.equal(replace("", 10), "");
+  assert.equal(replace("A", 10), "A");
+  assert.equal(replace("Contact", 0), "Contact");
+  for (const mobile of [false, true]) {
+    let loads = 0;
+    const nodes = {};
+    const self = new Proxy({ wait: async (fn) => assert(fn(), "layout must not await a truthy zero width") }, {
+      get(target, key) { return target[key] ?? (nodes[key] ??= { width: 10, height: 10, dimensions: { width: 0, height: 0 }, loaded: async () => { loads++; } }); },
+    });
+    const layout = code.slice(code.indexOf("async function updateLayout"), code.indexOf("function replaceRandomLetters"));
+    const math = Object.create(Math); math.range = (v, a, b, c, d) => c + (v - a) * (d - c) / (b - a);
+    await new Function("_this", "Device", "Stage", "Math", `${layout};return updateLayout();`)(self, { mobile }, { width: mobile ? 400 : 1400, height: 900 }, math);
+    assert(loads >= 4);
+    for (const node of Object.values(nodes)) for (const key of ["x", "y", "width", "height"]) if (key in node) assert(Number.isFinite(node[key]));
+  }
+});
+runtimeTest("ContactUI absent configured links and personal accessibility text are not retained", () => {
+  const code = runtimeClass(require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] }), "ContactUI");
+  assert(!code.includes('mailto:'));
+  assert(!code.includes("drawbookai.cn"));
+  assert(!code.includes('"Los Angeles"'));
+  const links = code.slice(code.indexOf('_this.email.interact'), code.indexOf('_this.bind("ViewController/contact"'));
+  assert.equal(links, "", "absent targets must not register interactive links");
+});
+runtimeTest("ContactUI without external destination does not instantiate personal QR or advertise its controls", () => {
+  const patch = require("../admin-server/frontend").patchAppSource;
+  const empty = runtimeClass(patch(runtimeSource(), { site: {}, songs: [] }), "ContactUI");
+  assert(!empty.includes("_this.initClass(MobileSync)"), "no source-domain QR or multiplayer session on an empty contact page");
+  for (const label of ["JION US", "ABOUT US", "[ wechat ]", "Newsletter Signup", "Careers"])
+    assert(!empty.includes(label), `empty contact retains ${label}`);
+  const filled = runtimeClass(patch(runtimeSource(), { site: { labUrl: "https://example.test", emailLink: "person@example.test" } }), "ContactUI");
+  assert(filled.includes("_this.initClass(MobileSync)"));
+  assert(filled.includes('mailto:person@example.test'));
+  assert(filled.includes("JION US"));
+});
+runtimeTest("CMS workItems uses real zero/one/many StateArrays through actual Model protocol", async () => {
+  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const model = runtimeClass(source, "Model");
+  const method = model.slice(model.indexOf("this.makeRequest ="), model.indexOf(", this.request ="));
+  const cms = runtimeClass(source, "CMSData");
+  const handler = cms.slice(cms.indexOf('Data.handleRequest("workItems"'), cms.indexOf(', _this.flag("isReady"'));
+  class StateArray extends Array {}
+  for (const records of [[], [{ id: "a" }], [{ id: "b" }, { id: "a" }]]) {
+    const pages = new StateArray(...records), requests = {}, target = {};
+    new Function("Data", "_workPages", "StateArray", handler)({ handleRequest: (key, fn) => requests[key] = fn }, pages, StateArray);
+    new Function("_requests", "StateArray", method).call(target, requests, StateArray);
+    assert.equal(await target.makeRequest("workItems", {}, () => [{ id: "sample" }]), pages);
+    assert.deepEqual([...pages], records);
+  }
+});
+runtimeTest("Text3D initializes empty content through the real text creation path", () => {
+  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const code = runtimeClass(source, "Text3D");
+  const init = code.slice(code.indexOf("function initText()"), code.indexOf("async function overrideLocalize"));
+  for (const text of ["", "Hello"]) {
+    const calls = [];
+    new Function("_config", "Text3D", "parseData", "createText", `let _fontObject;${init};initText();`)({ get: (k) => k === "data" ? '{"size":12}' : text }, {}, (v) => v, (...args) => calls.push(args));
+    assert.equal(calls.length, 1);
+    assert.equal(calls[0][0], text);
+  }
+});
+runtimeTest("actual text worker produces finite zero bounds and no glyphs for empty content", () => {
+  const vm = require("node:vm");
+  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const code = runtimeClass(source, "GLTextThread").replace(/,\s*$/, ";");
+  const context = { result: null, window: { zUtils3D: true }, Thread: { upload(fn) { context.generate = fn; } }, Class(fn) { new fn(); }, resolve: (buffers) => { context.result = buffers; }, GeometryAttribute: function(array) { this.array = array; }, Geometry: class {
+    addAttribute(key, value) { this[key] = value; }
+    computeBoundingBox() { this.boundingBox = { min: { x: Infinity, y: Infinity, z: Infinity, set(x,y,z) { Object.assign(this,{x,y,z}); } }, max: { x: -Infinity, y: -Infinity, z: -Infinity, set(x,y,z) { Object.assign(this,{x,y,z}); } } }; }
+    computeBoundingSphere() { this.boundingSphere = { center: { x: NaN, y: NaN, z: NaN, set(x,y,z) { Object.assign(this,{x,y,z}); } }, radius: NaN }; }
+  } };
+  vm.runInNewContext('Array.prototype.last=function(){return this[this.length-1]};' + code, context);
+  context.generate({ text: "", size: 12, json: { common: { base: 12, scaleW: 256, scaleH: 256 }, kernings: [] }, glyphs: {}, config: {} }, 1);
+  assert.equal(context.result.position.length, 0);
+  assert.equal(context.result.index.length, 0);
+  assert.equal(context.result.lineLength, 0);
+  for (const value of [context.result.boundingBox.min.x, context.result.boundingBox.max.x, context.result.boundingSphere.center.x, context.result.boundingSphere.radius]) assert.equal(value, 0);
+});
+runtimeTest("GLText clears existing geometry and string on nonempty to empty update", async () => {
+  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const code = runtimeClass(source, "GLText").replace(/,\s*$/, ";");
+  let Type;
+  const create = () => { let resolve; const p = new Promise(r => resolve = r); p.resolve = resolve; return p; };
+  const P = { create };
+  const buffers = (text) => ({ position: new Float32Array(text.length * 12), uv: new Float32Array(0), local: new Float32Array(0), animation: new Float32Array(0), weight: new Float32Array(0), index: new Uint16Array(text.length * 6), boundingBox: {}, boundingSphere: {}, letterCount: text.length, wordCount: -1, lineCount: -1 });
+  function Geometry() { this.attributes = {}; this.addAttribute = (k,v) => this.attributes[k] = v; this.setIndex = (v) => this.index = v; }
+  function Attribute(array) { this.array = array; this.setArray = (next) => this.array = next; }
+  function TextGeometry({ text }) { this.loaded = Promise.resolve({ buffers: buffers(text), height: 0 }); }
+  new Function("Class", "Promise", "GLTextGeometry", "Geometry", "GeometryAttribute", "Color", "Shader", "Mesh", "Utils3D", "Utils", "document", code)(fn => { Type = fn; Type.FONT_CONFIG = {}; }, P, TextGeometry, Geometry, Attribute, function(){}, function(){}, function(g,s){this.geometry=g;this.shader=s;}, { getEmptyTexture(){} }, { uuid: () => "test" }, { getElementById: () => null });
+  const text = new Type({ font: "test", text: "Hello" });
+  await text.ready();
+  await text.setText("");
+  assert.equal(text.string, "");
+  assert.equal(text.geometry.attributes.position.array.length, 0);
+  await text.setText("A");
+  assert.equal(text.string, "A");
+});
 test("snapshot mapping handles encoded paths and queries only in resource fields", () => {
   const {
     mapResourceURL,

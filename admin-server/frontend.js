@@ -31,6 +31,28 @@ function replaceClass(source, name, transform) {
 }
 function patchAppSource(source, config) {
   const site = config.site;
+  source = replaceClass(source, "CMSData", (code) => code.replace(
+    "_workPages.length ? _workPages : new StateArray(mockData())", "_workPages",
+  ));
+  // Keep empty content on the engine's normal font/geometry/shader lifecycle.
+  // No sentinel glyphs: an empty mesh has zero vertices and finite zero bounds.
+  source = replaceClass(source, "Text3D", (code) => code.replace(
+    "text && createText(text, _fontObject)", "createText(text ?? \"\", _fontObject)",
+  ));
+  source = replaceClass(source, "GLTextThread", (code) => code.replace(
+    "let backing = [];",
+    "if (geom && !buffers.position.length) { geom.boundingBox.min.set(0, 0, 0); geom.boundingBox.max.set(0, 0, 0); geom.boundingSphere.center.set(0, 0, 0); geom.boundingSphere.radius = 0; } let backing = [];",
+  ));
+  source = replaceClass(source, "GLText", (code) => code.replace(
+    "&& (text = txt)) return", "&& ((text = txt), true)) return",
+  ).replace(
+    "_this.geometry.attributes.uv.setArray(buffers.uv),",
+    "_this.geometry.attributes.uv.setArray(buffers.uv), _this.geometry.attributes.local.setArray(buffers.local),",
+  ));
+  source = source.replace(
+    'async setText(text, options) { if (text && (text = text.toString(), !1 !== options?.seoText))',
+    'async setText(text, options) { if (text != null && (text = text.toString(), !1 !== options?.seoText))',
+  );
   // The legacy worker path helper concatenates root-relative paths twice.
   // Keep managed media/model URLs anchored to the actual origin (and port).
   source = source.replace(
@@ -91,12 +113,18 @@ function patchAppSource(source, config) {
     ),
   );
   source = replaceClass(source, "ContactUI", (code) => {
+    code = code.replace(
+      "function replaceRandomLetters(str, numReplacements) {",
+      "function replaceRandomLetters(str, numReplacements) { if (str.length < 2) return str;",
+    ).replaceAll(/await _this\.wait\(\(_ => _this\.(\w+)\.dimensions\.width\)\)/g,
+      "await _this.$1.loaded()");
     for (const [ref, key] of Object.entries({
       contact: "contactTitle",
       lax: "cityLax",
       nyc: "cityNyc",
       ams: "cityAms",
       email: "email",
+      ...(!site.labUrl ? { subscribe: null, privacy: null, careers: null, sync: null } : {}),
     })) {
       code = code.replace(
         new RegExp(`(_innerText: )"(?:[^"\\\\]|\\\\.)*"(, refName: "${ref}")`),
@@ -107,6 +135,21 @@ function patchAppSource(source, config) {
           `(_this\\.${ref}\\.setText\\(replaceRandomLetters\\()"(?:[^"\\\\]|\\\\.)*"`,
         ),
         (_, a) => a + quote(site[key]),
+      );
+      code = code.replace(
+        new RegExp(`GLA11y\\.textNode\\(_this\\.${ref}\\.group, "[^"]*"\\)`),
+        () => `GLA11y.textNode(_this.${ref}.group, ${quote(site[key])})`,
+      );
+    }
+    if (!site.emailLink)
+      code = code.replace(/_this\.email\.interact\(hover, \(_ => window\.open\("mailto:[^"]*"\)\), "#"\), /, "");
+    if (!site.labUrl) {
+      code = code.replace(/_this\.(?:subscribe|privacy|careers|ig|in|tw)\.interact\(hover, \(_ => window\.open\("[^"]*", "_blank"\)\), "#"(?:, "[^"]*")?\), /g, "");
+      code = code.replace(
+        '_this.ref_MobileSync980 = _this.initClass(MobileSync), _this.ref_MobileSync980.isFragment && _promises.push(_this.wait(_this.ref_MobileSync980, "__ready")), ', "",
+      ).replace(
+        '_this.bind("ViewController/contact",',
+        '["ig", "in", "tw", "subscribe", "privacy", "careers", "sync", "line2", "line3", "line4"].forEach(key => _this[key].hide()), _this.bind("ViewController/contact",',
       );
     }
     return code.replace(/"mailto:[^"\s]*"/g, () =>
