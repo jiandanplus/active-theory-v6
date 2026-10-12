@@ -2,7 +2,7 @@
 
 日期：2026-10-12
 
-状态：用户已确认总体方案；详细规格等待审阅，尚未实施。
+状态：用户已确认详细规格（2026-10-12）；进入实施计划阶段，尚未实施。
 
 实现基线：`bd7ef11`，分支 `feat/authenticated-resource-admin`。
 
@@ -136,7 +136,7 @@ PostgreSQL 使用独立应用 schema；部署连接仅对指定数据库/schema 
 
 已选 PostgreSQL 单一正式数据库、文件与数据库分离、环境变量提供连接凭证、网页初始化账号、受保护的一次性安装、旧库只读迁移。不存在运行期自动回退 SQLite 或自动恢复无认证安装的路径。
 
-文档不声称已经实现上述功能。实现计划须在本规格经用户审阅后编写。
+文档不声称已经实现上述功能。用户已审阅确认，实施计划见 `../plans/2026-10-12-postgresql-installation.md`。
 
 - PostgreSQL JSONB：https://www.postgresql.org/docs/18/datatype-json.html
 - PostgreSQL 显式锁与事务级 advisory lock：https://www.postgresql.org/docs/18/explicit-locking.html
