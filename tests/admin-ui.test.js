@@ -37,3 +37,9 @@ test('deployment and font guidance names actual env and explicit validation limi
   assert.match(source,/CORS/);
   assert.match(source,/前台预览/);
 });
+test('uploaded local and S3 models can convert but external and ready models cannot',()=>{
+  assert.equal(ui.canConvert({kind:'model',source:'s3',status:'uploaded'}),true);
+  assert.equal(ui.canConvert({kind:'model',source:'local',status:'uploaded'}),true);
+  assert.equal(ui.canConvert({kind:'model',source:'external',status:'unverified'}),false);
+  assert.equal(ui.canConvert({kind:'model',source:'local',status:'ready'}),false);
+});
