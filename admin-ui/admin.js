@@ -293,28 +293,22 @@ function startAdmin() {
     await render();
   }
   function login(initialized) {
+    if (!initialized)
+      return window.SiteSetup.mount({ root: app, onInstalled: init });
     app.replaceChildren();
     const wrap = node("main", undefined, "login-wrap"),
       card = node("section", undefined, "login-card");
     card.append(
       node("div", "Studio / 管理工作台", "brand"),
       node("div", "PRIVATE ACCESS", "eyebrow"),
-      node("h1", initialized ? "欢迎回来" : "初始化管理员"),
+      node("h1", "欢迎回来"),
       node(
         "p",
-        initialized
-          ? "登录以管理你的 3D 网站。修改先保存为草稿，发布后才会出现在公开网站。"
-          : "尚未设置管理员。请在服务器终端执行下方命令，按提示创建唯一的管理员账号。",
+        "登录以管理你的 3D 网站。修改先保存为草稿，发布后才会出现在公开网站。",
         "muted",
       ),
     );
-    if (!initialized) {
-      card.append(
-        node("code", "npm run admin:init"),
-        node("p", "没有默认账号或密码。初始化完成后刷新此页面。", "muted"),
-        button("重新检查", init, "primary"),
-      );
-    } else {
+    {
       const form = node("form");
       let username = "",
         password = "";
@@ -1375,6 +1369,13 @@ function startAdmin() {
   }
   async function init() {
     try {
+      const status = await fetch("/api/setup/status", {
+        credentials: "same-origin",
+        cache: "no-store",
+      });
+      const installation = await status.json();
+      if (installation.state !== "installed")
+        return window.SiteSetup.mount({ root: app, onInstalled: init });
       const session = await api("/session");
       state.csrf = session.csrfToken || "";
       if (session.authenticated) await load();

@@ -1,0 +1,48 @@
+.setup-card {
+  max-width: 660px;
+  width: 100%;
+}
+.setup-wrap {
+  padding: 32px 20px;
+}
+.setup-card h1:focus {
+  outline: none;
+}
+.setup-card select {
+  width: 100%;
+  margin: 10px 0 18px;
+  padding: 12px;
+  border: 1px solid #dcdce3;
+  border-radius: 10px;
+  background: white;
+  font: inherit;
+}
+.setup-card > button {
+  margin: 12px 12px 0 0;
+}
+.setup-card .field > button {
+  margin-top: 8px;
+}
+.setup-status {
+  min-height: 1.5em;
+  color: #9d3245;
+}
+.setup-card ul {
+  padding-left: 24px;
+  overflow-wrap: anywhere;
+}
+.setup-card h3 {
+  font-size: 14px;
+  margin-bottom: 6px;
+}
+.setup-card .warning {
+  margin: 14px 0;
+}
+@media (max-width: 600px) {
+  .setup-wrap {
+    padding: 16px;
+  }
+  .setup-card {
+    padding: 24px;
+  }
+}
