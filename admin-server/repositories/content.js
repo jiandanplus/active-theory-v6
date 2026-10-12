@@ -82,6 +82,12 @@ function contentRepository(db) {
   }
   const repo = {
     async getDraft({ lock = false } = {}) {
+      // A waiting FOR UPDATE statement retains its pre-wait MVCC snapshot for
+      // subqueries. Acquire the lock first, then read all draft parts together.
+      if (lock)
+        await db.query(
+          "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+        );
       const settings = (
         await db.query(
           `SELECT s.site,s.revision,s.published,t.content AS template_content,
@@ -89,7 +95,7 @@ function contentRepository(db) {
             COALESCE((SELECT pg_catalog.jsonb_agg(content || pg_catalog.jsonb_build_object('id',id) ORDER BY ordinal) FROM personal_site.projects),'[]'::jsonb) AS projects,
             COALESCE((SELECT pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object('id',id,'title',title,'src',src) ORDER BY ordinal) FROM personal_site.songs),'[]'::jsonb) AS songs
             FROM personal_site.site_settings s JOIN personal_site.templates t ON t.id=s.template_id
-            WHERE s.id=true${lock ? " FOR UPDATE OF s" : ""}`,
+            WHERE s.id=true`,
         )
       ).rows[0];
       if (!settings) return null;

@@ -43,9 +43,12 @@ function collectReferences(snapshot) {
     if (id) result.set(`${id}\0${slot}`, { resourceId: id, slot });
   };
   const dependency = (name, slot, seen = new Set()) => {
-    if (seen.has(name)) return;
-    seen.add(name);
-    const asset = assets[name];
+    const entry = Object.hasOwn(assets, name)
+      ? [name, assets[name]]
+      : Object.entries(assets).find(([, asset]) => asset.resourceId === name);
+    const [canonical, asset] = entry || [name, undefined];
+    if (seen.has(canonical)) return;
+    seen.add(canonical);
     add(asset?.resourceId || name, slot);
     for (const dep of [
       ...(asset?.dependencies || []),
@@ -86,6 +89,8 @@ function collectReferences(snapshot) {
       if (!field.key.startsWith("__")) {
         if (["resource", "geometry"].includes(field.type))
           template.baseUIL[field.key] = { src: field.value };
+        else if (["text", "number"].includes(field.type))
+          delete template.baseUIL[field.key];
         else template.baseUIL[field.key] = field.value;
       }
   for (const [i, project] of snapshot.config.projects.entries())

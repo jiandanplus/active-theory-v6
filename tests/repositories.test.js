@@ -49,6 +49,65 @@ test("managed URLs still expand registered font companions", () => {
   };
   assert.ok(collectReferences(s).some((r) => r.resourceId === "atlas"));
 });
+test("resource ID companions expand slot dependencies with canonical cycle protection", () => {
+  const s = composeSnapshot({
+    config: { site: {}, projects: [], scenes: [], songs: [] },
+    template: { baseUIL: { font: { src: "font.json" } } },
+    assets: {
+      fontSlot: {
+        resourceId: "font-id",
+        fileName: "font.json",
+        companions: ["atlas-id"],
+      },
+      atlasSlot: { resourceId: "atlas-id", dependencies: ["coverageSlot"] },
+      coverageSlot: {
+        resourceId: "coverage-id",
+        companions: ["atlasSlot", "font-id"],
+      },
+    },
+  });
+  assert.deepEqual(
+    [...new Set(collectReferences(s).map((r) => r.resourceId))].sort(),
+    ["atlas-id", "coverage-id", "font-id"],
+  );
+});
+test("typed text and number overrides do not publish inventory aliases", () => {
+  for (const value of ["unused.png", "unused-id"]) {
+    const s = composeSnapshot({
+      config: {
+        site: {},
+        projects: [],
+        songs: [],
+        scenes: [
+          {
+            id: "Home",
+            fields: [
+              { key: "copy", type: "text", value },
+              { key: "count", type: "number", value },
+              { key: "hero", type: "resource", value: "/media/real" },
+            ],
+          },
+        ],
+      },
+      template: {
+        baseUIL: { copy: { src: "unused.png" }, font: { src: "font.json" } },
+      },
+      assets: {
+        unusedSlot: { resourceId: "unused-id", fileName: "unused.png" },
+        font: {
+          resourceId: "font",
+          fileName: "font.json",
+          companions: ["atlas"],
+        },
+        atlas: { resourceId: "atlas" },
+      },
+    });
+    assert.deepEqual(
+      [...new Set(collectReferences(s).map((r) => r.resourceId))].sort(),
+      ["atlas", "font", "real"],
+    );
+  }
+});
 const { postgresFixture } = require("./helpers/postgres");
 const { contentFixture } = require("./helpers/content");
 const { contentRepository } = require("../admin-server/repositories/content");
@@ -559,4 +618,71 @@ test("draft read remains coherent if a writer commits immediately after its sett
   const result = await contentRepository(reader).getDraft();
   assert.equal(result.config.site.title, before.config.site.title);
   assert.equal(result.config.projects[0].name, before.config.projects[0].name);
+});
+test("locked draft read takes its coherent snapshot after waiting for the writer", async (t) => {
+  const { store } = await setup(t);
+  const before = await contentRepository(store).getDraft();
+  const next = structuredClone(before.config);
+  next.site.title = "All new";
+  next.projects[0].name = "All new";
+  next.scenes[0].label = "All new";
+  next.songs[0].title = "All new";
+  let releaseWriter;
+  const release = new Promise((resolve) => {
+    releaseWriter = resolve;
+  });
+  let writerLocked;
+  const locked = new Promise((resolve) => {
+    writerLocked = resolve;
+  });
+  let readerStarted;
+  const started = new Promise((resolve) => {
+    readerStarted = resolve;
+  });
+  const writer = store.transaction(async (tx) => {
+    const pid = (await tx.query("SELECT pg_catalog.pg_backend_pid() AS pid"))
+      .rows[0].pid;
+    await tx.query(
+      "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+    );
+    writerLocked(pid);
+    await release;
+    await contentRepository(tx).writeDraft(next, before.revision);
+  });
+  const writerPid = await locked;
+  const reader = store.transaction(async (tx) => {
+    readerStarted(
+      (await tx.query("SELECT pg_catalog.pg_backend_pid() AS pid")).rows[0].pid,
+    );
+    return contentRepository(tx).getDraft({ lock: true });
+  });
+  const readerPid = await started;
+  try {
+    const deadline = Date.now() + 3000;
+    let blocked = false;
+    while (Date.now() < deadline) {
+      blocked = (
+        await store.query(
+          "SELECT $1::integer = ANY(pg_catalog.pg_blocking_pids($2::integer)) AS blocked",
+          [writerPid, readerPid],
+        )
+      ).rows[0].blocked;
+      if (blocked) break;
+      await new Promise((resolve) => setTimeout(resolve, 10));
+    }
+    assert.equal(
+      blocked,
+      true,
+      "reader must demonstrably wait on writer's real row lock",
+    );
+  } finally {
+    releaseWriter();
+  }
+  await writer;
+  const result = await reader;
+  assert.equal(result.revision, before.revision + 1);
+  assert.equal(result.config.site.title, "All new");
+  assert.equal(result.config.projects[0].name, "All new");
+  assert.equal(result.config.scenes[0].label, "All new");
+  assert.equal(result.config.songs[0].title, "All new");
 });
