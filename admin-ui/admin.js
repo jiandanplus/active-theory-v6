@@ -44,8 +44,13 @@ function canConvert(resource) {
     !resource.trashed
   );
 }
+function resourcePreviewURL(resource) {
+  return resource.source === "bundled"
+    ? "/media/" + encodeURIComponent(resource.id)
+    : resource.url;
+}
 if (typeof module !== "undefined")
-  module.exports = { newProject, canPick, storageBody, canConvert };
+  module.exports = { newProject, canPick, storageBody, canConvert, resourcePreviewURL };
 if (typeof document !== "undefined") startAdmin();
 
 function startAdmin() {
@@ -851,14 +856,14 @@ function startAdmin() {
       preview = node("div", undefined, "resource-preview");
     if (resource.kind === "image") {
       const img = node("img");
-      img.src = resource.url;
+      img.src = resourcePreviewURL(resource);
       img.alt = resource.name;
       img.loading = "lazy";
       img.referrerPolicy = "no-referrer";
       preview.append(img);
     } else if (["video", "audio"].includes(resource.kind)) {
       const media = node(resource.kind);
-      media.src = resource.url;
+      media.src = resourcePreviewURL(resource);
       media.controls = true;
       media.preload = "none";
       preview.append(media);

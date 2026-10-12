@@ -10,7 +10,9 @@
     "dev": "node server.js",
     "start": "node server.js",
     "test": "node scripts/test-postgres.js",
-    "test:postgres": "node scripts/test-postgres.js tests/postgres.test.js",
+    "test:postgres": "node scripts/test-postgres.js",
+    "db:migrate": "node scripts/db-migrate.js",
+    "import:check": "node scripts/import-site.js --check",
     "admin:init": "node scripts/admin-account.js",
     "admin:reset": "node scripts/admin-account.js --reset",
     "admin:key": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\""

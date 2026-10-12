@@ -30,7 +30,7 @@ const TYPES = {
   glb: "model",
 };
 const route = (fn) => (req, res, next) =>
-  Promise.resolve(fn(req, res)).catch(next);
+  Promise.resolve(fn(req, res, next)).catch(next);
 function references(config, resource) {
   if (!config) return false;
   if (typeof config === "string")
@@ -406,11 +406,12 @@ function mountResources({ app, admin, store, options }) {
   );
   app.get(
     "/media/:id",
-    route(async (req, res) => {
+    route(async (req, res, next) => {
       const r = await resourceRepository(store).get(req.params.id);
       if (
         !r ||
         r.trashed ||
+        ["missing", "disabled", "failed"].includes(r.status) ||
         (!req.adminSession &&
           !(await resourceRepository(store).isPublished(r.id)))
       )
@@ -420,6 +421,8 @@ function mountResources({ app, admin, store, options }) {
         return res.redirect(302, S.externalUrl(r.url));
       if (r.source === "s3")
         return res.redirect(302, S.externalUrl(r.publicUrl));
+      if (r.source === "bundled")
+        return require("./frontend-resources").sendResource(req, res, next, r, options);
       let file, handle;
       try {
         file = await S.localFile(path.join(options.dataDir, "uploads"), r.key);

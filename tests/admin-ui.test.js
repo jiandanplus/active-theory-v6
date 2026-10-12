@@ -2,6 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const ui = require("../admin-ui/admin.js");
+test('bundled media previews use authenticated ID URLs rather than admin-relative or bare asset paths', () => {
+  assert.equal(ui.resourcePreviewURL({id:'bundle:id',source:'bundled',url:'assets/pic.png'}),'/media/bundle%3Aid');
+  assert.equal(ui.resourcePreviewURL({id:'local',source:'local',url:'/media/local'}),'/media/local');
+  assert.equal(ui.resourcePreviewURL({id:'external',source:'external',url:'https://example.test/img?q=1'}),'https://example.test/img?q=1');
+});
 test("new projects have complete engine media objects and unique identity", () => {
   const p = ui.newProject("test-id");
   assert.equal(p.id, "test-id");

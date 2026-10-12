@@ -4,18 +4,18 @@
 
 ## 本地启动
 
-需要 Node.js 24 或更新版本。当前使用 Node 内置 `node:sqlite`；Node 24 会输出该模块的 ExperimentalWarning，这是运行时提示，不是数据库打开失败。
+需要 Node.js 24 或更新版本、独立 PostgreSQL 18 数据库。运行时不使用 SQLite；`node:sqlite` 只用于显式只读旧站导入。
 
 ```sh
 npm ci
 # 按 .env.example 新建 .env；不要覆盖已有配置。
-npm run admin:init
+# 配置 DATABASE_URL；本地生成 SETUP_TOKEN（至少 32 随机字节的 hex）。
 npm run dev
 ```
 
-打开 `http://localhost:3000/admin/`。初始化在服务器终端交互完成，密码隐藏输入，至少 12 个字符；没有内置账号或默认密码，也不能从公网抢先注册。忘记密码执行 `npm run admin:reset`，按提示输入 `RESET`；该操作使原登录会话失效。
+打开与 `SITE_ORIGIN` 一致的 `/admin/`，依次授权安装、检查数据库、预检来源、设置管理员、确认安装。没有内置账号或默认密码；安装完成不会自动登录。`admin:init` 仅输出网页安装指引，不初始化数据库。忘记密码执行 `npm run admin:reset`，仅已安装实例可重置，该操作使原登录会话失效。
 
-数据库和上传文件默认位于 `data/`，不通过静态目录公开，不应提交 Git。不要删除这个目录来“重新启动”。工作台可以管理：
+账号、配置、会话、版本和资源登记保存于 PostgreSQL；`data/uploads` 仅保存媒体字节。二者均需备份，不应提交 Git。不要删除数据目录或数据库来“重新启动”。工作台可以管理：
 
 - 网站标题、导航文字、联系信息、实验室链接和音乐列表。
 - 当前 UIL 中六个场景的已识别文案、材质/纹理、模型和部分数值参数。
@@ -56,7 +56,7 @@ GLB 上传后需在资源库执行「转换为场景模型」，指定尺寸后�
 - 不是通用可视化 3D 编辑器：只开放已识别的配置槽位，不能编辑全部着色器、动画逻辑、位置旋转或引擎代码。
 - 3D 字体是有限字形图集。发布/预览会检查修改后的 3D 文案，缺字时拒绝并提示，**尚未提供后台自动重建字体**。普通网页标题不受此限制。原字体和素材授权由部署者确认。
 - S3 和外链使用长期公网/CDN 地址；不支持私有桶签名链接自动续期。真实公网访问/CORS 必须在最终域名上验证；保存外链不会由服务器抓取任意地址。
-- 单实例 SQLite + 持久磁盘；不支持多副本共用 SQLite 或无持久盘的 Serverless。单次模型处理是同步请求，最多 120 秒，不是断点恢复任务队列。
+- PostgreSQL + 持久媒体磁盘；部署模板仍为单应用实例。数据库共享不等于本地媒体、安装限流或模型并发控制已支持多副本。单次模型处理是同步请求，最多 120 秒，不是断点恢复任务队列。
 - 发布固定配置快照，但原始运行包/字体/第三方外链不是内容寻址快照；升级这些文件可能影响历史页面。
 
 ## 公网部署
@@ -68,6 +68,8 @@ NODE_ENV=production
 HOST=127.0.0.1
 PORT=3000
 SITE_ORIGIN=https://your-domain.example
+DATABASE_URL=postgresql://site_app:URL编码的应用密码@数据库地址:5432/personal_site
+SETUP_TOKEN=首次安装用的本机随机hex令牌
 SITE_DATA_DIR=/var/lib/personal-site
 SITE_MASTER_KEY=填入本机生成的64位十六进制密钥
 TRUST_PROXY=loopback
@@ -75,17 +77,17 @@ TRUST_PROXY=loopback
 
 让受信任的反向代理提供 HTTPS，并把请求转发到服务端。不要把 Node 开发 HTTP 直接暴露公网。仅在确实使用代理时设置准确的 `TRUST_PROXY`，不要盲目使用 `true`。代理须覆盖上面的上传大小，并给模型转换至少 150 秒超时。站点 Origin 必须与用户登录地址完全一致，否则写入会因来源校验而拒绝。
 
-提供 `Dockerfile` 和 `compose.yaml` 作为单实例部署模板。先准备授权的 `assets/`，设置 `.env` 中真实域名、主密钥及代理参数，再执行：
+提供 `Dockerfile`、内置 PostgreSQL 的 `compose.yaml` 和仅外部数据库的 `compose.external.yaml`。部署密码/令牌放在权限为 0600 的服务器环境文件；不要覆盖现有 `.env`。完整命令、权限和停机迁移门槛见 [PostgreSQL 部署迁移指南](POSTGRESQL-MIGRATION.md)。内置数据库示例：
 
 ```sh
-docker compose build
-docker compose run --rm -it site npm run admin:init
-docker compose up -d
+docker compose --env-file deployment.env -p personal-site -f compose.yaml config --quiet
+docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d --build --wait
+# 经 HTTPS 代理访问 /admin/ 完成首次安装；不会自动创建管理员。
 ```
 
-容器仅映射到宿主机 `127.0.0.1:3000`，前面仍需 HTTPS 代理。命名卷保存 `/app/data`，资源目录只读挂载。**不要执行 `docker compose down -v`，它会删除数据库和上传文件。** Docker 模板需在目标服务器验证，本次本地测试不等同于容器部署验收。
+应用端口仅映射宿主机回环地址，可通过 `SITE_PORT` 改变；数据库无宿主机端口映射。命名卷分别保存 `/app/data` 与 PostgreSQL 18 的 `/var/lib/postgresql`，资源目录只读挂载。**不要对真实部署执行 `docker compose down -v`，它会删除数据库和上传文件。** 本地隔离容器验收记录见 [实际验证](verification/postgresql-installation.md)，不能替代目标服务器验收。
 
-备份时先停止实例，复制整个私有数据目录（含 SQLite WAL/SHM 如存在），单独加密保管主密钥，再启动；另行备份授权运行资源。S3 对象备份/版本控制由存储服务负责。恢复先在隔离环境验证，不能只备份 `site.db` 而忽略上传文件。
+备份时进入维护窗口停止应用写入，对 PostgreSQL 执行 `pg_dump -Fc`，同时备份本地 uploads、授权 bundled 资源和运行包；独立加密保管主密钥。S3 对象备份/版本控制由存储服务负责。恢复必须先到独立数据库验证行数、账号登录和媒体读取；上线后的 PostgreSQL 新写入不能被旧 SQLite 备份覆盖。
 
 ## 发布到 GitHub 前
 
@@ -97,7 +99,8 @@ docker compose up -d
 
 ```sh
 npm test
+npm run test:postgres
 npm audit
 ```
 
-测试使用临时 SQLite、临时上传目录和隔离 S3 HTTP 服务，不会读取真实云凭证。真实 S3 账户、生产 HTTPS 代理和 CDN/CORS 需部署者配置后再做实际验收。
+测试使用 UUID 隔离 PostgreSQL 数据库、临时上传目录、只读旧 SQLite 样本及隔离 S3 HTTP 服务。测试入口不以生产 `DATABASE_URL` 回退；先启动 `compose.test.yaml` 的专用测试服务。真实 S3 账户、生产 HTTPS 代理和 CDN/CORS 需部署者配置后实际验收。

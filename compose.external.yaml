@@ -1,0 +1,23 @@
+# Standalone alternative: use ONLY -f compose.external.yaml, not as an overlay.
+services:
+  site:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SITE_PORT:-3000}:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      SITE_ORIGIN: ${SITE_ORIGIN:?Set the public HTTPS origin}
+      DATABASE_URL: ${DATABASE_URL:?Set the external application database URL}
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      LEGACY_SQLITE_PATH: ${LEGACY_SQLITE_PATH:-}
+      SITE_MASTER_KEY: ${SITE_MASTER_KEY:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      S3_ENDPOINT_ALLOWLIST: ${S3_ENDPOINT_ALLOWLIST:-}
+    volumes:
+      - site-data:/app/data
+      - ${SITE_ASSETS_DIR:-./assets}:/app/assets:ro
+volumes:
+  site-data:
