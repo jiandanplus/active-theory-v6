@@ -153,6 +153,86 @@ test("bridge maps media at actual loader entry and preserves Request headers and
     "http://site.test/api/site/9/resources/pic/pic.png",
   );
 });
+test("bridge and snapshot mappings distinguish exact external queries without rewriting unknown navigation", async (t) => {
+  const urls = [
+    "https://cdn.example.test/song.mp3?revision=1&sig=a%2Fb+z",
+    "https://cdn.example.test/song.mp3?sig=b%2fc%20d&revision=2",
+  ];
+  const snapshot = {
+    template: { baseUIL: {} },
+    config: {
+      site: { title: "T" },
+      songs: urls.map((src) => ({ src })),
+      scenes: [],
+      projects: [],
+    },
+    assets: Object.fromEntries(
+      urls.map((url, i) => [
+        `song${i}`,
+        { resourceId: `song${i}`, url, fileName: "song.mp3" },
+      ]),
+    ),
+    legacyMap: Object.fromEntries(urls.map((url, i) => [url, `song${i}`])),
+  };
+  const {
+    mapResourceURL,
+    collectReferences,
+  } = require("../admin-server/snapshots");
+  const context = {
+    URL,
+    Request,
+    location: { origin: "http://site.test" },
+    document: {},
+    window: { fetch() {} },
+    XMLHttpRequest: function () {},
+  };
+  context.XMLHttpRequest.prototype.open = function () {};
+  require("node:vm").runInNewContext(
+    require("../admin-server/frontend").bridgeSource(
+      9,
+      snapshot.config,
+      snapshot,
+    ),
+    context,
+  );
+  urls.forEach((url, i) => {
+    assert.match(
+      mapResourceURL(snapshot, 9, url),
+      new RegExp(`/resources/song${i}/`),
+    );
+    assert.equal(
+      context.window.__SITE_RESOURCE_URL__(url),
+      mapResourceURL(snapshot, 9, url),
+    );
+  });
+  assert.deepEqual(
+    [...new Set(collectReferences(snapshot).map((r) => r.resourceId))].sort(),
+    ["song0", "song1"],
+  );
+  const unknown = "https://cdn.example.test/song.mp3?revision=3";
+  assert.equal(mapResourceURL(snapshot, 9, unknown), unknown);
+  assert.equal(context.window.__SITE_RESOURCE_URL__(unknown), unknown);
+  const { root } = require("./helpers/content").contentFixture(t);
+  const catalog =
+    await require("../admin-server/resource-catalog").inventoryResources({
+      root,
+      dataDir: require("node:path").join(root, "data"),
+      config: snapshot.config,
+      template: snapshot.template,
+      manifest: { assets: [] },
+    });
+  const imported = { ...snapshot, ...catalog };
+  const ids = urls.map(
+    (url) =>
+      require("../admin-server/snapshots").resourceAsset(imported, url)
+        .resourceId,
+  );
+  assert.notEqual(ids[0], ids[1]);
+  assert.deepEqual(
+    [...new Set(collectReferences(imported).map((r) => r.resourceId))].sort(),
+    ids.sort(),
+  );
+});
 test("geometry and instance loader preserve already-versioned URLs before Worker dispatch", () => {
   const { patchAppSource } = require("../admin-server/frontend");
   const source =

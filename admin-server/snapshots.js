@@ -23,8 +23,10 @@ function inactiveUIL(template, key) {
 }
 function canonicalResourceURL(value) {
   if (typeof value !== "string") return value;
+  // External queries are identity (including signed URL encoding and order),
+  // unlike local loader/cache suffixes. Never normalize remote targets.
+  if (/^https?:\/\//i.test(value)) return value;
   const file = value.split(/[?#]/)[0];
-  if (/^https?:\/\//.test(file)) return file;
   try {
     return decodeURIComponent(file).replace(/^\//, "");
   } catch {

@@ -149,7 +149,7 @@ function bridgeSource(
   );
   return `(()=>{const base=${quote(`/api/site/${version}`)}, mappings=${quote(mappings)};
     function map(value){try{if(typeof value!=='string')return value;const u=new URL(value.replace(/^~/,''),location.origin+'/');if(u.pathname.includes('/api/site/'))return value;
-      let key=u.origin===location.origin?decodeURIComponent(u.pathname).replace(/^\\//,''):u.origin+u.pathname;
+      let key=/^https?:\\/\\//i.test(value)&&Object.hasOwn(mappings,value)?value:u.origin===location.origin?decodeURIComponent(u.pathname).replace(/^\\//,''):value;
       if(Object.hasOwn(mappings,key))return mappings[key]+(/\\.ktx2?$/i.test(mappings[key])?u.search:u.search.replace(/-compressedKtx2?/g,''))+u.hash;
       if(u.origin!==location.origin)return value;
       if(/\\/cms\\/projects-[^/]+\\.json$/.test(u.pathname))return base+'/projects.json';

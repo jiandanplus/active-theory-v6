@@ -156,6 +156,65 @@ test("saving a new external song freezes only the selected media identity before
   assert.equal(redirect.status, 302);
   assert.equal(redirect.headers.get("location"), draft.config.songs[0].src);
 });
+test("external query revisions and simultaneous signed URLs retain exact published identities", async (t) => {
+  const f = await httpFixture(t);
+  const options = { root: f.root, dataDir: path.join(f.root, "data") };
+  const { saveDraft, publish } = require("../admin-server/config");
+  const urls = [
+    "https://cdn.example.test/music/song.mp3?revision=1&signature=a%2Fb+z",
+    "https://cdn.example.test/music/song.mp3?signature=b%2fc%20d&revision=2",
+  ];
+  async function publishSongs(sources) {
+    const draft = await contentRepository(f.store).getDraft();
+    draft.config.songs = sources.map((src, i) => ({ title: `Song ${i}`, src }));
+    const revision = await saveDraft(f.store, draft.config, draft.revision);
+    const version = await publish(f.store, revision, options);
+    return {
+      version,
+      config: await (await f.request(`/api/site/${version}/config`)).json(),
+    };
+  }
+  const old = await publishSongs([urls[0]]);
+  const next = await publishSongs(urls);
+  const oldId = old.config.songs[0].src.split("/")[5];
+  const newId = next.config.songs[1].src.split("/")[5];
+  assert.notEqual(
+    oldId,
+    newId,
+    "different queries must have different resource IDs",
+  );
+  assert.equal(next.config.songs[0].src.split("/")[5], oldId);
+  for (const [version, src, expected] of [
+    [old.version, old.config.songs[0].src, urls[0]],
+    [next.version, next.config.songs[0].src, urls[0]],
+    [next.version, next.config.songs[1].src, urls[1]],
+  ]) {
+    const redirect = await f.request(src, { redirect: "manual" });
+    assert.equal(redirect.status, 302);
+    assert.equal(redirect.headers.get("location"), expected);
+    assert.equal(
+      (
+        await (await f.request(`/api/site/${version}/config`)).json()
+      ).songs[0].src.split("/")[5],
+      oldId,
+    );
+  }
+  assert.equal(
+    (await f.request(`/api/site/${old.version}/resources/${newId}/song.mp3`))
+      .status,
+    404,
+  );
+  const refreshed = await publishSongs([urls[1]]);
+  assert.equal(refreshed.config.songs[0].src.split("/")[5], newId);
+  const redirect = await f.request(refreshed.config.songs[0].src, {
+    redirect: "manual",
+  });
+  assert.equal(redirect.headers.get("location"), urls[1]);
+  const original = await f.request(old.config.songs[0].src, {
+    redirect: "manual",
+  });
+  assert.equal(original.headers.get("location"), urls[0]);
+});
 test("publishing a canonical local alias with query uses the registered resource", async (t) => {
   const f = await httpFixture(t);
   const { saveDraft, publish } = require("../admin-server/config");
