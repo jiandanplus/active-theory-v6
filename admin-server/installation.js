@@ -1,4 +1,9 @@
-const { inspectInstallation, migrate, checksum } = require("./migrations");
+const {
+  inspectInstallation,
+  migrate,
+  checksum,
+  supportedPostgresVersion,
+} = require("./migrations");
 const { contentRepository } = require("./repositories/content");
 const { authRepository } = require("./repositories/auth");
 const { auditRepository } = require("./repositories/audit");
@@ -9,6 +14,8 @@ const { hashPassword, fail } = require("./security");
 async function installationStatus(store) {
   if (store.configured === false)
     return { state: "unconfigured", schemaVersion: null };
+  if (!(await supportedPostgresVersion(store)))
+    return { state: "incompatible", schemaVersion: null };
   const exists = (
     await store.query(
       "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
@@ -77,6 +84,8 @@ async function installSite(store, { bundle, account, expectedDigest, mode }) {
   }
   await store.transaction(async (tx) => {
     await tx.query("SELECT pg_advisory_xact_lock($1)", [734216901]);
+    if (!(await supportedPostgresVersion(tx)))
+      throw fail(503, "仅支持 PostgreSQL 18");
     const state = await inspectInstallation(tx);
     if (state.state !== "uninstalled")
       throw fail(409, "站点不可重复初始化或结构不兼容");
@@ -128,7 +137,8 @@ function mountInstallation(app, { store, options }) {
   router.use(auth.requireSession);
   async function notInstalled() {
     const state = await installationStatus(store);
-    if (state.state === "installed" || state.state === "incompatible")
+    if (state.state === "incompatible") throw fail(503, "数据库不兼容");
+    if (state.state === "installed")
       throw fail(409, "站点不可重复初始化或结构不兼容");
     if (state.state === "unconfigured") throw fail(503, "数据库未配置");
   }

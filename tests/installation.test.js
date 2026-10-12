@@ -10,6 +10,129 @@ const input = (bundle) => ({
   account: { username: "owner", password: "test-only-password-2026" },
 });
 
+// Only the server version response is controlled; schema, transactions and HTTP
+// behavior still use a UUID-isolated real PostgreSQL fixture.
+function versionResponse(store, version, queries = []) {
+  const wrap = (client) => ({
+    query: async (sql, values) => {
+      queries.push(sql);
+      const result = await client.query(sql, values);
+      if (sql.includes("current_setting('server_version_num')"))
+        return {
+          ...result,
+          rows: result.rows.map((row) => ({ ...row, server_version: version })),
+        };
+      return result;
+    },
+    transaction: (fn) => client.transaction((tx) => fn(wrap(tx))),
+  });
+  return wrap(store);
+}
+
+test("unsupported PostgreSQL cannot install directly and leaves no partial schema", async (t) => {
+  const { store } = await postgresFixture(t, { migrated: false });
+  const source = contentFixture(t);
+  const { installSite, preflight } = require("../admin-server/installation");
+  const bundle = await preflight({ root: source.root }, "empty");
+  await assert.rejects(
+    installSite(versionResponse(store, 170009), input(bundle)),
+    (error) => error.status === 503,
+  );
+  assert.equal(
+    (await store.query("SELECT to_regnamespace('personal_site') AS schema"))
+      .rows[0].schema,
+    null,
+  );
+  await assert.rejects(
+    versionResponse(store, 170009).transaction(
+      require("../admin-server/migrations").migrate,
+    ),
+    /PostgreSQL 18/,
+  );
+  assert.equal(
+    (await store.query("SELECT to_regnamespace('personal_site') AS schema"))
+      .rows[0].schema,
+    null,
+  );
+});
+
+test("unsupported PostgreSQL setup install is rejected without database inspection GET", async (t) => {
+  const { store } = await postgresFixture(t, { migrated: false });
+  const f = await require("./helpers/http").httpFixture(t, {
+    store: versionResponse(store, 190001),
+    installed: false,
+  });
+  const headers = await f.setupSession();
+  const bundle = await require("../admin-server/installation").preflight(
+    { root: f.root },
+    "empty",
+  );
+  const response = await f.request("/api/setup/install", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      mode: "empty",
+      digest: bundle.report.digest,
+      account: input(bundle).account,
+    }),
+  });
+  assert.equal(response.status, 503);
+  assert.equal(
+    (await store.query("SELECT to_regnamespace('personal_site') AS schema"))
+      .rows[0].schema,
+    null,
+  );
+  const status = await f.request("/api/setup/status");
+  assert.equal(status.status, 503);
+  assert.equal((await status.json()).state, "incompatible");
+});
+
+test("installed traffic and inspection reject unsupported PostgreSQL without catalog scans", async (t) => {
+  const { store } = await postgresFixture(t);
+  const f = await require("./helpers/http").httpFixture(t, { store });
+  const {
+    inspectInstallation,
+    migrate,
+  } = require("../admin-server/migrations");
+  const queries = [];
+  const unsupported = versionResponse(store, 179999, queries);
+  const blocked = await require("./helpers/http").httpFixture(t, {
+    store: unsupported,
+    installed: false,
+  });
+  assert.equal(
+    (
+      await blocked.request("/api/admin/login", {
+        method: "POST",
+        headers: blocked.json,
+        body: "{}",
+      })
+    ).status,
+    503,
+  );
+  assert.equal((await blocked.request("/api/setup/status")).status, 503);
+  assert.equal(
+    queries.some((sql) => sql.includes("pg_get_constraintdef")),
+    false,
+  );
+  assert.equal((await inspectInstallation(unsupported)).state, "incompatible");
+  await assert.rejects(unsupported.transaction(migrate), /PostgreSQL 18/);
+  assert.equal((await f.request("/api/setup/status")).status, 200);
+  const supportedQueries = [];
+  assert.equal(
+    (
+      await require("../admin-server/installation").installationStatus(
+        versionResponse(store, 180099, supportedQueries),
+      )
+    ).state,
+    "installed",
+  );
+  assert.equal(
+    supportedQueries.some((sql) => sql.includes("pg_get_constraintdef")),
+    false,
+  );
+});
+
 test("runtime entrypoints expose no SQLite store or auto-initializer", () => {
   assert.equal(require("../admin-server/database").openStore, undefined);
   assert.equal(require("../admin-server/config").initializeConfig, undefined);

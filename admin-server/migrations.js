@@ -36,7 +36,18 @@ const signatureQuery = `
  WHERE n.nspname='personal_site' AND NOT tr.tgisinternal
  ) definitions ORDER BY kind COLLATE "C", name COLLATE "C"`;
 
+async function supportedPostgresVersion(store) {
+  const version = (
+    await store.query(
+      "SELECT current_setting('server_version_num')::int AS server_version",
+    )
+  ).rows[0].server_version;
+  return version >= 180000 && version < 190000;
+}
+
 async function inspectInstallation(store) {
+  if (!(await supportedPostgresVersion(store)))
+    return { state: "incompatible", schemaVersion: null };
   const exists = (
     await store.query(
       "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
@@ -68,6 +79,10 @@ async function inspectInstallation(store) {
 }
 async function migrate(tx) {
   await tx.query("SELECT pg_advisory_xact_lock($1)", [734216901]);
+  if (!(await supportedPostgresVersion(tx)))
+    throw Object.assign(new Error("PostgreSQL 18 is required"), {
+      status: 503,
+    });
   const state = await inspectInstallation(tx);
   if (state.state === "incompatible")
     throw new Error("Incompatible personal_site schema");
@@ -78,4 +93,9 @@ async function migrate(tx) {
     [1, checksum],
   );
 }
-module.exports = { migrate, inspectInstallation, checksum };
+module.exports = {
+  migrate,
+  inspectInstallation,
+  checksum,
+  supportedPostgresVersion,
+};
