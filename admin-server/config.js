@@ -1,5 +1,7 @@
 const { fail } = require("./security");
 const { initialConfig, appFile, baseUIL } = require("./importers/disk");
+const { contentRepository } = require("./repositories/content");
+const { auditRepository } = require("./repositories/audit");
 function safeURL(value, { empty = true } = {}) {
   if (typeof value !== "string") throw fail(400, "资源地址必须是文本");
   if (!value && empty) return;
@@ -37,7 +39,8 @@ function validateConfig(config, schema) {
     throw fail(400, "不支持的配置字段");
   if (
     !config.site ||
-    Object.keys(config.site).join("|") !== Object.keys(schema.site).join("|")
+    Object.keys(config.site).length !== Object.keys(schema.site).length ||
+    Object.keys(config.site).some((key) => !Object.hasOwn(schema.site, key))
   )
     throw fail(400, "网站配置字段无效");
   for (const [key, value] of Object.entries(config.site)) {
@@ -54,18 +57,25 @@ function validateConfig(config, schema) {
     config.scenes.length !== schema.scenes.length
   )
     throw fail(400, "场景结构无效");
-  config.scenes.forEach((scene, i) => {
-    const original = schema.scenes[i];
+  const seenScenes = new Set();
+  config.scenes.forEach((scene) => {
+    const original = schema.scenes.find((s) => s.id === scene?.id);
     if (
+      !original ||
+      seenScenes.has(scene.id) ||
       scene.id !== original.id ||
       scene.label !== original.label ||
       !Array.isArray(scene.fields) ||
       scene.fields.length !== original.fields.length
     )
       throw fail(400, "场景字段结构无效");
-    scene.fields.forEach((field, j) => {
-      const base = original.fields[j];
+    seenScenes.add(scene.id);
+    const seenFields = new Set();
+    scene.fields.forEach((field) => {
+      const base = original.fields.find((f) => f.key === field?.key);
       if (
+        !base ||
+        seenFields.has(field.key) ||
         field.key !== base.key ||
         field.type !== base.type ||
         field.label !== base.label ||
@@ -74,6 +84,7 @@ function validateConfig(config, schema) {
         )
       )
         throw fail(400, "不支持的场景字段");
+      seenFields.add(field.key);
       if (field.type === "number") {
         if (
           !Number.isFinite(field.value) ||
@@ -146,8 +157,9 @@ function validateConfig(config, schema) {
   }
   return config;
 }
-function buildUIL(root, config) {
-  const data = baseUIL(root);
+function buildUIL(snapshot) {
+  const { config } = snapshot;
+  const data = structuredClone(snapshot.template.baseUIL);
   for (const scene of config.scenes)
     for (const field of scene.fields) {
       if (field.key.startsWith("__")) continue;
@@ -199,38 +211,93 @@ function initializeConfig(store, root) {
     store.set("published", Number(result.lastInsertRowid));
   });
 }
-function assertRevision(store, revision) {
-  if (revision !== store.get("revision", 0))
+function assertRevision(draft, revision) {
+  if (!draft || revision !== draft.revision)
     throw fail(409, "配置版本冲突，请刷新后重新编辑");
 }
-function saveDraft(store, config, revision) {
-  validateConfig(config, store.get("schema"));
-  return store.transaction(() => {
-    assertRevision(store, revision);
-    store.set("draft", config);
-    store.set("revision", revision + 1);
-    return revision + 1;
+async function saveDraft(store, config, revision, actor = null) {
+  config = structuredClone(config);
+  return store.transaction(async (tx) => {
+    const repo = contentRepository(tx);
+    const draft = await repo.getDraft({ lock: true });
+    assertRevision(draft, revision);
+    validateConfig(config, (await repo.getTemplate()).schema);
+    const next = await repo.writeDraft(config, revision);
+    await auditRepository(tx).append("config.save", actor);
+    return next;
   });
 }
-function publish(store, revision) {
-  return store.transaction(() => {
-    assertRevision(store, revision);
-    const config = store.get("draft");
-    validateConfig(config, store.get("schema"));
-    const result = store.db
-      .prepare("INSERT INTO versions(created,config) VALUES(?,?)")
-      .run(new Date().toISOString(), JSON.stringify(config));
-    store.set("published", Number(result.lastInsertRowid));
-    store.audit("config.publish");
-    return Number(result.lastInsertRowid);
-  });
+async function validatedDraft(store, revision, options) {
+  const repo = contentRepository(store),
+    draft = await repo.getDraft();
+  assertRevision(draft, revision);
+  validateConfig(draft.config, (await repo.getTemplate()).schema);
+  const warnings = await require("./publication").validatePublication(
+    store,
+    options,
+    draft.snapshot,
+  );
+  return { draft, warnings };
 }
-function restore(store, id, revision) {
-  const row = store.db
-    .prepare("SELECT config FROM versions WHERE id=?")
-    .get(id);
+async function publish(
+  store,
+  revision,
+  options = {},
+  actor = null,
+  { withWarnings = false } = {},
+) {
+  const { draft, warnings } = await validatedDraft(store, revision, options);
+  const version = await store.transaction(async (tx) => {
+    const repo = contentRepository(tx),
+      current = await repo.getDraft({ lock: true });
+    assertRevision(current, revision);
+    await require("./publication").checkPublicationState(tx, draft.snapshot);
+    const version = await repo.insertVersion(draft.snapshot);
+    await repo.setPublished(version.id);
+    await auditRepository(tx).append("config.publish", actor);
+    return version.id;
+  });
+  return withWarnings ? { version, warnings } : version;
+}
+async function restore(store, id, revision, actor = null) {
+  if (!Number.isSafeInteger(id) || id < 1) throw fail(404, "版本不存在");
+  const row = await contentRepository(store).getVersion(id);
   if (!row) throw fail(404, "版本不存在");
-  return saveDraft(store, JSON.parse(row.config), revision);
+  return saveDraft(store, row.snapshot.config, revision, actor);
+}
+async function createPreview(store, revision, options, owner) {
+  const { draft } = await validatedDraft(store, revision, options);
+  return store.transaction(async (tx) => {
+    const repo = contentRepository(tx),
+      current = await repo.getDraft({ lock: true });
+    assertRevision(current, revision);
+    await require("./publication").checkPublicationState(tx, draft.snapshot);
+    const now = Date.now();
+    await repo.prunePreviews(new Date(now));
+    const id = "preview-" + require("node:crypto").randomUUID();
+    await repo.putPreview({
+      id,
+      owner,
+      expires: new Date(now + 30 * 60000),
+      snapshot: draft.snapshot,
+    });
+    const old = (
+      await tx.query(
+        "SELECT id FROM personal_site.previews WHERE owner=$1 ORDER BY expires DESC,id DESC OFFSET 5",
+        [owner],
+      )
+    ).rows.map((r) => r.id);
+    await tx.query(
+      "DELETE FROM personal_site.resource_references WHERE owner_type='preview' AND owner_id=ANY($1::text[])",
+      [old],
+    );
+    await tx.query(
+      "DELETE FROM personal_site.previews WHERE id=ANY($1::text[])",
+      [old],
+    );
+    await auditRepository(tx).append("config.preview", owner);
+    return id;
+  });
 }
 module.exports = {
   initialConfig,
@@ -240,6 +307,7 @@ module.exports = {
   saveDraft,
   publish,
   restore,
+  createPreview,
   safeURL,
   appFile,
   baseUIL,

@@ -3,6 +3,8 @@ const fs = require("node:fs"),
 const express = require("express");
 const { buildUIL, appFile } = require("./config");
 const { fail } = require("./security");
+const { route } = require("./http");
+const { contentRepository } = require("./repositories/content");
 const quote = (value) => JSON.stringify(value ?? "");
 function replaceClass(source, name, transform) {
   const start = source.indexOf(`Class((function ${name}(`);
@@ -165,103 +167,113 @@ function safeStatic(directory) {
   };
 }
 function mountFrontend(app, store, options) {
-  function versionConfig(req) {
+  async function versionConfig(req) {
+    const repo = contentRepository(store);
     const id = String(
-      req.params.version || req.query.preview || store.get("published"),
+      req.params.version ||
+        req.query.preview ||
+        (await repo.getDraft())?.published,
     );
     if (id.startsWith("preview-")) {
       if (!req.adminSession) throw fail(401, "预览需要登录");
-      const data = store.get("previews", {})[id];
+      const data = await store.transaction(async (tx) => {
+        const content = contentRepository(tx);
+        await content.prunePreviews(new Date());
+        return content.getPreview(id, req.adminSession.username, new Date());
+      });
       if (!data) throw fail(404, "预览已过期");
-      return { id, config: data };
+      return { id, config: data.snapshot.config, snapshot: data.snapshot };
     }
     if (!/^\d+$/.test(id)) throw fail(404, "版本不存在");
-    const row = store.db
-      .prepare("SELECT config FROM versions WHERE id=?")
-      .get(Number(id));
+    const row = await repo.getVersion(Number(id));
     if (!row) throw fail(404, "版本不存在");
-    return { id, config: JSON.parse(row.config) };
+    return { id, config: row.snapshot.config, snapshot: row.snapshot };
   }
-  app.get("/api/site/:version/:file", (req, res, next) => {
-    try {
-      const { id, config } = versionConfig(req);
-      res.set("Cache-Control", "no-store");
-      switch (req.params.file) {
-        case "config":
-          return res.json(config);
-        case "bridge.js":
-          return res.type("js").send(bridgeSource(id, config));
-        case "app.js": {
-          const file = appFile(options.root);
-          if (!file) throw fail(503, "缺少前台运行资源，请阅读部署说明");
-          return res
-            .type("js")
-            .send(
-              patchAppSource(
-                fs.readFileSync(
-                  path.join(options.root, "assets/js", file),
-                  "utf8",
+  app.get(
+    "/api/site/:version/:file",
+    route(async (req, res, next) => {
+      try {
+        const { id, config, snapshot } = await versionConfig(req);
+        res.set("Cache-Control", "no-store");
+        switch (req.params.file) {
+          case "config":
+            return res.json(config);
+          case "bridge.js":
+            return res.type("js").send(bridgeSource(id, config));
+          case "app.js": {
+            const file = appFile(options.root);
+            if (!file) throw fail(503, "缺少前台运行资源，请阅读部署说明");
+            return res
+              .type("js")
+              .send(
+                patchAppSource(
+                  fs.readFileSync(
+                    path.join(options.root, "assets/js", file),
+                    "utf8",
+                  ),
+                  config,
                 ),
-                config,
-              ),
-            );
-        }
-        case "uil.json":
-          return res.json(buildUIL(options.root, config));
-        case "projects.json":
-          return res.json(config.projects);
-        case "compiled.vs":
-          return res
-            .type("text/plain")
-            .send(
-              patchShaders(
-                fs.readFileSync(
-                  path.join(options.root, "assets/shaders/compiled.vs"),
-                  "utf8",
+              );
+          }
+          case "uil.json":
+            return res.json(buildUIL(snapshot));
+          case "projects.json":
+            return res.json(config.projects);
+          case "compiled.vs":
+            return res
+              .type("text/plain")
+              .send(
+                patchShaders(
+                  fs.readFileSync(
+                    path.join(options.root, "assets/shaders/compiled.vs"),
+                    "utf8",
+                  ),
+                  config,
                 ),
-                config,
-              ),
+              );
+          case "metadata.json":
+          case "contact.json": {
+            return res.json(
+              snapshot.template[req.params.file.replace(".json", "")] || {},
             );
-        case "metadata.json":
-        case "contact.json": {
-          const basename = req.params.file.replace(".json", "-dev.json"),
-            filename = path.join(options.root, "cms", basename);
-          return res.json(
-            fs.existsSync(filename)
-              ? JSON.parse(fs.readFileSync(filename, "utf8"))
-              : {},
-          );
+          }
+          default:
+            throw fail(404, "资源不存在");
         }
-        default:
-          throw fail(404, "资源不存在");
+      } catch (error) {
+        next(error);
       }
-    } catch (error) {
-      next(error);
-    }
-  });
-  app.get(["/", "/work", "/work/:slug"], (req, res, next) => {
-    try {
-      const { id, config } = versionConfig(req);
-      let html = fs.readFileSync(path.join(options.root, "index.html"), "utf8");
-      html = html.replace(
-        /<title>[\s\S]*?<\/title>/,
-        () => `<title>${escapeHTML(config.site.title)}</title>`,
-      );
-      html = html.replace(
-        /s = "assets\/js\/app\." \+ window\._CACHE_ \+ "\.js"/,
-        `s = "/api/site/${id}/app.js"`,
-      );
-      html = html
-        .replace("</head>", `</head>`)
-        .replace(
-          "<head>",
-          `<head><script src="/api/site/${id}/bridge.js"></script>`,
+    }),
+  );
+  app.get(
+    ["/", "/work", "/work/:slug"],
+    route(async (req, res, next) => {
+      try {
+        const { id, config } = await versionConfig(req);
+        let html = fs.readFileSync(
+          path.join(options.root, "index.html"),
+          "utf8",
         );
-      res.set("Cache-Control", "no-store").type("html").send(html);
-    } catch (error) {
-      next(error);
-    }
-  });
+        html = html.replace(
+          /<title>[\s\S]*?<\/title>/,
+          () => `<title>${escapeHTML(config.site.title)}</title>`,
+        );
+        html = html.replace(
+          /s = "assets\/js\/app\." \+ window\._CACHE_ \+ "\.js"/,
+          `s = "/api/site/${id}/app.js"`,
+        );
+        html = html
+          .replace("</head>", `</head>`)
+          .replace(
+            "<head>",
+            `<head><script src="/api/site/${id}/bridge.js"></script>`,
+          );
+        res.set("Cache-Control", "no-store").type("html").send(html);
+      } catch (error) {
+        next(error);
+      }
+    }),
+  );
   app.get("/assets/images/room/1234.ktx2", (req, res) => res.sendStatus(404));
   app.use("/assets", safeStatic(path.join(options.root, "assets")));
   for (const folder of ["room", "bush.bin"])

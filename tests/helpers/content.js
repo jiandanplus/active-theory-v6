@@ -8,8 +8,29 @@ function contentFixture(t) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "site-content-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const config = {
-    site: { title: "Fixture", email: "test@example.test" },
-    projects: [{ id: "p1", slug: "one", name: "One" }],
+    site: {
+      title: "Fixture",
+      email: "test@example.test",
+      emailLink: "test@example.test",
+      navWork: "Work",
+      navContact: "Contact",
+      contactTitle: "Contact",
+      cityLax: "LA",
+      cityNyc: "NY",
+      cityAms: "AMS",
+      labUrl: "",
+    },
+    projects: [
+      {
+        id: "p1",
+        slug: "one",
+        name: "One",
+        tags: "test",
+        video: { url: "/media/image", thumbnail: "/media/image" },
+        projectLogo: { url: "/media/image" },
+        completionDate: "2026-01-01",
+      },
+    ],
     scenes: [
       {
         id: "Home",

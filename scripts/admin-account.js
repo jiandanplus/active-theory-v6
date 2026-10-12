@@ -1,6 +1,7 @@
 const readline = require("node:readline");
 const { createInterface } = require("node:readline/promises");
-const { openStore } = require("../admin-server/database");
+const { openPostgres } = require("../admin-server/postgres");
+const { inspectInstallation } = require("../admin-server/migrations");
 const { createAccount } = require("../admin-server/security");
 const { loadOptions } = require("../admin-server/options");
 async function secret(prompt) {
@@ -40,9 +41,11 @@ async function secret(prompt) {
 }
 async function main() {
   const options = loadOptions(),
-    store = openStore(options.dataDir),
+    store = openPostgres({ databaseUrl: process.env.DATABASE_URL }),
     reset = process.argv.includes("--reset");
   try {
+    if ((await inspectInstallation(store)).state !== "installed")
+      throw new Error("请先完成网页安装，再使用本地管理员命令");
     if (!process.stdin.isTTY) throw new Error("请使用交互式终端创建管理员");
     const input = createInterface({
       input: process.stdin,
@@ -67,7 +70,7 @@ async function main() {
       `管理员已${reset ? "重置" : "创建"}。访问 ${options.origin}/admin/ 登录。`,
     );
   } finally {
-    store.close();
+    await store.close();
   }
 }
 main().catch((error) => {

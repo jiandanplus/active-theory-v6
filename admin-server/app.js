@@ -3,12 +3,21 @@ const fs = require("node:fs");
 const express = require("express");
 const { openStore } = require("./database");
 const { mountAuth } = require("./security");
-const { initializeConfig, saveDraft, publish, restore } = require("./config");
+const {
+  initializeConfig,
+  saveDraft,
+  publish,
+  restore,
+  createPreview,
+} = require("./config");
+const { route, publicError } = require("./http");
+const { contentRepository } = require("./repositories/content");
+const { resourceRepository } = require("./repositories/resources");
+const { storageRepository } = require("./repositories/storages");
+const { auditRepository } = require("./repositories/audit");
 const { mountFrontend } = require("./frontend");
 const { mountResources } = require("./resources");
 const { mountModels } = require("./models");
-const { validatePublication } = require("./publication");
-const { randomUUID } = require("node:crypto");
 
 function createApp(options = {}) {
   options = {
@@ -50,7 +59,7 @@ function createApp(options = {}) {
   if (options.production && !options.origin.startsWith("https://"))
     throw new Error("生产环境 SITE_ORIGIN 必须为 HTTPS");
   const app = express(),
-    store = openStore(options.dataDir);
+    store = options.store || openStore(options.dataDir);
   app.locals.store = store;
   app.disable("x-powered-by");
   if (options.trustProxy) app.set("trust proxy", options.trustProxy);
@@ -70,84 +79,95 @@ function createApp(options = {}) {
     next();
   });
   app.use(express.json({ limit: "5mb" }));
-  initializeConfig(store, options.root);
+  if (!options.store) initializeConfig(store, options.root);
   const { requireAuth, csrfGuard } = mountAuth(app, store, options);
   const admin = express.Router();
   app.use("/api/admin", requireAuth, csrfGuard, admin);
-  admin.get("/config", (req, res) =>
-    res.json({
-      config: store.get("draft"),
-      revision: store.get("revision", 0),
-      published: store.get("published"),
+  admin.get(
+    "/config",
+    route(async (req, res) => {
+      const draft = await contentRepository(store).getDraft();
+      const { config, revision, published } = draft;
+      res.json({ config, revision, published });
     }),
   );
-  admin.put("/config", (req, res, next) => {
-    try {
+  admin.put(
+    "/config",
+    route(async (req, res) =>
       res.json({
-        revision: saveDraft(store, req.body.config, req.body.revision),
-      });
-    } catch (error) {
-      next(error);
-    }
-  });
-  admin.post("/publish", async (req, res, next) => {
-    try {
-      const warnings = await validatePublication(store, options.root, options);
-      res.json({ version: publish(store, req.body.revision), warnings });
-    } catch (error) {
-      next(error);
-    }
-  });
-  admin.post("/preview", async (req, res, next) => {
-    try {
-      if (req.body.revision !== store.get("revision"))
-        return res.status(409).json({ error: "草稿已更新，请刷新" });
-      await validatePublication(store, options.root, options);
-      if (req.body.revision !== store.get("revision"))
-        return res.status(409).json({ error: "草稿已更新，请刷新" });
-      const previews = store.get("previews", {}),
-        key = "preview-" + randomUUID();
-      previews[key] = store.get("draft");
-      store.set(
-        "previews",
-        Object.fromEntries(Object.entries(previews).slice(-5)),
+        revision: await saveDraft(
+          store,
+          req.body.config,
+          req.body.revision,
+          req.adminSession.username,
+        ),
+      }),
+    ),
+  );
+  admin.post(
+    "/publish",
+    route(async (req, res) => {
+      res.json(
+        await publish(
+          store,
+          req.body.revision,
+          options,
+          req.adminSession.username,
+          { withWarnings: true },
+        ),
       );
-      res.json({ url: `/?preview=${key}` });
-    } catch (error) {
-      next(error);
-    }
-  });
-  admin.get("/versions", (req, res) =>
-    res.json({
-      published: store.get("published"),
-      versions: store.db
-        .prepare("SELECT id,created FROM versions ORDER BY id DESC")
-        .all(),
     }),
   );
-  admin.post("/versions/:id/restore", (req, res, next) => {
-    try {
+  admin.post(
+    "/preview",
+    route(async (req, res) =>
       res.json({
-        revision: restore(store, Number(req.params.id), req.body.revision),
+        url: `/?preview=${await createPreview(store, req.body.revision, options, req.adminSession.username)}`,
+      }),
+    ),
+  );
+  admin.get(
+    "/versions",
+    route(async (req, res) => {
+      const repo = contentRepository(store);
+      res.json({
+        published: (await repo.getDraft()).published,
+        versions: (await repo.listVersions()).map(({ id, created }) => ({
+          id,
+          created,
+        })),
       });
-    } catch (error) {
-      next(error);
-    }
-  });
-  admin.get("/overview", (req, res) =>
-    res.json({
-      published: store.get("published"),
-      revision: store.get("revision"),
-      resources: store.get("resources", []).length,
-      projects: store.get("draft").projects.length,
-      defaultStorage: store.get("defaultStorage", "local"),
-      cloudConfigured: store.get("storages", []).length > 0,
-      masterKeyConfigured: /^[a-f\d]{64}$/i.test(options.masterKey || ""),
-      audit: store.db
-        .prepare(
-          "SELECT created,action,actor FROM audit ORDER BY id DESC LIMIT 10",
-        )
-        .all(),
+    }),
+  );
+  admin.post(
+    "/versions/:id/restore",
+    route(async (req, res) =>
+      res.json({
+        revision: await restore(
+          store,
+          Number(req.params.id),
+          req.body.revision,
+          req.adminSession.username,
+        ),
+      }),
+    ),
+  );
+  admin.get(
+    "/overview",
+    route(async (req, res) => {
+      const draft = await contentRepository(store).getDraft();
+      res.json({
+        published: draft.published,
+        revision: draft.revision,
+        resources: (await resourceRepository(store).list()).length,
+        projects: draft.config.projects.length,
+        defaultStorage: await storageRepository(store).getDefault(),
+        cloudConfigured: (await storageRepository(store).list()).some(
+          (s) => s.type === "s3",
+        ),
+        masterKeyConfigured: /^[a-f\d]{64}$/i.test(options.masterKey || ""),
+        audit: await auditRepository(store).recent(10),
+      });
     }),
   );
   mountResources({ app, admin, store, options });
@@ -166,14 +186,11 @@ function createApp(options = {}) {
   app.use((req, res) => res.status(404).json({ error: "未找到资源" }));
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
-    const status = err.status >= 400 && err.status < 500 ? err.status : 500;
+    const { status, message } = publicError(err);
     if (status === 500) console.error("[admin]", err.code || err.name);
-    res
-      .status(status)
-      .json({
-        error:
-          status === 500 ? "服务器处理失败，请查看服务端日志" : err.message,
-      });
+    res.status(status).json({
+      error: message,
+    });
   });
   return app;
 }

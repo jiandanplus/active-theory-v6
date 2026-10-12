@@ -1,6 +1,9 @@
 const crypto = require("node:crypto");
 const { promisify } = require("node:util");
 const scrypt = promisify(crypto.scrypt);
+const { route } = require("./http");
+const { authRepository } = require("./repositories/auth");
+const { auditRepository } = require("./repositories/audit");
 const IDLE = 12 * 60 * 60 * 1000,
   ABSOLUTE = 7 * 24 * 60 * 60 * 1000;
 const digest = (value) =>
@@ -58,13 +61,29 @@ async function createAccount(
 ) {
   if (typeof username !== "string" || !/^[a-zA-Z0-9_.-]{3,64}$/.test(username))
     throw fail(400, "用户名须为 3–64 位字母、数字、点、下划线或短横线");
-  if (store.db.prepare("SELECT 1 FROM admins LIMIT 1").get() && !reset)
-    throw fail(409, "管理员已存在，请使用本地重置命令");
   const hash = await hashPassword(password);
-  store.transaction(() => {
-    store.db.exec("DELETE FROM admins; DELETE FROM sessions;");
-    store.db.prepare("INSERT INTO admins VALUES(?,?)").run(username, hash);
-    store.audit(reset ? "account.reset" : "account.create", username);
+  await store.transaction(async (tx) => {
+    await tx.query(
+      "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+    );
+    const repo = authRepository(tx);
+    if ((await repo.getAdmin()) && !reset)
+      throw fail(409, "管理员已存在，请使用本地重置命令");
+    if (
+      reset &&
+      !(
+        await tx.query(
+          "SELECT id FROM personal_site.installation WHERE id=true",
+        )
+      ).rowCount
+    )
+      throw fail(409, "网站尚未安装，不能重置管理员");
+    await repo.replaceAdmin({ username, hash });
+    await repo.clearSessions();
+    await auditRepository(tx).append(
+      reset ? "account.reset" : "account.create",
+      username,
+    );
   });
 }
 function mountAuth(app, store, options) {
@@ -83,94 +102,94 @@ function mountAuth(app, store, options) {
       return next(fail(403, "请求来源不受信任"));
     next();
   }
-  app.use((req, res, next) => {
-    const cookies = (req.headers.cookie || "")
-      .split(";")
-      .map((v) => v.trim().split("="));
-    const raw = cookies.find(([key]) => key === cookieName)?.[1];
-    if (raw && /^[a-f0-9]{64}$/.test(raw)) {
-      const id = digest(raw),
-        now = Date.now();
-      const row = store.db.prepare("SELECT * FROM sessions WHERE id=?").get(id);
-      if (row && now - row.touched < IDLE && now - row.created < ABSOLUTE) {
-        req.adminSession = { ...row, csrfToken: row.csrf };
-        if (now - row.touched > 60000)
-          store.db
-            .prepare("UPDATE sessions SET touched=? WHERE id=?")
-            .run(now, id);
-      } else if (row)
-        store.db.prepare("DELETE FROM sessions WHERE id=?").run(id);
-    }
-    next();
-  });
-  app.get("/api/admin/session", (req, res) =>
-    res.json({
-      authenticated: !!req.adminSession,
-      initialized: !!store.db.prepare("SELECT 1 FROM admins LIMIT 1").get(),
-      username: req.adminSession?.username,
-      csrfToken: req.adminSession?.csrf,
+  app.use(
+    route(async (req, res, next) => {
+      const cookies = (req.headers.cookie || "")
+        .split(";")
+        .map((v) => v.trim().split("="));
+      const raw = cookies.find(([key]) => key === cookieName)?.[1];
+      if (raw && /^[a-f0-9]{64}$/.test(raw)) {
+        const id = digest(raw),
+          now = Date.now();
+        const row = await authRepository(store).getSession(id);
+        if (row && now - row.touched < IDLE && now - row.created < ABSOLUTE) {
+          req.adminSession = { ...row, csrfToken: row.csrf };
+          if (now - row.touched > 60000)
+            await authRepository(store).touchSession(id, now);
+        } else if (row) await authRepository(store).deleteSession(id);
+      }
+      next();
     }),
   );
-  app.post("/api/admin/login", trustedOrigin, async (req, res, next) => {
-    let entered = false;
-    try {
-      const { username, password } = req.body || {};
-      if (
-        typeof username !== "string" ||
-        username.length > 64 ||
-        typeof password !== "string" ||
-        Buffer.byteLength(password) > 256
-      )
-        throw fail(400, "登录信息格式无效");
-      const now = Date.now();
-      store.db.prepare("DELETE FROM attempts WHERE expires<?").run(now);
-      const keys = [`ip:${req.ip}`, `user:${username.toLowerCase()}`].map(
-        digest,
-      );
-      if (
-        keys.some(
-          (key) =>
-            (store.db.prepare("SELECT count FROM attempts WHERE key=?").get(key)
-              ?.count || 0) >= 10,
-        ) ||
-        activeLogins >= 4
-      )
-        throw fail(429, "尝试过于频繁，请稍后再试");
-      for (const key of keys)
-        store.db
-          .prepare(
-            "INSERT INTO attempts VALUES(?,1,?) ON CONFLICT(key) DO UPDATE SET count=count+1",
-          )
-          .run(key, now + 15 * 60000);
-      activeLogins++;
-      entered = true;
-      const account = store.db
-        .prepare("SELECT * FROM admins WHERE username=?")
-        .get(username);
-      const valid = await verifyPassword(password, account?.hash);
-      if (!valid || !account) throw fail(401, "用户名或密码不正确");
-      for (const key of keys)
-        store.db.prepare("DELETE FROM attempts WHERE key=?").run(key);
-      if (req.adminSession)
-        store.db
-          .prepare("DELETE FROM sessions WHERE id=?")
-          .run(req.adminSession.id);
-      store.db
-        .prepare("DELETE FROM sessions WHERE touched<? OR created<?")
-        .run(now - IDLE, now - ABSOLUTE);
-      const raw = token(),
-        csrfToken = token();
-      store.db
-        .prepare("INSERT INTO sessions VALUES(?,?,?,?,?)")
-        .run(digest(raw), username, csrfToken, now, now);
-      store.audit("session.login", username);
-      res.cookie(cookieName, raw, cookieOptions).json({ username, csrfToken });
-    } catch (error) {
-      next(error);
-    } finally {
-      if (entered) activeLogins--;
-    }
-  });
+  app.get(
+    "/api/admin/session",
+    route(async (req, res) =>
+      res.json({
+        authenticated: !!req.adminSession,
+        initialized: !!(await authRepository(store).getAdmin()),
+        username: req.adminSession?.username,
+        csrfToken: req.adminSession?.csrf,
+      }),
+    ),
+  );
+  app.post(
+    "/api/admin/login",
+    trustedOrigin,
+    route(async (req, res) => {
+      let entered = false;
+      try {
+        const { username, password } = req.body || {};
+        if (
+          typeof username !== "string" ||
+          username.length > 64 ||
+          typeof password !== "string" ||
+          Buffer.byteLength(password) > 256
+        )
+          throw fail(400, "登录信息格式无效");
+        const now = Date.now();
+        const keys = [`ip:${req.ip}`, `user:${username.toLowerCase()}`].map(
+          digest,
+        );
+        if (activeLogins >= 4) throw fail(429, "尝试过于频繁，请稍后再试");
+        activeLogins++;
+        entered = true;
+        await store.transaction(async (tx) => {
+          await authRepository(tx).reserveAttempt(keys, now, 10);
+        });
+        const candidate = await authRepository(store).getAdmin();
+        const account = candidate?.username === username ? candidate : null;
+        const valid = await verifyPassword(password, account?.hash);
+        if (!valid || !account) throw fail(401, "用户名或密码不正确");
+        const raw = token(),
+          csrfToken = token();
+        await store.transaction(async (tx) => {
+          await tx.query(
+            "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+          );
+          const repo = authRepository(tx);
+          const current = await repo.getAdmin();
+          if (current?.hash !== account.hash || current?.username !== username)
+            throw fail(401, "用户名或密码不正确");
+          await repo.clearAttempts(keys);
+          if (req.adminSession) await repo.deleteSession(req.adminSession.id);
+          await repo.pruneSessions(now);
+          await repo.putSession({
+            id: digest(raw),
+            username,
+            csrf: csrfToken,
+            created: now,
+            touched: now,
+          });
+          await auditRepository(tx).append("session.login", username);
+        });
+        res
+          .cookie(cookieName, raw, cookieOptions)
+          .json({ username, csrfToken });
+      } finally {
+        if (entered) activeLogins--;
+      }
+    }),
+  );
   const requireAuth = (req, res, next) =>
     req.adminSession ? next() : next(fail(401, "请先登录"));
   const csrfGuard = (req, res, next) => {
@@ -182,40 +201,45 @@ function mountAuth(app, store, options) {
       return next(fail(403, "安全校验失败，请刷新页面后重试"));
     next();
   };
-  app.post("/api/admin/logout", requireAuth, csrfGuard, (req, res) => {
-    store.db
-      .prepare("DELETE FROM sessions WHERE id=?")
-      .run(req.adminSession.id);
-    res
-      .clearCookie(cookieName, { ...cookieOptions, maxAge: undefined })
-      .json({ ok: true });
-  });
+  app.post(
+    "/api/admin/logout",
+    requireAuth,
+    csrfGuard,
+    route(async (req, res) => {
+      await authRepository(store).deleteSession(req.adminSession.id);
+      res
+        .clearCookie(cookieName, { ...cookieOptions, maxAge: undefined })
+        .json({ ok: true });
+    }),
+  );
   app.post(
     "/api/admin/password",
     requireAuth,
     csrfGuard,
-    async (req, res, next) => {
-      try {
-        const account = store.db
-          .prepare("SELECT * FROM admins WHERE username=?")
-          .get(req.adminSession.username);
-        if (!(await verifyPassword(req.body?.currentPassword, account.hash)))
-          throw fail(401, "当前密码不正确");
-        const hash = await hashPassword(req.body?.newPassword);
-        store.transaction(() => {
-          store.db
-            .prepare("UPDATE admins SET hash=? WHERE username=?")
-            .run(hash, account.username);
-          store.db.exec("DELETE FROM sessions");
-          store.audit("account.password", account.username);
-        });
-        res
-          .clearCookie(cookieName, { ...cookieOptions, maxAge: undefined })
-          .json({ ok: true });
-      } catch (error) {
-        next(error);
-      }
-    },
+    route(async (req, res) => {
+      const account = await authRepository(store).getAdmin();
+      if (!(await verifyPassword(req.body?.currentPassword, account.hash)))
+        throw fail(401, "当前密码不正确");
+      const hash = await hashPassword(req.body?.newPassword);
+      await store.transaction(async (tx) => {
+        await tx.query(
+          "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+        );
+        const repo = authRepository(tx),
+          current = await repo.getAdmin();
+        if (
+          current?.hash !== account.hash ||
+          !(await repo.getSession(req.adminSession.id))
+        )
+          throw fail(401, "请重新登录");
+        await repo.replaceAdmin({ username: account.username, hash });
+        await repo.clearSessions();
+        await auditRepository(tx).append("account.password", account.username);
+      });
+      res
+        .clearCookie(cookieName, { ...cookieOptions, maxAge: undefined })
+        .json({ ok: true });
+    }),
   );
   return { requireAuth, csrfGuard };
 }

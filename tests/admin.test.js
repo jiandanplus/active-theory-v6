@@ -5,28 +5,7 @@ const os = require("node:os");
 const path = require("node:path");
 
 async function fixture(t) {
-  const { createApp } = require("../admin-server/app");
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), "site-admin-test-"));
-  fs.writeFileSync(
-    path.join(root, "index.html"),
-    "<html><head><title>Test</title></head><body>Site</body></html>",
-  );
-  fs.writeFileSync(path.join(root, "server.js"), "SECRET SOURCE");
-  const app = createApp({
-    root,
-    dataDir: path.join(root, "data"),
-    origin: "http://localhost:3000",
-  });
-  const server = app.listen(0, "127.0.0.1");
-  await new Promise((resolve) => server.once("listening", resolve));
-  const url = `http://127.0.0.1:${server.address().port}`;
-  t.after(async () => {
-    await new Promise((resolve) => server.close(resolve));
-    app.locals.store.close();
-    fs.rmSync(root, { recursive: true, force: true });
-  });
-  const request = (route, options = {}) => fetch(url + route, options);
-  return { app, root, request };
+  return require("./helpers/http").httpFixture(t);
 }
 
 test("private routes and legacy write endpoints are protected", async (t) => {
@@ -109,12 +88,147 @@ test("initialization cannot replace account without explicit local reset", async
   );
   assert(
     !JSON.stringify(
-      app.locals.store.db.prepare("SELECT * FROM admins").all(),
+      (await app.locals.store.query("SELECT * FROM personal_site.admins")).rows,
     ).includes("a-valid-long-password"),
   );
 });
 
 module.exports = { fixture };
+test("sessions are hashed, idle/absolute expiry and password change invalidate sessions", async (t) => {
+  const f = await fixture(t);
+  await f.createAdmin();
+  let headers = await f.login();
+  const raw = headers.Cookie.split("=")[1];
+  const sessions = (await f.store.query("SELECT * FROM personal_site.sessions"))
+    .rows;
+  assert.notEqual(sessions[0].id, raw);
+  assert.equal(
+    sessions[0].id,
+    require("node:crypto").createHash("sha256").update(raw).digest("hex"),
+  );
+  await f.store.query("UPDATE personal_site.sessions SET touched=$1", [
+    Date.now() - 12 * 60 * 60000,
+  ]);
+  assert.equal((await f.request("/api/admin/config", { headers })).status, 401);
+  headers = await f.login();
+  await f.store.query("UPDATE personal_site.sessions SET created=$1", [
+    Date.now() - 7 * 24 * 60 * 60000,
+  ]);
+  assert.equal((await f.request("/api/admin/config", { headers })).status, 401);
+  headers = await f.login();
+  const second = await f.login();
+  assert.equal(
+    (
+      await f.request("/api/admin/password", {
+        method: "POST",
+        headers,
+        body: JSON.stringify({
+          currentPassword: "a-valid-long-password-2026",
+          newPassword: "a-brand-new-long-password",
+        }),
+      })
+    ).status,
+    200,
+  );
+  assert.equal(
+    (await f.request("/api/admin/config", { headers: second })).status,
+    401,
+  );
+  assert.equal(
+    (await f.store.query("SELECT * FROM personal_site.sessions")).rowCount,
+    0,
+  );
+});
+test("login attempts persist across restart and database errors are maintenance errors", async (t) => {
+  const f = await fixture(t);
+  await f.createAdmin();
+  for (let i = 0; i < 10; i++)
+    assert.equal(
+      (
+        await f.request("/api/admin/login", {
+          method: "POST",
+          headers: f.json,
+          body: JSON.stringify({ username: "owner", password: "wrong" }),
+        })
+      ).status,
+      401,
+    );
+  await f.restart();
+  assert.equal(
+    (
+      await f.request("/api/admin/login", {
+        method: "POST",
+        headers: f.json,
+        body: JSON.stringify({ username: "owner", password: "wrong" }),
+      })
+    ).status,
+    429,
+  );
+  await f.store.query(
+    "ALTER TABLE personal_site.admins RENAME TO unavailable_admins",
+  );
+  try {
+    const session = await f.request("/api/admin/session");
+    assert.equal(session.status, 503);
+    assert.equal((await session.json()).initialized, undefined);
+    await f.store.query("DELETE FROM personal_site.login_attempts");
+    const login = await f.request("/api/admin/login", {
+      method: "POST",
+      headers: f.json,
+      body: JSON.stringify({ username: "owner", password: "wrong" }),
+    });
+    assert.equal(login.status, 503);
+    assert.doesNotMatch((await login.json()).error, /密码不正确/);
+  } finally {
+    await f.store.query(
+      "ALTER TABLE personal_site.unavailable_admins RENAME TO admins",
+    );
+  }
+});
+test("reset cannot initialize uninstalled content and account audit failures roll back", async (t) => {
+  const f = await fixture(t);
+  await f.createAdmin();
+  const before = (await f.store.query("SELECT * FROM personal_site.admins"))
+    .rows[0];
+  await f.store.query("DELETE FROM personal_site.installation");
+  await assert.rejects(
+    require("../admin-server/security").createAccount(
+      f.store,
+      "newowner",
+      "new-long-valid-password",
+      { reset: true },
+    ),
+    /安装/,
+  );
+  assert.deepEqual(
+    (await f.store.query("SELECT * FROM personal_site.admins")).rows[0],
+    before,
+  );
+  await f.store.query(
+    "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',1)",
+  );
+  const headers = await f.login();
+  await f.store.query(
+    "CREATE FUNCTION personal_site.fail_audit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'audit rejected'; END; $$",
+  );
+  await f.store.query(
+    "CREATE TRIGGER reject_audit BEFORE INSERT ON personal_site.audit_events FOR EACH ROW EXECUTE FUNCTION personal_site.fail_audit()",
+  );
+  await assert.rejects(
+    require("../admin-server/security").createAccount(
+      f.store,
+      "newowner",
+      "new-long-valid-password",
+      { reset: true },
+    ),
+    /audit rejected/,
+  );
+  assert.deepEqual(
+    (await f.store.query("SELECT * FROM personal_site.admins")).rows[0],
+    before,
+  );
+  assert.equal((await f.request("/api/admin/config", { headers })).status, 200);
+});
 test("rejects public private-data directories and malformed origins before initialization", () => {
   const { createApp } = require("../admin-server/app");
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "site-options-test-"));

@@ -1,101 +1,137 @@
-const fs = require("node:fs"),
-  path = require("node:path");
-const { baseUIL } = require("./config");
+const fs = require("node:fs/promises");
+const path = require("node:path");
 const { localFile } = require("./storage");
 const { fail } = require("./security");
+const { collectReferences } = require("./snapshots");
+const { resourceRepository } = require("./repositories/resources");
+const { storageRepository } = require("./repositories/storages");
+function resourceId(snapshot, url) {
+  const direct =
+    /^\/media\/([^/?#]+)(?:[?#]|$)/.exec(url)?.[1] ||
+    /^\/(?:models\/|assets\/geometry\/admin\/)([^/?#]+)\.bin(?:[?#]|$)/.exec(
+      url,
+    )?.[1];
+  const slot = snapshot.legacyMap[url],
+    asset =
+      snapshot.assets[slot] ||
+      Object.values(snapshot.assets).find(
+        (a) => a.fileName === url || a.url === url,
+      );
+  return direct || asset?.resourceId;
+}
 
-// Never fetch arbitrary browser asset URLs server-side (SSRF). Public CORS and
-// availability are an explicit preview requirement, not a fake "verified" flag.
-async function validatePublication(
-  store,
-  root,
-  options,
-  config = store.get("draft"),
-) {
-  const schema = store.get("schema"),
-    resources = store.get("resources", []),
-    warnings = new Set();
+// Database-only checks are repeated under the site lock after file validation.
+async function checkPublicationState(store, snapshot) {
+  const resources = resourceRepository(store),
+    storages = storageRepository(store);
   const geometry = new Set(
-    config.scenes
+    snapshot.config.scenes
       .flatMap((s) => s.fields)
       .filter((f) => f.type === "geometry")
-      .map((f) => f.value),
+      .map((f) => resourceId(snapshot, f.value)),
   );
-  const checked = new Set();
-  async function visit(value, base) {
-    if (typeof value === "string") {
-      if (checked.has(value)) return;
-      const managed = /^\/(?:media\/([^/?#]+)|models\/([^/?#]+)\.bin)$/.exec(
-        value,
-      );
-      if (managed) {
-        checked.add(value);
-        const resource = resources.find(
-          (r) => r.id === (managed[1] || managed[2]) && !r.trashed,
-        );
-        if (!resource) throw fail(422, `引用的资源不存在或已回收：${value}`);
-        if (geometry.has(value) && resource.status !== "ready")
-          throw fail(422, "模型需要先完成 GLB → BIN 转换");
-        if (resource.source === "local") {
-          try {
-            const file = await localFile(
-              path.join(options.dataDir, "uploads"),
-              resource.key,
-            );
-            if (!fs.statSync(file).isFile()) throw Error();
-          } catch {
-            throw fail(422, `本地资源不存在：${resource.name || value}`);
-          }
-        } else
-          warnings.add("云端/外链资源的公网访问和 CORS 需要在前台预览确认");
-      } else if (
-        value !== base &&
-        /^(?:\/?assets\/|room\/|bush\.bin\/)/.test(value)
-      ) {
-        checked.add(value);
-        const relative = value.replace(/^\//, "").split(/[?#]/)[0];
-        try {
-          const file = fs.realpathSync(path.join(root, relative));
-          if (
-            !file.startsWith(fs.realpathSync(root) + path.sep) ||
-            !fs.statSync(file).isFile()
-          )
-            throw Error();
-        } catch {
-          throw fail(422, `站内资源不存在：${value}`);
-        }
-      } else if (value !== base && /^https:/.test(value))
-        warnings.add("云端/外链资源的公网访问和 CORS 需要在前台预览确认");
-    } else if (value && typeof value === "object")
-      for (const [key, item] of Object.entries(value))
-        await visit(item, base?.[key]);
+  const rows = [];
+  for (const id of [
+    ...new Set(collectReferences(snapshot).map((r) => r.resourceId)),
+  ].sort()) {
+    const row = await resources.get(id);
+    if (
+      !row ||
+      row.trashed ||
+      ["missing", "disabled", "failed"].includes(row.status)
+    )
+      throw fail(422, "引用的资源不存在或已回收");
+    if (geometry.has(row.id) && row.status !== "ready")
+      throw fail(422, "模型需要先完成 GLB → BIN 转换");
+    if (row.storageId) {
+      const storage = await storages.get(row.storageId);
+      if (!storage || storage.available === false)
+        throw fail(422, "资源存储配置不可用");
+    }
+    rows.push(row);
   }
-  await visit(config, schema);
-  const uil = baseUIL(root);
-  for (const scene of config.scenes)
+  if (snapshot.template.readiness?.missingRequired?.length)
+    throw fail(422, "缺少前台运行所需资源");
+  return rows;
+}
+
+async function validatePublication(store, options = {}, snapshot) {
+  const rows = await checkPublicationState(store, snapshot),
+    warnings = new Set();
+  const media = [];
+  for (const p of snapshot.config.projects)
+    for (const kind of ["video", "image", "projectLogo"])
+      for (const key of ["url", "thumbnail"])
+        if (p[kind]?.[key]) media.push(p[kind][key]);
+  for (const scene of snapshot.config.scenes)
+    for (const field of scene.fields)
+      if (["geometry", "resource"].includes(field.type))
+        media.push(field.value);
+  media.push(...snapshot.config.songs.map((s) => s.src));
+  for (const url of media) {
+    if (/^https:/.test(url)) {
+      warnings.add("云端/外链资源的公网访问和 CORS 需要在前台预览确认");
+      continue;
+    }
+    if (!/^(?:\/?assets\/|\/media\/|\/models\/|room\/|bush\.bin\/)/.test(url))
+      continue;
+    const slot = snapshot.legacyMap[url],
+      mapped =
+        snapshot.assets[slot] ||
+        Object.values(snapshot.assets).find(
+          (a) => a.fileName === url || a.url === url,
+        );
+    if (
+      !mapped &&
+      !rows.some((r) => r.url === url || r.id === resourceId(snapshot, url))
+    )
+      throw fail(422, "引用的站内资源不存在");
+  }
+  for (const row of rows) {
+    if (row.source === "local") {
+      try {
+        const file = await localFile(
+          path.join(options.dataDir, "uploads"),
+          row.key,
+        );
+        if (!(await fs.stat(file)).isFile()) throw Error();
+      } catch {
+        throw fail(422, `本地资源不存在：${row.name}`);
+      }
+    } else if (row.source === "bundled" && row.path) {
+      try {
+        const root = await fs.realpath(options.root),
+          file = await fs.realpath(path.resolve(root, row.path));
+        if (
+          !file.startsWith(root + path.sep) ||
+          !(await fs.stat(file)).isFile()
+        )
+          throw Error();
+      } catch {
+        throw fail(422, `站内资源不存在：${row.name}`);
+      }
+    } else if (["s3", "external"].includes(row.source))
+      warnings.add("云端/外链资源的公网访问和 CORS 需要在前台预览确认");
+  }
+  const uil = snapshot.template.baseUIL;
+  for (const scene of snapshot.config.scenes)
     for (const field of scene.fields) {
       if (field.type !== "text" || field.value === uil[field.key]) continue;
-      const style = uil[field.key.replace(/_text$/, "_fontStyle")];
-      const name =
-        typeof style === "string"
-          ? style.match(/(?:^|\n)font:\s*([\w-]+)/)?.[1]
-          : null;
+      const name = uil[field.key.replace(/_text$/, "_fontStyle")]?.match?.(
+        /(?:^|\n)font:\s*([\w-]+)/,
+      )?.[1];
       if (!name)
         throw fail(422, "无法确认此 3D 文案使用的字体，请先检查字体配置");
-      let chars;
-      try {
-        chars = JSON.parse(
-          fs.readFileSync(
-            path.join(root, "assets/fonts", name + ".json"),
-            "utf8",
-          ),
-        ).chars;
-      } catch {
-        throw fail(422, `缺少字体图集：${name}`);
-      }
-      const available = new Set(
-        chars.map((c) => c.char || String.fromCodePoint(c.id)),
-      );
+      const url = `assets/fonts/${name}.json`,
+        slot = snapshot.legacyMap[url] || snapshot.legacyMap["/" + url];
+      const asset =
+        snapshot.assets[slot] ||
+        Object.values(snapshot.assets).find(
+          (a) => a.fileName === url || a.url === url,
+        );
+      const chars = snapshot.template.fontCoverage?.[asset?.resourceId];
+      if (typeof chars !== "string") throw fail(422, `缺少字体图集：${name}`);
+      const available = new Set([...chars]);
       const missing = [
         ...new Set(
           [...field.value].filter((c) => !/[\s]/u.test(c) && !available.has(c)),
@@ -109,4 +145,4 @@ async function validatePublication(
     }
   return [...warnings];
 }
-module.exports = { validatePublication };
+module.exports = { validatePublication, checkPublicationState };
