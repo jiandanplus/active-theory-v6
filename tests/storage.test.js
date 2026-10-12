@@ -5,10 +5,354 @@ const os = require("node:os");
 const path = require("node:path");
 const http = require("node:http");
 const express = require("express");
-const { openStore } = require("../admin-server/database");
+const { postgresFixture } = require("./helpers/postgres");
+const { contentFixture } = require("./helpers/content");
+const { contentRepository } = require("../admin-server/repositories/content");
+const {
+  resourceRepository,
+} = require("../admin-server/repositories/resources");
 const load = () => require("../admin-server/storage");
+test("real database INSERT rejection never returns success or overwrites concurrent registration", async (t) => {
+  const f = await fixture(t);
+  await f.store.query(
+    "CREATE FUNCTION personal_site.reject_resource_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN IF NEW.name = 'reject' THEN RAISE EXCEPTION 'test-write-failure'; END IF; RETURN NEW; END $$",
+  );
+  await f.store.query(
+    "CREATE TRIGGER reject_resource_test BEFORE INSERT ON personal_site.resources FOR EACH ROW EXECUTE FUNCTION personal_site.reject_resource_test()",
+  );
+  const link = (name) =>
+    fetch(f.base + "/api/admin/resources/link", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        name,
+        kind: "image",
+        url: "https://example.com/a.png",
+      }),
+    });
+  const responses = await Promise.all([
+    link("first"),
+    link("second"),
+    link("reject"),
+  ]);
+  assert.deepEqual(
+    responses.map((r) => r.status),
+    [201, 201, 500],
+  );
+  const rows = await resourceRepository(f.store).list();
+  assert.equal(rows.length, 6);
+  assert.equal(new Set(rows.map((r) => r.id)).size, 6);
+  assert(
+    !JSON.stringify(await responses[2].json()).includes("test-write-failure"),
+  );
+});
 test("storage implementation is available", () =>
   assert.equal(typeof load().createAdapter, "function"));
+test("real S3 put at old endpoint cannot be registered after storage relocation", async (t) => {
+  const objects = [];
+  const server = http.createServer(async (req, res) => {
+    const parts = [];
+    for await (const chunk of req) parts.push(chunk);
+    objects.push({ url: req.url, bytes: Buffer.concat(parts) });
+    res.end();
+  });
+  await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));
+  t.after(() => new Promise((resolve) => server.close(resolve)));
+  const endpoint = `http://127.0.0.1:${server.address().port}`,
+    masterKey = "ab".repeat(32);
+  const f = await fixture(t, { masterKey, endpointAllowlist: [endpoint] });
+  const config = {
+    id: "s3",
+    type: "s3",
+    endpoint,
+    bucket: "bucket",
+    publicBaseUrl: "https://cdn.example.com/",
+    forcePathStyle: true,
+    credentials: load().encryptCredentials(
+      { accessKeyId: "test", secretAccessKey: "test" },
+      { masterKey },
+    ),
+  };
+  const {
+    storageRepository,
+  } = require("../admin-server/repositories/storages");
+  await f.store.transaction((tx) => storageRepository(tx).upsert(config));
+  const s = load(),
+    original = s.createAdapter,
+    originalLog = console.error,
+    messages = [];
+  s.createAdapter = async (...args) => {
+    const adapter = await original(...args),
+      put = adapter.put;
+    adapter.put = async (...values) => {
+      await put(...values);
+      await f.store.transaction((tx) =>
+        storageRepository(tx).upsert({
+          ...config,
+          endpoint: "https://new.example.com",
+        }),
+      );
+    };
+    return adapter;
+  };
+  console.error = (...args) => messages.push(args);
+  try {
+    const body = new FormData();
+    body.append("storageId", "s3");
+    body.append(
+      "file",
+      new Blob([
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+          "base64",
+        ),
+      ]),
+      "pixel.png",
+    );
+    assert.equal(
+      (
+        await fetch(f.base + "/api/admin/resources/upload", {
+          method: "POST",
+          body,
+        })
+      ).status,
+      409,
+    );
+    assert.equal((await resourceRepository(f.store).list()).length, 4);
+    assert.equal(objects.length, 1);
+    assert(objects[0].bytes.length > 0);
+    assert.equal(messages.length, 1);
+    assert.deepEqual(Object.keys(messages[0][1]), ["key"]);
+  } finally {
+    s.createAdapter = original;
+    console.error = originalLog;
+  }
+});
+test("S3 configuration persists masked encrypted credentials and permits explicit recovery", async (t) => {
+  const endpoint = "http://127.0.0.1:19876",
+    masterKey = "ab".repeat(32);
+  const f = await fixture(t, { masterKey, endpointAllowlist: [endpoint] });
+  const save = (value) =>
+    fetch(f.base + "/api/admin/storages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(value),
+    });
+  const value = {
+    id: "s3",
+    type: "s3",
+    endpoint,
+    bucket: "bucket",
+    publicBaseUrl: "https://cdn.example.com/",
+    forcePathStyle: true,
+    accessKeyId: "test-access",
+    secretAccessKey: "test-secret",
+    isDefault: true,
+  };
+  const response = await save(value);
+  assert.equal(response.status, 201);
+  const masked = await response.json();
+  assert.equal(masked.storage.credentials, undefined);
+  assert.equal(masked.storage.secretAccessKey, "configured");
+  const repo =
+    require("../admin-server/repositories/storages").storageRepository(f.store);
+  const stored = await repo.get("s3");
+  assert.deepEqual(
+    load().decryptCredentials(stored.credentials, { masterKey }),
+    { accessKeyId: "test-access", secretAccessKey: "test-secret" },
+  );
+  assert.equal(await repo.getDefault(), "s3");
+  await f.store.query(
+    "UPDATE personal_site.storages SET credentials=$1,available=false WHERE id='s3'",
+    [JSON.stringify({ iv: "broken", tag: "broken", data: "broken" })],
+  );
+  assert.equal(
+    (
+      await save({
+        ...value,
+        accessKeyId: "configured",
+        secretAccessKey: "configured",
+      })
+    ).status,
+    503,
+  );
+  assert.equal(
+    (
+      await save({
+        ...value,
+        accessKeyId: "replacement",
+        secretAccessKey: "replacement-secret",
+      })
+    ).status,
+    200,
+  );
+  assert.equal((await repo.get("s3")).available, true);
+  await f.store.transaction((tx) =>
+    resourceRepository(tx).insert({
+      id: "s3-resource",
+      source: "s3",
+      storageId: "s3",
+      key: "object.png",
+      url: "/media/s3-resource",
+      name: "image",
+      kind: "image",
+      status: "uploaded",
+    }),
+  );
+  assert.equal((await save({ ...value, prefix: "relocated" })).status, 409);
+});
+test("upload cannot register an object against storage changed during put", async (t) => {
+  const f = await fixture(t),
+    s = load(),
+    original = s.createAdapter;
+  const messages = [],
+    originalLog = console.error;
+  s.createAdapter = async (...args) => {
+    const adapter = await original(...args),
+      put = adapter.put;
+    adapter.put = async (...values) => {
+      await put(...values);
+      await f.store.query(
+        "UPDATE personal_site.storages SET available=false WHERE id='local'",
+      );
+    };
+    return adapter;
+  };
+  console.error = (...args) => messages.push(args);
+  try {
+    const body = new FormData();
+    body.append(
+      "file",
+      new Blob([
+        Buffer.from(
+          "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+          "base64",
+        ),
+      ]),
+      "pixel.png",
+    );
+    const response = await fetch(f.base + "/api/admin/resources/upload", {
+      method: "POST",
+      body,
+    });
+    assert.equal(response.status, 409);
+    assert.equal((await resourceRepository(f.store).list()).length, 4);
+  } finally {
+    s.createAdapter = original;
+    console.error = originalLog;
+  }
+});
+test("unavailable storage never accepts media bytes", async (t) => {
+  const dataDir = fs.mkdtempSync(
+    path.join(os.tmpdir(), "unavailable-storage-"),
+  );
+  t.after(() => fs.rmSync(dataDir, { recursive: true, force: true }));
+  await assert.rejects(
+    load().createAdapter({ type: "local", available: false }, { dataDir }),
+    (e) => e.status === 503,
+  );
+});
+test("real upload INSERT failure preserves only an orphan and clears multipart temp", async (t) => {
+  const f = await fixture(t);
+  await f.store.query(
+    "CREATE FUNCTION personal_site.reject_resource_test() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'test-write-failure'; END $$",
+  );
+  await f.store.query(
+    "CREATE TRIGGER reject_resource_test BEFORE INSERT ON personal_site.resources FOR EACH ROW EXECUTE FUNCTION personal_site.reject_resource_test()",
+  );
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const body = new FormData();
+  body.append("file", new Blob([png]), "pixel.png");
+  const messages = [];
+  const original = console.error;
+  console.error = (...args) => messages.push(args);
+  let response;
+  try {
+    response = await fetch(f.base + "/api/admin/resources/upload", {
+      method: "POST",
+      body,
+    });
+  } finally {
+    console.error = original;
+  }
+  assert.equal(response.status, 500);
+  assert.equal((await resourceRepository(f.store).list()).length, 4);
+  assert.deepEqual(fs.readdirSync(path.join(f.dir, "tmp")), []);
+  const objects = fs.readdirSync(path.join(f.dir, "uploads"));
+  assert.equal(objects.length, 1);
+  assert.deepEqual(messages, [
+    ["Unregistered media object", { key: objects[0] }],
+  ]);
+});
+test("concurrent uploads retain independent rows and local delivery rejects invalid ranges", async (t) => {
+  const f = await fixture(t);
+  const png = Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==",
+    "base64",
+  );
+  const upload = () => {
+    const body = new FormData();
+    body.append("file", new Blob([png]), "pixel.png");
+    return fetch(f.base + "/api/admin/resources/upload", {
+      method: "POST",
+      body,
+    });
+  };
+  const responses = await Promise.all([upload(), upload()]);
+  assert.deepEqual(
+    responses.map((r) => r.status),
+    [201, 201],
+  );
+  const rows = await Promise.all(
+    responses.map(async (r) => (await r.json()).resource),
+  );
+  assert.notEqual(rows[0].id, rows[1].id);
+  assert.equal((await resourceRepository(f.store).list()).length, 6);
+  for (const range of ["bytes=999-", "bytes=8-2", "bytes=-", "bytes=0-1,3-4"])
+    assert.equal(
+      (
+        await fetch(f.base + rows[0].url, {
+          headers: { "x-preview": "1", Range: range },
+        })
+      ).status,
+      416,
+    );
+});
+test("unexpired preview blocks trash, expired preview is pruned and bundled resources are read-only", async (t) => {
+  const f = await fixture(t);
+  const linked = await fetch(f.base + "/api/admin/resources/link", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ kind: "image", url: "https://example.com/a.png" }),
+  });
+  const { resource } = await linked.json();
+  const draft = await contentRepository(f.store).getDraft();
+  draft.snapshot.config.projects[0].video.url = `/media/${resource.id}`;
+  await f.store.transaction((tx) =>
+    contentRepository(tx).putPreview({
+      id: "preview-media",
+      owner: "admin",
+      expires: new Date(Date.now() + 60000).toISOString(),
+      snapshot: draft.snapshot,
+    }),
+  );
+  const trash = (id) =>
+    fetch(f.base + "/api/admin/resources/" + id, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: '{"trashed":true}',
+    });
+  assert.equal((await trash(resource.id)).status, 409);
+  await f.store.query(
+    "UPDATE personal_site.previews SET expires=$1 WHERE id=$2",
+    [new Date(Date.now() - 1000).toISOString(), "preview-media"],
+  );
+  assert.equal((await trash(resource.id)).status, 200);
+  assert.equal((await trash("unused")).status, 409);
+});
 test("local adapter removes incomplete objects after input stream failure", async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "local-put-failure-"));
   const adapter = await load().createAdapter(
@@ -159,14 +503,19 @@ test("S3 adapter performs real Put Get Head Delete against isolated HTTP service
   assert.equal(objects.size, 0);
   assert.deepEqual(methods, ["PUT", "HEAD", "GET", "DELETE"]);
 });
-async function fixture(t) {
+async function fixture(t, options = {}) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "storage-test-")),
-    store = openStore(dir),
+    { store } = await postgresFixture(t),
     app = express(),
     admin = express.Router();
   app.use(express.json());
+  await store.transaction((tx) =>
+    contentRepository(tx).importBundle(contentFixture(t).bundle),
+  );
   app.use((req, res, next) => {
-    if (req.headers["x-preview"]) req.adminSession = {};
+    req.adminSession = { username: "owner" };
+    if (!req.url.startsWith("/api/admin") && !req.headers["x-preview"])
+      req.adminSession = null;
     next();
   });
   app.use("/api/admin", admin);
@@ -174,16 +523,16 @@ async function fixture(t) {
     app,
     admin,
     store,
-    options: { dataDir: dir },
+    options: { dataDir: dir, ...options },
   });
-  app.use((err, req, res, next) =>
-    res.status(err.status || 500).json({ error: err.message }),
-  );
+  app.use((err, req, res, next) => {
+    const e = require("../admin-server/http").publicError(err);
+    res.status(e.status).json({ error: e.message });
+  });
   const server = app.listen(0, "127.0.0.1");
   await new Promise((r) => server.once("listening", r));
   t.after(() => {
     server.close();
-    store.close();
     fs.rmSync(dir, { recursive: true, force: true });
   });
   return { store, dir, base: `http://127.0.0.1:${server.address().port}` };
@@ -213,7 +562,13 @@ test("resources reject missing storage, empty and spoofed uploads, preserve refe
   assert.equal(linked.status, 201);
   const { resource } = await linked.json();
   assert.equal(resource.accessibility, "unverified");
-  f.store.set("draft", { cover: resource.url });
+  await f.store.transaction((tx) =>
+    resourceRepository(tx).replaceReferences({
+      ownerType: "draft",
+      ownerId: "draft",
+      references: [{ resourceId: resource.id, slot: "image" }],
+    }),
+  );
   assert.equal(
     (
       await fetch(f.base + "/api/admin/resources/" + resource.id, {
@@ -249,9 +604,13 @@ test("local uploads are private until published, support range and cannot traver
       .status,
     200,
   );
-  f.store.db
-    .prepare("INSERT INTO versions(created,config) VALUES(?,?)")
-    .run(new Date().toISOString(), JSON.stringify({ cover: resource.url }));
+  await f.store.transaction((tx) =>
+    resourceRepository(tx).replaceReferences({
+      ownerType: "version",
+      ownerId: "42",
+      references: [{ resourceId: resource.id, slot: "image" }],
+    }),
+  );
   const range = await fetch(f.base + resource.url, {
     headers: { Range: "bytes=0-7" },
   });
@@ -277,7 +636,7 @@ test("multipart rejects multiple files and clears temporary files", async (t) =>
     400,
   );
   assert.deepEqual(fs.readdirSync(path.join(f.dir, "tmp")), []);
-  assert.deepEqual(f.store.get("resources", []), []);
+  assert.equal((await resourceRepository(f.store).list()).length, 4);
 });
 test("multipart file without a filename returns 400 without terminating server", async (t) => {
   const f = await fixture(t);
@@ -288,7 +647,7 @@ test("multipart file without a filename returns 400 without terminating server",
     signal: AbortSignal.timeout(1000),
   });
   assert.equal(response.status, 400);
-  assert.deepEqual(f.store.get("resources", []), []);
+  assert.equal((await resourceRepository(f.store).list()).length, 4);
 });
 test("external registration never contacts destination and rejects non-HTTPS", async (t) => {
   const f = await fixture(t);
@@ -327,5 +686,5 @@ test("aborted multipart upload releases temporary files and records no resource"
   });
   await new Promise((r) => setTimeout(r, 80));
   assert.deepEqual(fs.readdirSync(path.join(f.dir, "tmp")), []);
-  assert.deepEqual(f.store.get("resources", []), []);
+  assert.equal((await resourceRepository(f.store).list()).length, 4);
 });

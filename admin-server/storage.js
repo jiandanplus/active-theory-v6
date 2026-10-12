@@ -168,6 +168,8 @@ async function localFile(dir, key) {
   return resolved;
 }
 async function createAdapter(storage, options = {}) {
+  if (storage.available === false)
+    throw fail("存储暂时不可用，请重新配置", 503);
   if (storage.type === "local") {
     const dir = path.join(options.dataDir, "uploads");
     await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });

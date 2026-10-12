@@ -6,6 +6,9 @@ const { pipeline } = require("node:stream/promises");
 const { Transform } = require("node:stream");
 const { createAdapter, localFile } = require("./storage");
 const { fail } = require("./security");
+const { resourceRepository } = require("./repositories/resources");
+const { storageRepository } = require("./repositories/storages");
+const { commitResource } = require("./resources");
 function runWorker(job) {
   return new Promise((resolve, reject) => {
     const child = fork(path.join(__dirname, "model-worker.js"), [], {
@@ -40,11 +43,13 @@ function mountModels({ app, admin, store, options }) {
       claimed = false;
     try {
       if (active) throw fail(429, "已有模型正在处理，请稍后再试");
-      const source = store
-        .get("resources", [])
-        .find((r) => r.id === req.params.id && !r.trashed);
+      active = true;
+      claimed = true;
+      const source = await resourceRepository(store).get(req.params.id);
       if (
         !source ||
+        source.trashed ||
+        source.source === "bundled" ||
         source.kind !== "model" ||
         source.source === "external" ||
         source.status === "ready"
@@ -53,8 +58,6 @@ function mountModels({ app, admin, store, options }) {
       const size = req.body.size ?? 0.8;
       if (!Number.isFinite(size) || size < 0.1 || size > 5)
         throw fail(400, "模型尺寸应在 0.1–5 之间");
-      active = true;
-      claimed = true;
       fs.mkdirSync(path.join(options.dataDir, "tmp"), {
         recursive: true,
         mode: 0o700,
@@ -62,10 +65,7 @@ function mountModels({ app, admin, store, options }) {
       tmp = fs.mkdtempSync(path.join(options.dataDir, "tmp", "model-"));
       const input = path.join(tmp, "input.glb"),
         output = path.join(tmp, "output.bin");
-      const storage =
-        source.storageId === "local"
-          ? { id: "local", type: "local" }
-          : store.get("storages", []).find((s) => s.id === source.storageId);
+      const storage = await storageRepository(store).get(source.storageId);
       if (!storage) throw fail(400, "源存储配置缺失");
       adapter = await createAdapter(storage, options);
       let bytes = 0;
@@ -113,8 +113,18 @@ function mountModels({ app, admin, store, options }) {
       };
       if (storage.type === "s3")
         resource.publicUrl = require("./storage").publicUrl(storage, key);
-      store.set("resources", [...store.get("resources", []), resource]);
-      store.audit("model.convert", req.adminSession.username);
+      try {
+        await commitResource(
+          store,
+          resource,
+          req.adminSession.username,
+          "model.convert",
+          storage,
+        );
+      } catch (error) {
+        console.error("Unregistered media object", { key });
+        throw error;
+      }
       res.status(201).json({ resource });
     } catch (error) {
       next(error);
@@ -128,17 +138,13 @@ function mountModels({ app, admin, store, options }) {
     ["/models/:id.bin", "/assets/geometry/admin/:id.bin"],
     async (req, res, next) => {
       try {
-        const resource = store
-          .get("resources", [])
-          .find((r) => r.id === req.params.id && r.status === "ready");
-        const { references } = require("./resources");
+        const resource = await resourceRepository(store).get(req.params.id);
         if (
           !resource ||
+          resource.trashed ||
+          resource.status !== "ready" ||
           (!req.adminSession &&
-            !store.db
-              .prepare("SELECT config FROM versions")
-              .all()
-              .some((v) => references(JSON.parse(v.config), resource)))
+            !(await resourceRepository(store).isPublished(resource.id)))
         )
           throw fail(404, "模型不存在");
         if (resource.source === "s3")

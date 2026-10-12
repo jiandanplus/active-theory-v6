@@ -4,6 +4,10 @@ const { randomUUID } = require("node:crypto");
 const { pipeline } = require("node:stream/promises");
 const busboy = require("busboy");
 const S = require("./storage");
+const { resourceRepository } = require("./repositories/resources");
+const { storageRepository } = require("./repositories/storages");
+const { contentRepository } = require("./repositories/content");
+const { auditRepository } = require("./repositories/audit");
 const MiB = 1024 * 1024,
   LIMITS = {
     image: 25 * MiB,
@@ -39,12 +43,6 @@ function references(config, resource) {
   if (typeof config === "object")
     return Object.values(config).some((v) => references(v, resource));
   return false;
-}
-function history(store) {
-  return store.db
-    .prepare("SELECT config FROM versions")
-    .all()
-    .map((r) => JSON.parse(r.config));
 }
 async function multipart(req, dir, max) {
   await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 });
@@ -134,29 +132,58 @@ async function multipart(req, dir, max) {
     throw e;
   }
 }
+async function commitResource(store, resource, actor, action, storage) {
+  return store.transaction(async (tx) => {
+    await tx.query(
+      "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+    );
+    if (storage) {
+      const current = await storageRepository(tx).get(storage.id);
+      if (
+        !current ||
+        current.available === false ||
+        [
+          "type",
+          "endpoint",
+          "bucket",
+          "prefix",
+          "publicBaseUrl",
+          "forcePathStyle",
+        ].some((key) => current[key] !== storage[key])
+      )
+        throw S.fail("存储配置已改变，请重新上传或转换", 409);
+    }
+    const value = await resourceRepository(tx).insert(resource);
+    await auditRepository(tx).append(action, actor);
+    return value;
+  });
+}
 function mountResources({ app, admin, store, options }) {
-  const storages = () => [
-    { id: "local", type: "local", name: "本地存储" },
-    ...store.get("storages", []),
-  ];
-  const resources = () => store.get("resources", []);
+  const storages = () => storageRepository(store).list();
+  const resources = () => resourceRepository(store).list();
   let uploads = 0;
-  admin.get("/storages", (req, res) =>
-    res.json({
-      storages: storages().map(S.redactStorage),
-      defaultStorage: store.get("defaultStorage", "local"),
-    }),
+  admin.get(
+    "/storages",
+    route(async (req, res) =>
+      res.json({
+        storages: (await storages()).map(S.redactStorage),
+        defaultStorage: await storageRepository(store).getDefault(),
+      }),
+    ),
   );
   admin.post(
     "/storages",
     route(async (req, res) => {
       const body = req.body || {},
-        all = store.get("storages", []),
+        all = await storages(),
         id = body.id || randomUUID(),
         old = all.find((x) => x.id === id);
       if (id === "local") {
-        if (body.isDefault) store.set("defaultStorage", "local");
-        return res.json({ storage: storages()[0] });
+        if (body.isDefault)
+          await store.transaction((tx) =>
+            storageRepository(tx).setDefault("local"),
+          );
+        return res.json({ storage: S.redactStorage(old) });
       }
       if (body.type !== "s3") throw S.fail("仅支持 S3 或本地存储");
       const value = {
@@ -178,7 +205,7 @@ function mountResources({ app, admin, store, options }) {
       S.publicUrl(value, "validation");
       if (
         old &&
-        resources().some((r) => r.storageId === id) &&
+        (await resources()).some((r) => r.storageId === id) &&
         [
           "endpoint",
           "bucket",
@@ -188,24 +215,41 @@ function mountResources({ app, admin, store, options }) {
         ].some((k) => old[k] !== value[k])
       )
         throw S.fail("已有资源的存储位置不可更改，请新建配置", 409);
-      const creds = old?.credentials
-        ? S.decryptCredentials(old.credentials, options)
-        : {};
+      let creds = {};
+      if (old?.credentials) {
+        try {
+          creds = S.decryptCredentials(old.credentials, options);
+        } catch (error) {
+          if (
+            !body.accessKeyId ||
+            body.accessKeyId === "configured" ||
+            !body.secretAccessKey ||
+            body.secretAccessKey === "configured"
+          )
+            throw error;
+        }
+      }
       for (const key of ["accessKeyId", "secretAccessKey", "sessionToken"])
         if (body[key] && body[key] !== "configured")
           creds[key] = String(body[key]);
       if (!creds.accessKeyId || !creds.secretAccessKey)
         throw S.fail("请填写 S3 凭证");
       value.credentials = S.encryptCredentials(creds, options);
-      store.set("storages", [...all.filter((x) => x.id !== id), value]);
-      if (body.isDefault) store.set("defaultStorage", id);
+      await store.transaction(async (tx) => {
+        await storageRepository(tx).upsert(value);
+        if (body.isDefault) await storageRepository(tx).setDefault(id);
+        await auditRepository(tx).append(
+          "storage.save",
+          req.adminSession.username,
+        );
+      });
       res.status(old ? 200 : 201).json({ storage: S.redactStorage(value) });
     }),
   );
   admin.post(
     "/storages/:id/test",
     route(async (req, res) => {
-      const config = storages().find((s) => s.id === req.params.id);
+      const config = await storageRepository(store).get(req.params.id);
       if (!config) throw S.fail("存储不存在", 404);
       const adapter = await S.createAdapter(config, options);
       try {
@@ -220,34 +264,39 @@ function mountResources({ app, admin, store, options }) {
       }
     }),
   );
-  admin.get("/resources", (req, res) => res.json({ resources: resources() }));
-  const save = (r) => {
-    store.set("resources", [...resources(), r]);
-    return r;
-  };
+  admin.get(
+    "/resources",
+    route(async (req, res) => res.json({ resources: await resources() })),
+  );
+  const save = (r, actor, action, storage) =>
+    commitResource(store, r, actor, action, storage);
   admin.post(
     "/resources/link",
     route(async (req, res) => {
       const b = req.body || {};
       if (!LIMITS[b.kind]) throw S.fail("资源类型无效");
       const url = S.externalUrl(b.url);
-      const resource = save({
-        id: randomUUID(),
-        name: String(
-          b.name || new URL(url).pathname.split("/").pop() || "外链",
-        ).slice(0, 255),
-        kind: b.kind,
-        mime: null,
-        size: null,
-        url,
-        source: "external",
-        storageId: null,
-        key: null,
-        created: new Date().toISOString(),
-        trashed: false,
-        accessibility: "unverified",
-        status: b.kind === "model" ? "unverified" : "linked",
-      });
+      const resource = await save(
+        {
+          id: randomUUID(),
+          name: String(
+            b.name || new URL(url).pathname.split("/").pop() || "外链",
+          ).slice(0, 255),
+          kind: b.kind,
+          mime: null,
+          size: null,
+          url,
+          source: "external",
+          storageId: null,
+          key: null,
+          created: new Date().toISOString(),
+          trashed: false,
+          accessibility: "unverified",
+          status: b.kind === "model" ? "unverified" : "linked",
+        },
+        req.adminSession.username,
+        "resource.link",
+      );
       res.status(201).json({ resource });
     }),
   );
@@ -256,16 +305,15 @@ function mountResources({ app, admin, store, options }) {
     route(async (req, res) => {
       if (uploads >= 2) throw S.fail("上传繁忙，请稍后再试", 429);
       uploads++;
-      let upload, adapter;
+      let upload, adapter, orphanKey;
       try {
         upload = await multipart(
           req,
           path.join(options.dataDir, "tmp"),
           Math.max(...Object.values({ ...LIMITS, ...options.uploadLimits })),
         );
-        const config = storages().find(
-          (s) =>
-            s.id === (upload.storageId || store.get("defaultStorage", "local")),
+        const config = await storageRepository(store).get(
+          upload.storageId || (await storageRepository(store).getDefault()),
         );
         if (!config) throw S.fail("上传存储不存在");
         let type;
@@ -293,25 +341,36 @@ function mountResources({ app, admin, store, options }) {
           size: upload.size,
           mime: type.mime,
         });
-        const resource = save({
-          id,
-          name: upload.name,
-          kind,
-          mime: type.mime,
-          size: upload.size,
-          url: `/media/${id}`,
-          source: config.type,
-          storageId: config.id,
-          key,
-          created: new Date().toISOString(),
-          trashed: false,
-          status: "uploaded",
-          accessibility: config.type === "local" ? "verified" : "unverified",
-          ...(config.type === "s3"
-            ? { publicUrl: S.publicUrl(config, key) }
-            : {}),
-        });
+        orphanKey = key;
+        const resource = await save(
+          {
+            id,
+            name: upload.name,
+            kind,
+            mime: type.mime,
+            size: upload.size,
+            url: `/media/${id}`,
+            source: config.type,
+            storageId: config.id,
+            key,
+            created: new Date().toISOString(),
+            trashed: false,
+            status: "uploaded",
+            accessibility: config.type === "local" ? "verified" : "unverified",
+            ...(config.type === "s3"
+              ? { publicUrl: S.publicUrl(config, key) }
+              : {}),
+          },
+          req.adminSession.username,
+          "resource.upload",
+          config,
+        );
+        orphanKey = null;
         res.status(201).json({ resource });
+      } catch (error) {
+        if (orphanKey)
+          console.error("Unregistered media object", { key: orphanKey });
+        throw error;
       } finally {
         uploads--;
         adapter?.close();
@@ -322,29 +381,38 @@ function mountResources({ app, admin, store, options }) {
   admin.patch(
     "/resources/:id",
     route(async (req, res) => {
-      const all = resources(),
-        r = all.find((x) => x.id === req.params.id);
+      const r = await resourceRepository(store).get(req.params.id);
       if (!r) throw S.fail("资源不存在", 404);
       if (typeof req.body?.trashed !== "boolean")
         throw S.fail("必须明确指定回收状态");
-      if (
-        req.body.trashed &&
-        (references(store.get("draft"), r) ||
-          history(store).some((c) => references(c, r)))
-      )
-        throw S.fail("资源仍被草稿或历史发布版本引用", 409);
-      r.trashed = req.body.trashed;
-      store.set("resources", all);
-      res.json({ resource: r });
+      if (r.source === "bundled") throw S.fail("内置资源只读", 409);
+      const resource = await store.transaction(async (tx) => {
+        await tx.query(
+          "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+        );
+        await contentRepository(tx).prunePreviews(new Date().toISOString());
+        const value = await resourceRepository(tx).setTrashed(
+          r.id,
+          req.body.trashed,
+        );
+        await auditRepository(tx).append(
+          "resource.trash",
+          req.adminSession.username,
+        );
+        return value;
+      });
+      res.json({ resource });
     }),
   );
   app.get(
     "/media/:id",
     route(async (req, res) => {
-      const r = resources().find((x) => x.id === req.params.id);
+      const r = await resourceRepository(store).get(req.params.id);
       if (
         !r ||
-        (!req.adminSession && !history(store).some((c) => references(c, r)))
+        r.trashed ||
+        (!req.adminSession &&
+          !(await resourceRepository(store).isPublished(r.id)))
       )
         throw S.fail("资源不存在", 404);
       res.set("X-Content-Type-Options", "nosniff");
@@ -400,4 +468,4 @@ function mountResources({ app, admin, store, options }) {
     }),
   );
 }
-module.exports = { mountResources, references };
+module.exports = { mountResources, references, commitResource };
