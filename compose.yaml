@@ -1,0 +1,19 @@
+services:
+  site:
+    build: .
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      SITE_ORIGIN: ${SITE_ORIGIN:?Set the public HTTPS origin}
+      SITE_MASTER_KEY: ${SITE_MASTER_KEY:-}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      S3_ENDPOINT_ALLOWLIST: ${S3_ENDPOINT_ALLOWLIST:-}
+    volumes:
+      - site-data:/app/data
+      - ./assets:/app/assets:ro
+volumes:
+  site-data:

@@ -30,3 +30,6 @@ zeta-production-deploy.zip
 
 # Optional local backup snapshot
 cms/projects-dev.json.bak
+
+# Private administration state and uploaded files
+/data/

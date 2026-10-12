@@ -7,12 +7,25 @@
     "download:core": "node download-core.js",
     "download:assets": "node download-assets.js",
     "download:cms": "node download-cms.js",
-    "dev": "node server.js"
+    "dev": "node server.js",
+    "start": "node server.js",
+    "test": "node --disable-warning=ExperimentalWarning --test tests/*.test.js",
+    "admin:init": "node scripts/admin-account.js",
+    "admin:reset": "node scripts/admin-account.js --reset",
+    "admin:key": "node -e \"console.log(require('node:crypto').randomBytes(32).toString('hex'))\""
+  },
+  "engines": {
+    "node": ">=24.0.0"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1149.0",
+    "@aws-sdk/lib-storage": "^3.1149.0",
+    "@smithy/node-http-handler": "^4.12.1",
     "axios": "^1.6.8",
+    "busboy": "^1.6.0",
     "draco3d": "^1.5.7",
     "express": "^4.19.2",
-    "express-http-proxy": "^2.0.0"
+    "express-http-proxy": "^2.0.0",
+    "file-type": "^22.1.1"
   }
 }
