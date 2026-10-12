@@ -10,7 +10,7 @@ async function main(args = process.argv.slice(2)) {
     const key = args[i];
     if (key === "--check") continue;
     if (
-      !["--root", "--legacy", "--mode"].includes(key) ||
+      !["--root", "--legacy", "--mode", "--data-dir"].includes(key) ||
       !args[i + 1] ||
       args[i + 1].startsWith("--")
     )
@@ -23,6 +23,9 @@ async function main(args = process.argv.slice(2)) {
         root,
         legacyPath: path.resolve(options.legacy),
         masterKey: process.env.SITE_MASTER_KEY,
+        dataDir: options["data-dir"]
+          ? path.resolve(options["data-dir"])
+          : undefined,
       })
     : await readBundle({ root, mode: options.mode || "empty" });
   process.stdout.write(JSON.stringify(bundle.report, null, 2) + "\n");

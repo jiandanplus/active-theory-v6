@@ -10,6 +10,134 @@ const input = (bundle) => ({
   account: { username: "owner", password: "test-only-password-2026" },
 });
 
+test("legacy staged bytes affect fresh setup digest and survive actual HTTP delivery across pool restart", async (t) => {
+  const fs = require("node:fs");
+  const path = require("node:path");
+  const source = require("./helpers/import-content").importFixture(t);
+  fs.writeFileSync(
+    path.join(source.root, "cms/metadata-dev.json"),
+    JSON.stringify({ ogImage: "/media/optional-image" }),
+  );
+  const { store } = await postgresFixture(t, { migrated: false });
+  const f = await require("./helpers/http").httpFixture(t, {
+    store,
+    installed: false,
+    options: {
+      root: source.root,
+      dataDir: source.dataDir,
+      legacyPath: source.legacyPath,
+    },
+  });
+  const headers = await f.setupSession();
+  const check = async () => {
+    const response = await f.request("/api/setup/preflight", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ mode: "legacy", dataDir: "/untrusted" }),
+    });
+    assert.equal(response.status, 200);
+    return response.json();
+  };
+  const install = (digest) =>
+    f.request("/api/setup/install", {
+      method: "POST",
+      headers,
+      body: JSON.stringify({ mode: "legacy", digest, dataDir: "/untrusted" }),
+    });
+  const initial = await check();
+  assert(!initial.report.missingRequired.includes("legacy:derived-logo"));
+  const file = path.join(source.dataDir, "uploads/derived.bin");
+  fs.writeFileSync(file, "converted-logo-BYTES");
+  assert.equal((await install(initial.digest)).status, 409);
+  const changed = await check();
+  fs.unlinkSync(file);
+  assert.equal((await install(changed.digest)).status, 409);
+  const missing = await check();
+  assert.ok(missing.report.missingRequired.includes("legacy:derived-logo"));
+  assert.equal(
+    (await store.query("SELECT to_regnamespace('personal_site') AS schema"))
+      .rows[0].schema,
+    null,
+  );
+  fs.writeFileSync(file, "converted-logo-bytes");
+  assert.equal((await install((await check()).digest)).status, 201);
+  for (const restarted of [false, true]) {
+    if (restarted) await f.restart();
+    for (const [id, name, bytes] of [
+      ["derived-logo", "logo.bin", "converted-logo-bytes"],
+      ["source-logo", "source.glb", "original-model-bytes"],
+      ["optional-image", "image.png", "optional-image-bytes"],
+    ]) {
+      const response = await f.request(`/api/site/42/resources/${id}/${name}`);
+      assert.equal(response.status, 200);
+      assert.equal(await response.text(), bytes);
+    }
+    assert.equal(
+      (
+        await require("../admin-server/repositories/content")
+          .contentRepository(f.store)
+          .getDraft()
+      ).published,
+      42,
+    );
+  }
+  assert.equal(
+    require("node:crypto")
+      .createHash("sha256")
+      .update(fs.readFileSync(source.legacyPath))
+      .digest("hex"),
+    source.sourceHash,
+  );
+});
+
+test("legacy installation can preserve history with disclosed missing private geometry", async (t) => {
+  const source = require("./helpers/import-content").importFixture(t);
+  require("node:fs").unlinkSync(
+    require("node:path").join(source.dataDir, "uploads/derived.bin"),
+  );
+  const { store } = await postgresFixture(t, { migrated: false });
+  const f = await require("./helpers/http").httpFixture(t, {
+    store,
+    installed: false,
+    options: {
+      root: source.root,
+      dataDir: source.dataDir,
+      legacyPath: source.legacyPath,
+    },
+  });
+  const headers = await f.setupSession();
+  const response = await f.request("/api/setup/preflight", {
+    method: "POST",
+    headers,
+    body: '{"mode":"legacy"}',
+  });
+  const { report, digest } = await response.json();
+  assert.ok(report.missingRequired.includes("legacy:derived-logo"));
+  assert(!JSON.stringify(report).includes(source.root));
+  const installed = await f.request("/api/setup/install", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ mode: "legacy", digest }),
+  });
+  assert.equal(installed.status, 201);
+  const repo =
+    require("../admin-server/repositories/content").contentRepository(f.store);
+  assert.equal((await repo.getDraft()).published, 42);
+  for (const id of [41, 42]) {
+    const version = await repo.getVersion(id);
+    assert.equal(version.snapshot.template.readiness.ready, false);
+    assert.ok(
+      version.snapshot.template.readiness.missingRequired.includes(
+        "legacy:derived-logo",
+      ),
+    );
+  }
+  assert.equal(
+    (await f.request("/api/site/42/resources/derived-logo/logo.bin")).status,
+    404,
+  );
+});
+
 // Only the server version response is controlled; schema, transactions and HTTP
 // behavior still use a UUID-isolated real PostgreSQL fixture.
 function versionResponse(store, version, queries = []) {

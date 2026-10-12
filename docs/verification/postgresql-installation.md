@@ -108,6 +108,18 @@ Playwright CLI 驱动真实浏览器和真实 PG/Compose API，不拦截安装/�
 
 最后代码变更后完整 `rtk proxy node scripts/test-postgres.js` 为 **190/190、0 fail、0 skipped**（约13.51秒）。新增 7 项明确命名的 authorized runtime 测试执行真实原包函数；干净 checkout 若没有授权运行包会明确 skip 这 7 项并提示引擎兼容性未验证，有原包而关键源码 anchor 缺失仍失败。PostgreSQL 集成测试不因此跳过。RED/GREEN 与浏览器明细见本地工作记录 `.git/sdd/pg-empty-fix-report.md`；初始诊断 `.git/sdd/pg-empty-diagnosis.md` 保留为历史失败证据。
 
+### 最终审查补修：旧站私有上传交接（2026-10-13）
+
+最终全分支审查发现：旧站元数据可导入，但新运行目录未提供 uploads 字节时，必需 Logo BIN 没有进入缺失报告。现安装预检从服务端 options 显式传入 dataDir；只读检查新私有 uploads 中的原始、派生、普通媒体，复用运行时 key/路径限制并流式计算 SHA-256，不自动复制文件，也不在数据库安装事务内读取文件。CLI 对应显式 `--data-dir`。检查不联网访问 S3。
+
+实际自动化证据：UUID 隔离 PG、明确临时 root/dataDir 与真实 HTTP 安装接口；同长度字节替换和文件删除都令旧 digest 安装返回 409 且不创建 schema。恢复 staging 字节后安装成功，发布版本 42 的原始 GLB、派生 BIN 和普通图片均以真实 HTTP 返回精确预期字节；关闭原池并重建应用/连接池后仍通过。SQLite 副本前后 SHA-256 一致。缺失 BIN 的另一个隔离安装保留版本 41/42 和 published=42，同时明确披露相应历史模板不可用；不声称缺失页面可以正常渲染。原始 GLB 和未引用图片缺失仅警告；已覆盖对象 symlink、uploads 目录 symlink、越界 key、目录冒充文件和 chmod 不可读文件。补充用例确认只影响实际引用缺失几何的快照。上述测试只使用自己的副本，不是对真实旧站数据完整性的证明。
+
+最终代码格式化后完整执行 `rtk proxy node scripts/test-postgres.js`：**199/199、0 fail、0 skipped**，约 11.61 秒。初始 RED 为 4 个导入/CLI 用例缺少 checksum、缺失报告或 CLI 参数；真实 HTTP 用例在源字节变化后错误返回 201（预期 409）。修复后的 focused 运行与完整结果见本地 `.git/sdd/pg-final-fix-report.md`。未更改前端、运行包或源 assets，因此没有重复已经完成的真实 3D 浏览器验收。
+
+新增 Docker 交接指南包含整个停机备份的临时只读挂载、容器内 SQLite 路径、全新空私有卷非覆盖复制、node 所有权及安装后去掉源挂载。`rtk proxy node .git/sdd/pg-final-docs-check.cjs` 实际读取文档示例并验证两个 base 各自与临时 override 的 Compose config，确认只读挂载与 data 卷保留、外部模式仅有 site；**8 个 shell block 仅通过 `sh -n` 语法检查，没有执行这些 Docker copy/chown/启动/移除挂载命令**。该检查使用 `--env-file /dev/null` 和虚拟测试变量，不读取真实 .env、不创建容器/卷。之前 Task9 已实际完成的独立 dump/restore、上传读取与浏览器证据保持有效，但不能拿它冒充本次新交接命令的完整执行验收。部署时仍须在新隔离实例上执行演练及字节/关键页面复核。
+
+本次没有打开真实 `data/site.db`，没有修改真实 .env，没有停止或重启原 3000 服务、推送、部署或复制原始用户资产。必须继续保留下方 Task6 已发生事故及其未知前态，不能因此宣称整次项目从未触碰旧数据库。
+
 ### 其他未验证/原有内容问题
 
 - 真实 S3 服务、CDN、生产域名 HTTPS 代理、Bucket 对象策略、CORS 未验证；隔离 S3 HTTP 测试不等同云账号验收。

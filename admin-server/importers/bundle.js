@@ -112,6 +112,7 @@ async function complete({
   audit = [],
   warnings = [],
   credentialsUnavailable = [],
+  localUnavailable = [],
 }) {
   config = stableIDs(config);
   schema = stableIDs(schema);
@@ -209,13 +210,41 @@ async function complete({
     checked.add(id);
   }
   for (const id of ids) original(id);
-  for (const snapshot of [draft, ...history.map((v) => v.snapshot)])
+  const unavailable = new Set(localUnavailable);
+  const requiredLocal = new Set();
+  for (const snapshot of [draft, ...history.map((v) => v.snapshot)]) {
+    const missing = new Set(snapshot.template.readiness.missingRequired);
     for (const ref of collectReferences(snapshot)) {
       if (!ids.has(ref.resourceId))
         throw conflict(`Referenced resource missing: ${ref.resourceId}`);
       if (existing.get(ref.resourceId).trashed)
         throw conflict(`Referenced resource is trashed: ${ref.resourceId}`);
+      if (!unavailable.has(ref.resourceId) || ref.slot.includes(":dependency:"))
+        continue;
+      const scene = /^config\.scenes\.(\d+)\.fields\.(\d+)\.value$/.exec(
+        ref.slot,
+      );
+      const geometry = scene
+        ? snapshot.config.scenes[scene[1]].fields[scene[2]].type === "geometry"
+        : /^template\.baseUIL\..*(?:geometry|initialPositions)\.(?:src|relative)$/.test(
+            ref.slot,
+          );
+      if (geometry) {
+        const slot = `legacy:${ref.resourceId}`;
+        missing.add(slot);
+        requiredLocal.add(slot);
+      }
     }
+    snapshot.template.readiness.missingRequired = [...missing].sort();
+    snapshot.template.readiness.ready = missing.size === 0;
+  }
+  catalog.report.missingRequired = [
+    ...new Set([...catalog.report.missingRequired, ...requiredLocal]),
+  ].sort();
+  for (const id of localUnavailable)
+    warnings.push(
+      `Local resource unavailable (missing, unreadable or unsafe): legacy:${id}`,
+    );
   const report = {
     ...catalog.report,
     counts: {

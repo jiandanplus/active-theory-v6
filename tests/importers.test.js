@@ -26,6 +26,166 @@ const sourceHashes = (root) =>
       }),
   );
 
+test("legacy private bytes are checked read-only with checksums and required geometry readiness", async (t) => {
+  const f = importFixture(t);
+  const before = sourceHashes(f.root);
+  const present = await readLegacy(f);
+  assert.equal(
+    present.resources.find((r) => r.id === "derived-logo").checksum,
+    hash(path.join(f.dataDir, "uploads/derived.bin")),
+  );
+  assert.deepEqual(sourceHashes(f.root), before);
+  fs.unlinkSync(path.join(f.dataDir, "uploads/derived.bin"));
+  const missing = await readLegacy(f);
+  assert.ok(missing.report.missingRequired.includes("legacy:derived-logo"));
+  for (const snapshot of [
+    missing.draft,
+    ...missing.versions.map((v) => v.snapshot),
+  ]) {
+    assert.equal(snapshot.template.readiness.ready, false);
+    assert.ok(
+      snapshot.template.readiness.missingRequired.includes(
+        "legacy:derived-logo",
+      ),
+    );
+  }
+  assert.equal(missing.published, 42);
+  assert.deepEqual(
+    missing.versions.map((v) => v.id),
+    [41, 42],
+  );
+  assert.notEqual(missing.report.digest, present.report.digest);
+  assert.equal(hash(f.legacyPath), f.sourceHash);
+  assert(!JSON.stringify(missing.report).includes(f.root));
+});
+
+test("missing original and unreferenced ordinary media warn without becoming required geometry", async (t) => {
+  const f = importFixture(t);
+  for (const file of ["source.glb", "optional.png"])
+    fs.unlinkSync(path.join(f.dataDir, "uploads", file));
+  const b = await readLegacy(f);
+  for (const id of ["source-logo", "optional-image"]) {
+    assert.match(b.report.warnings.join(" "), new RegExp(id));
+    assert(!b.report.missingRequired.includes(`legacy:${id}`));
+    assert.equal(b.resources.find((r) => r.id === id).status, "missing");
+  }
+  assert(!b.report.missingRequired.includes("legacy:derived-logo"));
+});
+
+test("legacy private checks refuse symlink escapes, unreadable shapes and implicit data paths safely", async (t) => {
+  const f = importFixture(t);
+  const file = path.join(f.dataDir, "uploads/derived.bin");
+  fs.unlinkSync(file);
+  fs.symlinkSync(f.legacyPath, file);
+  const unsafe = await readLegacy(f);
+  assert.ok(unsafe.report.missingRequired.includes("legacy:derived-logo"));
+  assert.equal(
+    unsafe.resources.find((r) => r.id === "derived-logo").checksum,
+    null,
+  );
+  fs.unlinkSync(file);
+  fs.mkdirSync(file);
+  assert.ok(
+    (await readLegacy(f)).report.missingRequired.includes(
+      "legacy:derived-logo",
+    ),
+  );
+  const implicit = await readLegacy({ root: f.root, legacyPath: f.legacyPath });
+  assert.ok(implicit.report.missingRequired.includes("legacy:derived-logo"));
+  assert(!JSON.stringify(unsafe.report).includes(f.root));
+  assert.equal(hash(f.legacyPath), f.sourceHash);
+});
+
+test("legacy check CLI accepts only explicit trusted private data directory", (t) => {
+  const f = importFixture(t);
+  const result = spawnSync(
+    process.execPath,
+    [
+      "scripts/import-site.js",
+      "--check",
+      "--root",
+      f.root,
+      "--legacy",
+      f.legacyPath,
+      "--data-dir",
+      f.dataDir,
+    ],
+    { encoding: "utf8" },
+  );
+  assert.equal(result.status, 0, result.stderr);
+  const report = JSON.parse(result.stdout);
+  assert(!report.missingRequired.includes("legacy:derived-logo"));
+  assert(!report.warnings.some((w) => w.includes("source-logo")));
+});
+
+test("unreadable staged private files are reported without leaking filesystem paths", async (t) => {
+  const f = importFixture(t);
+  const file = path.join(f.dataDir, "uploads/derived.bin");
+  fs.chmodSync(file, 0o000);
+  try {
+    const b = await readLegacy(f);
+    assert.ok(b.report.missingRequired.includes("legacy:derived-logo"));
+    assert.equal(
+      b.resources.find((r) => r.id === "derived-logo").checksum,
+      null,
+    );
+    assert(!JSON.stringify(b.report).includes(f.root));
+  } finally {
+    fs.chmodSync(file, 0o600);
+  }
+});
+
+test("only snapshots referencing missing private geometry become unavailable", async (t) => {
+  const f = importFixture(t);
+  const db = new DatabaseSync(f.legacyPath);
+  const draft = structuredClone(f.config);
+  draft.scenes[0].fields.find((field) => field.type === "geometry").value =
+    "assets/geometry/alternate.bin";
+  db.prepare("UPDATE settings SET value=? WHERE key='draft'").run(
+    JSON.stringify(draft),
+  );
+  db.close();
+  fs.unlinkSync(path.join(f.dataDir, "uploads/derived.bin"));
+  const b = await readLegacy(f);
+  assert(
+    !b.draft.template.readiness.missingRequired.includes("legacy:derived-logo"),
+  );
+  assert(
+    b.versions.every((v) =>
+      v.snapshot.template.readiness.missingRequired.includes(
+        "legacy:derived-logo",
+      ),
+    ),
+  );
+});
+
+test("unsafe keys and upload directory symlinks never read outside staged private uploads", async (t) => {
+  const f = importFixture(t);
+  const db = new DatabaseSync(f.legacyPath);
+  const rows = structuredClone(f.resources);
+  rows.find((r) => r.id === "derived-logo").key = "../../legacy.sqlite";
+  db.prepare("UPDATE settings SET value=? WHERE key='resources'").run(
+    JSON.stringify(rows),
+  );
+  db.close();
+  assert(
+    (await readLegacy(f)).report.missingRequired.includes(
+      "legacy:derived-logo",
+    ),
+  );
+  fs.renameSync(
+    path.join(f.dataDir, "uploads"),
+    path.join(f.dataDir, "staged"),
+  );
+  fs.symlinkSync(
+    path.join(f.dataDir, "staged"),
+    path.join(f.dataDir, "uploads"),
+  );
+  const b = await readLegacy(f);
+  assert(b.report.warnings.some((w) => w.includes("source-logo")));
+  assert.equal(b.resources.find((r) => r.id === "source-logo").checksum, null);
+});
+
 test("geometry aliases use engine paths, retain aliases and report missing required slots", async (t) => {
   const f = contentFixture(t);
   const aliases = [
@@ -153,6 +313,8 @@ test("check CLI decrypts storage using canonical SITE_MASTER_KEY without exposin
       f.root,
       "--legacy",
       f.legacyPath,
+      "--data-dir",
+      f.dataDir,
     ],
     { encoding: "utf8", env },
   );
@@ -169,6 +331,7 @@ test("legacy import preserves IDs, account, history, ciphertext, audit and sourc
   const b = await readLegacy({
     root: f.root,
     legacyPath: f.legacyPath,
+    dataDir: f.dataDir,
     masterKey: f.masterKey,
   });
   assert.deepEqual(b.admin, {
@@ -205,6 +368,7 @@ test("legacy import preserves IDs, account, history, ciphertext, audit and sourc
     await readLegacy({
       root: f.root,
       legacyPath: f.legacyPath,
+      dataDir: f.dataDir,
       masterKey: f.masterKey,
     }),
   );
@@ -216,6 +380,7 @@ test("missing or wrong master key disables only cloud storage without revealing 
     const b = await readLegacy({
       root: f.root,
       legacyPath: f.legacyPath,
+      dataDir: f.dataDir,
       masterKey,
     });
     assert.equal(b.storages.find((s) => s.id === "cloud").available, false);
@@ -404,6 +569,8 @@ test("check CLI prints a safe report only and writes no source", async (t) => {
       f.root,
       "--legacy",
       f.legacyPath,
+      "--data-dir",
+      f.dataDir,
     ],
     { encoding: "utf8" },
   );
@@ -455,7 +622,7 @@ test("every historical scene asset gets registered even when draft overrides it"
     JSON.stringify(old),
   );
   db.close();
-  const b = await readLegacy({ root: f.root, legacyPath: f.legacyPath });
+  const b = await readLegacy(f);
   assert.ok(b.versions[0].snapshot.legacyMap["assets/geometry/old.bin"]);
   const slot = b.versions[0].snapshot.legacyMap["assets/geometry/old.bin"];
   assert.ok(b.report.missingRequired.includes(slot));
@@ -524,6 +691,7 @@ test("read-only imported bundle persists twice-retained versions and credential 
   const b = await readLegacy({
     root: f.root,
     legacyPath: f.legacyPath,
+    dataDir: f.dataDir,
     masterKey: f.masterKey,
   });
   await store.transaction((tx) => contentRepository(tx).importBundle(b));
@@ -633,7 +801,7 @@ test("historical songs with the same stable ID retain different immutable URLs",
     );
   }
   db.close();
-  const b = await readLegacy({ root: f.root, legacyPath: f.legacyPath });
+  const b = await readLegacy(f);
   const old = b.versions[0].snapshot,
     next = b.versions[1].snapshot;
   const oldSlot = old.legacyMap["assets/music/old.mp3"],

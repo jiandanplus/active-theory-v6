@@ -8,6 +8,20 @@ const { encryptCredentials } = require("../../admin-server/storage");
 
 function importFixture(t) {
   const f = contentFixture(t);
+  const dataDir = path.join(f.root, "private-runtime");
+  fs.mkdirSync(path.join(dataDir, "uploads"), { recursive: true });
+  fs.writeFileSync(
+    path.join(dataDir, "uploads/source.glb"),
+    "original-model-bytes",
+  );
+  fs.writeFileSync(
+    path.join(dataDir, "uploads/derived.bin"),
+    "converted-logo-bytes",
+  );
+  fs.writeFileSync(
+    path.join(dataDir, "uploads/optional.png"),
+    "optional-image-bytes",
+  );
   const uil = {
     INPUT_P_Element_1_Home_geometry: { src: "/models/derived-logo.bin" },
     INPUT_P_Element_3_About_text3d_text: "Original author",
@@ -52,6 +66,17 @@ function importFixture(t) {
       key: "image.png",
       url: "/media/cloud-image",
       name: "image.png",
+      kind: "image",
+      status: "uploaded",
+      created,
+    },
+    {
+      id: "optional-image",
+      source: "local",
+      storageId: "local",
+      key: "optional.png",
+      url: "/media/optional-image",
+      name: "optional.png",
       kind: "image",
       status: "uploaded",
       created,
@@ -111,6 +136,7 @@ function importFixture(t) {
   }
   return {
     ...f,
+    dataDir,
     config,
     schema,
     resources,

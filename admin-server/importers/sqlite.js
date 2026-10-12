@@ -1,9 +1,10 @@
 const { DatabaseSync } = require("node:sqlite");
 const fs = require("node:fs");
+const path = require("node:path");
 const { baseline, complete } = require("./bundle");
 const { validateConfig } = require("../config");
-const { decryptCredentials } = require("../storage");
-const { conflict } = require("../resource-catalog");
+const { decryptCredentials, localFile } = require("../storage");
+const { conflict, checksum } = require("../resource-catalog");
 const KEYS = new Set([
   "schema",
   "draft",
@@ -34,7 +35,7 @@ function validate(config, schema) {
     throw conflict("Invalid legacy configuration or schema");
   }
 }
-async function readLegacy({ root, legacyPath, masterKey }) {
+async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
   if (typeof legacyPath !== "string" || !legacyPath)
     throw conflict("Server legacy source path is required");
   // The service must stop the old writer before invoking import. A read
@@ -174,6 +175,27 @@ async function readLegacy({ root, legacyPath, masterKey }) {
       typeof row.action !== "string"
     )
       throw conflict("Invalid legacy audit");
+  // The operator stages a COPY into the new runtime directory first. Never
+  // infer it from SQLite/root, copy files, or perform I/O in the PG transaction.
+  const localUnavailable = [];
+  for (const row of resources.filter((r) => r.source === "local")) {
+    try {
+      if (typeof dataDir !== "string" || !path.isAbsolute(dataDir))
+        throw Error();
+      const uploads = path.join(dataDir, "uploads");
+      if ((await fs.promises.lstat(uploads)).isSymbolicLink()) throw Error();
+      const file = await localFile(uploads, row.key);
+      const stat = await fs.promises.stat(file);
+      if (!stat.isFile()) throw Error();
+      row.checksum = await checksum(file); // Also proves read access; digest catches byte changes.
+      row.size = stat.size;
+    } catch {
+      localUnavailable.push(row.id);
+      row.status = "missing";
+      row.checksum = null;
+      row.size = null;
+    }
+  }
   const base = await baseline(root);
   return complete({
     ...base,
@@ -192,6 +214,7 @@ async function readLegacy({ root, legacyPath, masterKey }) {
       "Historical versions did not independently save their baseline template; current original baseline is supplied for every historical snapshot.",
     ],
     credentialsUnavailable,
+    localUnavailable,
   });
 }
 module.exports = { readLegacy };

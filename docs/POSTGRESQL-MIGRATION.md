@@ -103,7 +103,75 @@ pg_restore -h RESTORE_HOST -U RESTORE_APP_ROLE -d NEW_ISOLATED_DATABASE --no-own
 
 ## 旧站停机迁移门槛
 
-先用临时 root、媒体目录、UUID 数据库、独立端口完成只读报告和安装；`npm run import:check -- --root /AUTHORIZED_SOURCE --legacy /READ_ONLY_COPY/site.db` 只输出报告，不连接目标生产库，不写 SQLite。不要为了预检重新打开真实数据；使用停机备份副本并确认完整性。
+先用临时 root、媒体目录、UUID 数据库、独立端口完成只读报告和安装；`npm run import:check -- --root /AUTHORIZED_SOURCE --legacy /READ_ONLY_COPY/site.db --data-dir /NEW_PRIVATE_RUNTIME_DATA` 只输出报告，不连接目标生产库，不写 SQLite。`--data-dir` 必须是新应用真正使用的私有目录，先由操作员把停机备份的 uploads **复制**到该目录的 uploads，再预检；不能只迁移数据库元数据。不要为了预检重新打开真实数据；使用停机备份副本并确认完整性。
+
+预检复用运行时对象 key／路径检查，拒绝 uploads 目录或对象路径符号链接，检查普通文件可读性并计算 SHA-256。检查在安装事务外完成；安装 API 再次预检，文件变化使旧 digest 失效。缺失／不可读／不安全文件按资源 ID 报告，不输出服务器绝对路径：实际引用的必需几何 BIN 会进入 `missingRequired`，影响草稿及相应历史模板 readiness；原始 GLB 依赖或未引用普通媒体缺失只警告。ID、引用、历史和 published 指针保留；仍允许带明确“不完整模板”报告安装，但不代表这些页面可用。必须在安装后核实关键页面，不能把“安装成功”当作视觉验收。安装器不复制、移动、删除上传文件，也不联网探测 S3。预检至安装完成期间保持备份与目标 staging 内容不变；完成后再开放写入。
+
+### Docker：临时只读备份挂载与新私有卷交接
+
+宿主机 `LEGACY_SQLITE_PATH` 不会自动出现在容器内。完整的**已停止旧写入后取得的备份目录**须包含 `site.db`、存在时的 `site.db-wal`／`site.db-shm` 和 `uploads/`；保留它们的同一时间边界，不只复制正在写入的主数据库文件。以下仅是操作范例，不要为验证范例停止真实服务。备份及 SQLite/WAL/SHM 绝不能放进 assets、cms 或其他公开目录。保留原备份所有权及哈希；如果备份是 0700，仅向容器 node UID 提供必要的只读目录遍历/读取权限（可用限定 ACL 或另一个权限受限的完整只读 staging 副本），不要放宽到全局可读。
+
+先确认新数据库、新 Compose 项目名、新端口和全新 site-data 卷，且不是现存项目。创建仅本次迁移使用的 `compose.legacy-copy.yaml`（不修改两个默认模板）：
+
+```yaml
+services:
+  site:
+    environment:
+      LEGACY_SQLITE_PATH: /legacy-backup/site.db
+    volumes:
+      - type: bind
+        source: ${LEGACY_BACKUP_DIR:?Set absolute stopped-backup directory}
+        target: /legacy-backup
+        read_only: true
+        bind:
+          create_host_path: false
+```
+
+挂载整个备份目录而不是仅 site.db，以便 SQLite 只读连接找到对应 sidecar。源备份必须已停止写入且可只读打开；若只读 SQLite 无法打开，停止迁移并检查备份一致性/权限，不能把挂载改成可写来强行导入。参数选定后在同一个 shell 操作：
+
+```sh
+export LEGACY_BACKUP_DIR=/ABSOLUTE/PRIVATE/STOPPED_BACKUP
+migration_project=NEW_UNIQUE_MIGRATION_PROJECT
+migration_env=deployment.env
+migration_base=compose.yaml
+# 外部 PG 改成 external.env + compose.external.yaml；不要同时叠加两个 base。
+dc() {
+  docker compose --env-file "$migration_env" -p "$migration_project" \
+    -f "$migration_base" -f compose.legacy-copy.yaml "$@"
+}
+dc config --quiet
+dc build site
+# 内置 PG 才运行下一行；外部 PG 应事先准备全新独立目标库。
+dc up -d --wait db
+# site 尚未启动。仅在全新且完全空的目标卷复制 uploads；有任何内容即失败。
+# 不运行 mkdir -p 覆盖旧路径，也不把 SQLite 或备份整体复制到 /app/data。
+dc run --rm --no-deps -T --user root site sh -ec '
+  test -f /legacy-backup/site.db
+  test -d /legacy-backup/uploads
+  test ! -L /legacy-backup/uploads
+  test -z "$(find /app/data -mindepth 1 -maxdepth 1 -print -quit)"
+  cp -a -- /legacy-backup/uploads /app/data/uploads
+  chown -hR node:node /app/data/uploads
+'
+# 再以镜像默认 node 用户预检，验证实际运行用户可读取源 SQLite 和目标媒体。
+dc run --rm --no-deps -T site npm run import:check -- \
+  --root /app --legacy /legacy-backup/site.db --data-dir /app/data
+dc up -d site
+```
+
+`cp` 失败后不要盲目重跑或清空卷；保留源备份，检查部分目标副本，使用另一个全新目标卷重新演练。确实没有旧 uploads 时，先确认旧资源表无本地对象，再在全新目标卷创建 node 所有的空 uploads；不能忽略复制失败。源目录内的逃逸符号链接不会成为可用资源，需操作员解决并重新预检。请勿使用 `down -v` 删除真实卷。
+
+通过 `/admin/` 选择旧站来源，检查报告、保留原账号并安装。比较备份前后哈希，核对版本/资源数量与 published 指针；逐项读取原始与派生上传字节（SHA-256 对比），以匿名访问权限验证已发布媒体和关键页面，并在应用重建后复查。未公开媒体应通过登录管理端验证，不应为了验收扩大匿名权限。HTTP 字节可读不等于 3D 内容视觉正确，关键页面仍需实际浏览器验收。
+
+完成后从受限环境文件删除 `LEGACY_SQLITE_PATH` 和 `SETUP_TOKEN`，只用所选 base 重建 site，去掉临时挂载：
+
+```sh
+docker compose --env-file "$migration_env" -p "$migration_project" \
+  -f "$migration_base" up -d --no-deps --force-recreate site
+unset LEGACY_BACKUP_DIR
+```
+
+确认新容器没有 `/legacy-backup` 挂载，再收起临时 override 文件；保留备份，不删除原站数据。外部 PG 采用完全相同的临时 override、复制、预检、移除挂载步骤，只是 base 必须独立使用 `compose.external.yaml`，且跳过 `db` 服务命令。[Docker 官方 Compose 多文件合并说明](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/)、[bind mount 说明](https://docs.docker.com/engine/storage/bind-mounts/)。这些新迁移命令的验证范围见验证记录，不代表已执行生产迁移。
 
 真实切换必须先交付验收给用户，确认数据库目标和维护时间；再针对明确 PID/服务停止旧写入（不 kill 所有 Node），备份 SQLite/WAL/SHM、本地媒体、资源与主密钥，设置受信任 `LEGACY_SQLITE_PATH` 进行首次安装。保留账号/ID/密文；会话失效需重新登录。不得删旧 data，不能以 SQLite 备份覆盖 PG 上线后的新写入。回滚需要明确的数据边界和用户确认；本次没有自动切换、发布公网或 push。
 

@@ -49,6 +49,7 @@ async function preflight(options, mode) {
         root: options.root,
         legacyPath: options.legacyPath,
         masterKey: options.masterKey,
+        dataDir: options.dataDir,
       });
     return await require("./importers/bundle").readBundle({
       root: options.root,
