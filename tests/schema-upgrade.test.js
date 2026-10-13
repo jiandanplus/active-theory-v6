@@ -3,6 +3,41 @@ const assert = require('node:assert/strict');
 const {v1Fixture} = require('./helpers/v1');
 const {upgradeInstalled} = require('../scripts/db-migrate');
 const {inspectInstallation} = require('../admin-server/migrations');
+function inspectorWithSignatures(signatures) {
+  const filename = require.resolve('../admin-server/migrations');
+  const {createRequire} = require('node:module');
+  const localRequire = createRequire(filename);
+  const registry = localRequire('./migration-registry');
+  const replacement = {...registry,migrations:Object.freeze(registry.migrations.map((entry,index)=>
+    Object.freeze({...entry,schemaSignature:signatures[index]})))};
+  const module = {exports:{}};
+  require('node:vm').runInNewContext(require('node:fs').readFileSync(filename,'utf8'),{
+    module,exports:module.exports,
+    require:name=>name==='./migration-registry'?replacement:localRequire(name),
+  },{filename});
+  return module.exports;
+}
+test('inspection accepts a known catalog signature assigned to the recorded version',async t=>{
+  const {store} = await require('./helpers/postgres').postgresFixture(t);
+  await store.query("ALTER TABLE personal_site.site_settings ADD COLUMN signature_fixture text");
+  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',2)");
+  const {schemaSignature,signatureQuery} = require('../admin-server/migrations');
+  const changed = require('node:crypto').createHash('sha256').update(JSON.stringify((await store.query(signatureQuery)).rows)).digest('hex');
+  const inspect = inspectorWithSignatures([schemaSignature,changed]).inspectInstallation;
+  assert.equal((await inspect(store)).state,'installed');
+});
+test('inspection rejects another known version catalog even when the prefix checksum matches',async t=>{
+  const {store} = await require('./helpers/postgres').postgresFixture(t);
+  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',2)");
+  const {schemaSignature} = require('../admin-server/migrations');
+  const inspect = inspectorWithSignatures([schemaSignature,'different-version-signature']).inspectInstallation;
+  assert.equal((await inspect(store)).state,'incompatible');
+  const light = {query:async(sql,args)=>{
+    assert.notEqual(sql,require('../admin-server/migrations').signatureQuery,'lightweight inspection must not scan catalogs');
+    return store.query(sql,args);
+  }};
+  assert.equal((await inspect(light,{verifyStructure:false})).state,'installed');
+});
 test('new imports normalize current identity but leave historical snapshots untouched', async t=>{
   const {store} = await require('./helpers/postgres').postgresFixture(t);
   const {bundle} = require('./helpers/content').contentFixture(t);

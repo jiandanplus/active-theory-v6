@@ -56,8 +56,12 @@ async function inspectInstallation(store,{verifyStructure=true}={}) {
   if (!exists) return { state: "uninstalled", schemaVersion: null };
   // Check catalog before reading tables: missing tables are incompatible here,
   // while the lightweight request guard still lets query failures propagate.
-  if (verifyStructure && digest(JSON.stringify((await store.query(signatureQuery)).rows)) !== schemaSignature)
-    return { state: "incompatible", schemaVersion: null };
+  let catalogSignature;
+  if (verifyStructure) {
+    catalogSignature = digest(JSON.stringify((await store.query(signatureQuery)).rows));
+    if (!migrations.some(migration=>migration.schemaSignature===catalogSignature))
+      return { state: "incompatible", schemaVersion: null };
+  }
   const versions = (
     await store.query(
       "SELECT version,checksum FROM personal_site.schema_migrations ORDER BY version",
@@ -66,6 +70,8 @@ async function inspectInstallation(store,{verifyStructure=true}={}) {
   if (!knownPrefix(versions))
     return { state: "incompatible", schemaVersion: null };
   const schemaVersion = versions.at(-1).version;
+  if (verifyStructure && catalogSignature !== migrations[schemaVersion-1].schemaSignature)
+    return { state: "incompatible", schemaVersion: null };
   const rows = (
     await store.query("SELECT schema_version FROM personal_site.installation")
   ).rows;
