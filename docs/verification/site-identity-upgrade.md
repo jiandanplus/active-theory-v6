@@ -66,3 +66,13 @@ shasum -a 256 admin-server/migrations/001-initial.sql
 最终清理前查询专用 PostgreSQL 只余 `site_test_control`。核对容器 labels 为 `project=site-pg-test`、`service=db`、配置文件为本工作树 `compose.test.yaml`，绑定 `127.0.0.1:55432` 且无宿主持久挂载后，实际执行 `docker compose --env-file /dev/null -p site-pg-test -f compose.test.yaml down`。该容器及其专用网络均已移除，再次按项目 label 查询为空；tmpfs 测试数据随容器删除，不需要保留或恢复，可按测试模板重建。没有操作其他容器或真实数据库。截图、日志和独立 Git 工作树保留；尚未合并、推送或部署。
 
 真实 S3/CDN 公网可读性、CORS、目标服务器 HTTPS/代理、实际生产数据库迁移/备份恢复未验证；本地受控 S3 HTTP 测试不替代这些项目。
+
+## 后续本地合并记录（2026-10-14）
+
+以上为隔离验收结束时的记录。用户随后选择本地合并；在原目录 `/Users/jiandan/Code/MyCode/active-theory-v6` 对 `feat/authenticated-resource-admin` 执行 `git merge --ff-only feat/site-identity-upgrade`，从 `3c21926` 快进至 `7e0b46b`，没有冲突，没有拉取或推送远端。合并前检查 49 个改造文件与用户未提交文件无路径重叠；合并后校验原有 186 个未提交文件的 SHA-256 和文件模式均保持不变。
+
+在合并后的原目录、提交 `7e0b46b` 上重新执行上述 Node 24 安全全套命令：242/242，通过，失败 0、跳过 0、取消 0，exit0，12.538 秒。测试仍使用专用回环 PostgreSQL 的 UUID 临时库与临时素材目录，没有读取真实 `.env`、SQLite 或 uploads。独立只读核查也确认从原目录运行不会改变这些隔离边界。原始 001 摘要保持不变，提交差异 `git diff --check` 通过。
+
+此次重建的 `site-pg-test` 专用容器测试后只余控制库；核对 Compose 所有权后使用 `--env-file /dev/null` 执行 down，容器和专用网络已移除，按项目 label 查询为空。现存 3000 端口前后均为 PID63076，未重启或迁移真实数据库。
+
+归档前将候选工作区完整 output（含被 Git 忽略的浏览器日志）和工作树管理目录中的 sdd 记录复制到原项目 `output/site-identity-upgrade-2026-10-14-7e0b46b/`，分别运行 `diff -qr` 确认一致。随后通过 Codex 原生工作区归档完成可恢复保存；附件类型已变为 archived_worktree，Git 仅保留原工作区。已安全删除完全合并的临时开发分支，其提交仍在目标分支中。后续本次收尾提交只更新文档，不修改被验证的应用代码。
