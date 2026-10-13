@@ -210,9 +210,15 @@ function startAdmin() {
     const l = node("label", label);
     l.htmlFor = id;
     wrap.append(l);
-    const input = node(options.multiline ? "textarea" : "input");
+    const input = node(options.choices ? "select" : options.multiline ? "textarea" : "input");
     input.id = id;
-    if (!options.multiline) input.type = options.type || "text";
+    if (!options.choices && !options.multiline) input.type = options.type || "text";
+    if (options.choices) for (const choice of options.choices) {
+      const option = node("option", choice.label);
+      option.value = choice.value;
+      input.append(option);
+    }
+    if (options.maxLength !== undefined) input.maxLength = options.maxLength;
     input.value =
       options.type === "date"
         ? String(value || "").slice(0, 10)
@@ -223,7 +229,7 @@ function startAdmin() {
     if (options.placeholder) input.placeholder = options.placeholder;
     if (options.readOnly) input.readOnly = true;
     if (options.autocomplete) input.autocomplete = options.autocomplete;
-    input.addEventListener("input", () =>
+    input.addEventListener(options.choices ? "change" : "input", () =>
       onChange(options.type === "number" ? Number(input.value) : input.value),
     );
     if (options.pick) {
@@ -552,7 +558,8 @@ function startAdmin() {
     const p = panel(content, "基本信息"),
       grid = node("div", undefined, "grid");
     p.append(grid);
-    for (const [key, value] of Object.entries(state.config.site))
+    for (const [key, value] of Object.entries(state.config.site).filter(([key]) =>
+      !["description", "language", "socialImage"].includes(key)))
       field(
         grid,
         labels[key] || key,
@@ -570,6 +577,22 @@ function startAdmin() {
                 : undefined,
         },
       );
+    const identity = panel(content, "搜索与分享");
+    const update = (key, value) => { state.config.site[key] = value; dirty(); };
+    field(identity, "网站描述", state.config.site.description, v => update("description", v), {
+      multiline: true, maxLength: 500,
+      help: "最多 500 字符。用于搜索和分享介绍，不改变 3D 场景文字。",
+    });
+    const languageLabels = { "zh-CN": "简体中文", "zh-TW": "繁體中文", en: "English" };
+    field(identity, "页面语言", state.config.site.language, v => update("language", v), {
+      choices: window.SiteIdentity.LANGUAGES.map(value => ({ value, label: languageLabels[value] })),
+      help: "声明页面内容的语言，不会自动翻译网站。",
+    });
+    const social = field(identity, "分享图片", state.config.site.socialImage, v => update("socialImage", v), {
+      pick: "image", help: "选择图片资源或填写 HTTPS 图片地址；留空则不使用默认分享图。",
+    });
+    identity.append(button("清空分享图片", () => { social.value = ""; update("socialImage", ""); }));
+    identity.append(node("p", "网站域名来自服务器 SITE_ORIGIN。修改先保存为草稿，发布后才影响公开页面。", "muted"));
     const songs = panel(content, "背景音乐");
     warning(songs, "音乐由访客主动播放。添加资源前，请确保拥有使用授权。");
     state.config.songs.forEach((song, i) => {

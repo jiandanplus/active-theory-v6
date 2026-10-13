@@ -94,6 +94,37 @@ test("initialization cannot replace account without explicit local reset", async
 });
 
 module.exports = { fixture };
+test('admin identity contract is self-hosted and read-only',async t=>{
+  const f=await fixture(t);
+  const script=await f.request('/admin/site-identity.js');
+  assert.equal(script.status,200);
+  assert.equal(script.headers.get('cache-control'),'private, no-store');
+  assert.match(script.headers.get('x-robots-tag'),/noindex/);
+  const html=await (await f.request('/admin/')).text();
+  assert(html.indexOf('/admin/site-identity.js')<html.indexOf('/admin/admin.js'));
+  assert.equal((await f.request('/shared/site-identity.js')).status,404);
+});
+test('identity fields save in one draft revision and change public config only on publication',async t=>{
+  const f=await fixture(t); await f.createAdmin(); const headers=await f.login();
+  const draft=await (await f.request('/api/admin/config',{headers})).json();
+  const publicURL=`/api/site/${draft.published}/config`;
+  const before=await (await f.request(publicURL)).json();
+  const identity={description:'网站介绍',language:'zh-CN',socialImage:'https://example.test/share.png'};
+  Object.assign(draft.config.site,identity);
+  const saved=await f.request('/api/admin/config',{method:'PUT',headers,body:JSON.stringify({config:draft.config,revision:draft.revision})});
+  assert.equal(saved.status,200);
+  const {revision}=await saved.json(); assert.equal(revision,draft.revision+1);
+  const next=await (await f.request('/api/admin/config',{headers})).json();
+  for(const [key,value] of Object.entries(identity)) assert.equal(next.config.site[key],value);
+  assert.deepEqual(await (await f.request(publicURL)).json(),before);
+  const published=await f.request('/api/admin/publish',{method:'POST',headers,body:JSON.stringify({revision})});
+  assert.equal(published.status,200);
+  const after=await (await f.request('/api/admin/config',{headers})).json();
+  const publicConfig=await (await f.request(`/api/site/${after.published}/config`)).json();
+  assert.equal(publicConfig.site.description,identity.description);
+  assert.equal(publicConfig.site.language,identity.language);
+  assert.match(publicConfig.site.socialImage,new RegExp(`^/api/site/${after.published}/resources/external-[a-f0-9]+/share\\.png$`));
+});
 test("sessions are hashed, idle/absolute expiry and password change invalidate sessions", async (t) => {
   const f = await fixture(t);
   await f.createAdmin();

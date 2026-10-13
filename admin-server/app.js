@@ -80,6 +80,8 @@ function createApp(options = {}) {
     next();
   });
   mountInstallation(app, { store, options });
+  app.get('/admin/site-identity.js', (req, res) => res.type('js').sendFile(
+    path.join(__dirname, '../shared/site-identity.js'), { cacheControl: false }));
   app.use(
     "/admin",
     express.static(path.join(__dirname, "../admin-ui"), {
