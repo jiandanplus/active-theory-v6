@@ -2,7 +2,7 @@
 
 日期：2026-10-13
 
-状态：用户于 2026-10-14 明确确认；[实施计划](../plans/2026-10-14-upgrade-and-site-identity.md)已完成，待选择执行方式，尚未实施。
+状态：用户于 2026-10-14 明确确认；第一阶段 A 代码实施与隔离自动化/实际浏览器验收已完成，整分支最终独立审查收尾中。见[验证记录](../../verification/site-identity-upgrade.md)。不代表真实站点已升级；B/C/D 未实施。
 
 总体设计：[个人主页架构改造](2026-10-13-architecture-modernization-design.md)。基线 `a7d75a6`。
 

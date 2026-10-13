@@ -10,6 +10,7 @@
 
 - 首次访问 `/admin/`：安装令牌授权 → 数据库检查 → 选择空白内容、服务器内容包或旧站迁移 → 创建或保留管理员 → 手动登录。
 - 中文后台管理网站信息、作品、音乐，以及六个场景中已识别的文案、资源和参数。
+- “网站设置 → 搜索与分享”支持描述、页面语言和默认分享图片；保存草稿、认证预览、发布后生效。语言不会自动翻译内容，作品描述与 image 优先，canonical 域名只来自服务器 `SITE_ORIGIN`。详见[后台说明](docs/ADMIN.md#网站描述语言与分享图片)。
 - 资源库支持本地上传、S3 兼容对象存储、HTTPS 外链；静态 GLB 可转换为当前引擎使用的 BIN。
 - 草稿、认证预览、不可变发布快照及恢复为草稿；匿名访客只能读取已发布内容及获准资源。
 - 服务端会话、密码哈希、CSRF / Origin 检查、登录限流和加密云凭证；没有默认管理员密码。
@@ -109,7 +110,7 @@ npm run dev
 | `npm run admin:key` | 本机生成 S3 凭证加密主密钥，不要公开输出 |
 | `npm run admin:reset` | 已安装实例的管理员恢复，使旧会话失效 |
 | `npm run import:check -- …` | 只读导入预检；旧站需明确 `--root`、`--legacy`、`--data-dir` |
-| `npm run db:migrate` | 维护窗口内显式校验／升级已安装库，不创建管理员 |
+| `npm run db:migrate` | 维护窗口内显式升级已安装结构 1→2；结构 2 验证式 no-op，不创建管理员 |
 | `npm test` / `npm run test:postgres` | 相同的隔离 PostgreSQL 测试入口 |
 
 启动专用测试数据库后运行，不要把生产连接串当测试连接：
@@ -125,7 +126,7 @@ docker compose -p site-pg-test -f compose.test.yaml down
 
 测试默认使用回环端口 55432 和 UUID 临时数据库，不回退生产 `DATABASE_URL`。如显式指定 `TEST_DATABASE_URL`，需确认专用目标后设置 `TEST_DATABASE_CONFIRMED=yes`。有授权运行包时执行对应引擎测试；缺包时七项引擎集成检查明确跳过，不代表完整 3D 已验收。
 
-2026-10-13 在本地授权资源齐全的环境，完整测试 **199/199 通过、零跳过**，依赖审计零漏洞；实测范围和限制见[验证记录](docs/verification/postgresql-installation.md)。这不是对目标服务器、真实 S3 / CDN / CORS 或所有外部作品的验收承诺。
+2026-10-13 的 199 项结果属于此前 PostgreSQL 安装阶段，见[历史验证记录](docs/verification/postgresql-installation.md)，不能证明本次新代码。2026-10-14 第一阶段安全升级与站点身份的重新验证范围、实际结果和未验证项见[本次验证记录](docs/verification/site-identity-upgrade.md)。后续 B/C/D 阶段尚未实施；测试不代表目标服务器、真实 S3 / CDN / CORS 已验收，真实站点升级和推送部署仍需另行授权。
 
 ## 常见问题
 
@@ -149,5 +150,6 @@ docker compose -p site-pg-test -f compose.test.yaml down
 - [后台与资源管理](docs/ADMIN.md)
 - [部署、备份、升级与旧站迁移](docs/POSTGRESQL-MIGRATION.md)
 - [实际验证与已知边界](docs/verification/postgresql-installation.md)
+- [结构 2 与站点身份验证](docs/verification/site-identity-upgrade.md)
 - [PostgreSQL 与安装向导设计](docs/superpowers/specs/2026-10-12-postgresql-installation-design.md)及[实施计划](docs/superpowers/plans/2026-10-12-postgresql-installation.md)
 - [首版后台设计](docs/superpowers/specs/2026-10-12-personal-site-admin-design.md)及[首版实施计划](docs/superpowers/plans/2026-10-12-personal-site-admin.md)，历史记录中的 SQLite 主存储与终端首装决定已被 PostgreSQL 设计替代，不作为当前部署步骤。

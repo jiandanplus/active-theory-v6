@@ -94,7 +94,17 @@ docker compose --env-file .env.external -p personal-site -f compose.external.yam
 
 ## 显式升级
 
-先备份并确认维护窗口，停止应用写入，再运行 `npm run db:migrate`。它仅接受已安装实例，使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹与迁移 checksum，再调用版本迁移。当前只存在 001，因此在合法 v1 上重复运行是验证式 no-op；不会创建管理员，也不把未安装库变成已安装。未来 schema 升级需要增加经审查的顺序迁移及对应旧版本校验规则，不能修改已发布 001 来让 checksum“通过”。
+`npm run db:migrate` 已实际支持数据库结构 1→2。它仅接受已安装实例，使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹与迁移 checksum，再调用顺序迁移；结构 2 重复运行是验证式 no-op。不能修改已发布 001 来让 checksum“通过”。2026-10-14 的隔离升级、回滚与历史保持测试见 [站点身份验证记录](verification/site-identity-upgrade.md)，不代表真实站点已升级。
+
+### 从数据库结构 1 升级到 2
+
+新安装直接创建当前结构。已有实例不会在启动、登录或访问时自动升级；新程序检测到结构 1 时进入维护状态，不重新开放安装。
+
+先在维护窗口停止旧应用写入，完成并验证 PostgreSQL、媒体和独立密钥备份，再在已确认的目标环境显式执行 npm run db:migrate。升级只补充当前站点字段和模板字段、增加一次草稿修订号；保留账号、资源 ID、安装来源和时间、发布指针及历史版本快照。无需再次创建管理员。
+
+升级失败时数据库事务回滚；不要删除 schema 或重复初始化。结构 2 不能直接用旧程序回退运行；需要恢复时使用维护窗口内验证过的备份，不提供破坏性自动降级。升级前打开的后台编辑器应刷新后再编辑。
+
+旧版本恢复只改变草稿，并以空描述、en 语言、空分享图补齐缺失字段。既有历史快照不被改写；旧引擎 metadata.json 接口保持原语义。
 
 ```sh
 docker compose --env-file .env.deployment -p personal-site -f compose.yaml stop site

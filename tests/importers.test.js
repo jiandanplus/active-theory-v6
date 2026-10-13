@@ -732,6 +732,25 @@ test("read-only imported bundle persists twice-retained versions and credential 
   assert.equal(hash(f.legacyPath), f.sourceHash);
 });
 
+test('legacy import and old-version restore preserve temporary source bytes and historical JSONB', async t=>{
+  const f=importFixture(t), {store}=await postgresFixture(t);
+  const before=sourceHashes(f.root);
+  const bundle=await readLegacy({...f,masterKey:f.masterKey});
+  await store.transaction(tx=>contentRepository(tx).importBundle(bundle));
+  const historySql='SELECT id,snapshot::text AS snapshot FROM personal_site.versions ORDER BY id';
+  const history=(await store.query(historySql)).rows;
+  assert.equal(history.length,2);
+  const repo=contentRepository(store);
+  await require('../admin-server/config').restore(store,41,(await repo.getDraft()).revision);
+  const draft=await repo.getDraft();
+  assert.equal(draft.config.site.description,'');
+  assert.equal(draft.config.site.language,'en');
+  assert.equal(draft.config.site.socialImage,'');
+  assert.deepEqual((await store.query(historySql)).rows,history);
+  assert.equal(hash(f.legacyPath),f.sourceHash);
+  assert.deepEqual(sourceHashes(f.root),before);
+});
+
 test("bundle mode inventories metadata images, but not contact or ordinary navigation URLs", async (t) => {
   const f = contentFixture(t);
   fs.writeFileSync(path.join(f.root, "cms/projects-dev.json"), "[]");

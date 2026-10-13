@@ -22,6 +22,17 @@ test('new identity values are explicit, not coerced', () => {
   assert.equal(normalizeSite({socialImage:undefined}).socialImage, undefined);
 });
 
+test('normalization independently deep-clones nested unknown configuration keys', () => {
+  const old = {site:{title:'Old',extension:{nested:['original']}},extra:{items:[{value:1}]}};
+  const next = normalizeConfig(old);
+  next.site.extension.nested.push('new');
+  next.extra.items[0].value = 2;
+  assert.deepEqual(old.site.extension.nested,['original']);
+  assert.equal(old.extra.items[0].value,1);
+  old.extra.items.push({value:3});
+  assert.equal(next.extra.items.length,1);
+});
+
 test('same contract runs as a browser script without DOM globals', () => {
   const vm = require('node:vm');
   const context = {structuredClone};

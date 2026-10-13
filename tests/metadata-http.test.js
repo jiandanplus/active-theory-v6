@@ -8,6 +8,10 @@ test('server identity ignores hostile host/query and unknown projects are 404',a
   const response=await f.request('/work/one?source=https://evil.example',{headers:{Host:'evil.example'}});
   assert.equal(response.status,200);
   const html=await response.text();
+  assert.equal((html.match(/<title\b/gi)||[]).length,1);
+  assert.equal((html.match(/<link\b[^>]*rel="canonical"/gi)||[]).length,1);
+  for(const property of ['og:title','og:url','twitter:title','twitter:url'])
+    assert.equal((html.match(new RegExp(`(?:name|property)="${property}"`,'g'))||[]).length,1,property);
   const titleIndex=html.indexOf('<title>One · Fixture</title>');
   const canonicalIndex=html.indexOf('<link rel="canonical"');
   const identityIndex=html.indexOf('/identity.js');
