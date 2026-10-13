@@ -1,5 +1,6 @@
 const fs = require("node:fs"),
   path = require("node:path");
+const {normalizeSite} = require('../../shared/site-identity');
 const SCENES = {
   Home: "开场 · Logo",
   About: "个人介绍",
@@ -152,7 +153,7 @@ function initialConfig(root) {
   ))
     songs.push({ title: JSON.parse(match[1]), src: JSON.parse(match[2]) });
   return {
-    site,
+    site: normalizeSite(site),
     projects: JSON.parse(read(root, "cms/projects-dev.json", "[]")),
     scenes,
     songs,

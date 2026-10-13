@@ -3,11 +3,9 @@ const assert = require('node:assert/strict');
 const {readFileSync} = require('node:fs');
 const {postgresFixture} = require('./helpers/postgres');
 const {httpFixture} = require('./helpers/http');
+const {currentSchemaVersion,signatureQuery:query,schemaSignature:expected} = require('../admin-server/migrations');
 
 test('PG18 catalog fingerprint reproduces from untouched 001 SQL in two fresh isolated databases', async t => {
-  const source = readFileSync('admin-server/migrations.js','utf8');
-  const query = source.match(/const signatureQuery = `([\s\S]*?)`;/)[1];
-  const expected = source.match(/const schemaSignature =\s*"([a-f0-9]{64})"/)[1];
   const digest = value => require('node:crypto').createHash('sha256').update(value).digest('hex');
   const sql = readFileSync('admin-server/migrations/001-initial.sql','utf8');
   for (let i=0;i<2;i++) {
@@ -18,6 +16,9 @@ test('PG18 catalog fingerprint reproduces from untouched 001 SQL in two fresh is
     });
     assert.equal(digest(JSON.stringify((await store.query(query)).rows)), expected);
     assert.deepEqual(await require('../admin-server/migrations').inspectInstallation(store), {state:'uninstalled',schemaVersion:1});
+    await store.transaction(require('../admin-server/migrations').migrate);
+    assert.equal(digest(JSON.stringify((await store.query(query)).rows)), expected);
+    assert.deepEqual(await require('../admin-server/migrations').inspectInstallation(store), {state:'uninstalled',schemaVersion:currentSchemaVersion});
   }
 });
 
@@ -33,7 +34,7 @@ test('explicit upgrade is idempotent and preserves administrator and versions', 
   await f.createAdmin();
   const before = (await store.query('SELECT username,hash FROM personal_site.admins')).rows;
   const versions = (await store.query('SELECT id,snapshot FROM personal_site.versions ORDER BY id')).rows;
-  assert.deepEqual(await require('../scripts/db-migrate').upgradeInstalled(store), {schemaVersion:1});
+  assert.deepEqual(await require('../scripts/db-migrate').upgradeInstalled(store), {schemaVersion:currentSchemaVersion,previousSchemaVersion:currentSchemaVersion,upgraded:false});
   assert.deepEqual((await store.query('SELECT username,hash FROM personal_site.admins')).rows, before);
   assert.deepEqual((await store.query('SELECT id,snapshot FROM personal_site.versions ORDER BY id')).rows, versions);
   assert.equal((await f.request('/api/setup/status')).status, 200);

@@ -205,7 +205,8 @@ test("reset cannot initialize uninstalled content and account audit failures rol
     before,
   );
   await f.store.query(
-    "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',1)",
+    "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',$1)",
+    [require('../admin-server/migrations').currentSchemaVersion],
   );
   const headers = await f.login();
   await f.store.query(

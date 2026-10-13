@@ -3,6 +3,7 @@ const assert = require("node:assert/strict");
 const { postgresFixture } = require("./helpers/postgres");
 const { contentFixture } = require("./helpers/content");
 const { openPostgres } = require("../admin-server/postgres");
+const {currentSchemaVersion} = require('../admin-server/migrations');
 const input = (bundle) => ({
   bundle,
   mode: "bundle",
@@ -61,6 +62,8 @@ test("legacy staged bytes affect fresh setup digest and survive actual HTTP deli
   );
   fs.writeFileSync(file, "converted-logo-bytes");
   assert.equal((await install((await check()).digest)).status, 201);
+  assert.deepEqual(await require('../admin-server/installation').installationStatus(store),
+    {state:'installed',schemaVersion:currentSchemaVersion});
   for (const restarted of [false, true]) {
     if (restarted) await f.restart();
     for (const [id, name, bytes] of [

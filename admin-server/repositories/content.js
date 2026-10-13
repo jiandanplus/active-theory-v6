@@ -1,4 +1,5 @@
 const { randomUUID } = require("node:crypto");
+const {normalizeConfig} = require('../../shared/site-identity');
 const { toSafeInteger } = require("../postgres");
 const { composeSnapshot, collectReferences } = require("../snapshots");
 const { resourceRepository } = require("./resources");
@@ -164,12 +165,14 @@ function contentRepository(db) {
         await resources.insert(resource);
         inserted.add(resource.id);
       }
-      const snapshot = composeSnapshot(bundle.draft);
+      const draft = {...bundle.draft,config:normalizeConfig(bundle.draft.config)};
+      const schema = normalizeConfig(bundle.schema);
+      const snapshot = composeSnapshot(draft);
       await db.query(
         "INSERT INTO personal_site.templates(id,schema_config,content) VALUES($1,$2,$3)",
         [
           "default",
-          bundle.schema,
+          schema,
           {
             template: snapshot.template,
             assets: snapshot.assets,

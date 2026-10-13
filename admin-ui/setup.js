@@ -165,6 +165,8 @@ function mount({ root, onInstalled }) {
   function maintenance(status) {
     page("暂时无法安装或登录", "维护状态");
     const reasons = {
+      upgrade_required:
+        "网站数据库需要升级。请由服务器管理员备份后在维护窗口运行 npm run db:migrate；这里不会重新安装或创建管理员。",
       unconfigured:
         "服务器尚未配置 DATABASE_URL。请由管理员在服务器端配置 PostgreSQL 18 后重试。",
       incompatible:

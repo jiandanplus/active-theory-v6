@@ -107,11 +107,13 @@ function createApp(options = {}) {
             .status(503)
             .type("html")
             .send(
-              '<!doctype html><meta charset="utf-8"><title>网站尚未就绪</title><p>网站尚未完成安装或暂时不可用，请通过管理后台检查状态。</p><a href="/admin">管理后台</a>',
+              state.state==='upgrade_required'
+                ? '<!doctype html><meta charset="utf-8"><title>网站需要维护升级</title><p>网站需要维护升级，请由管理员在服务器备份后运行数据库升级命令</p><a href="/admin">管理后台</a>'
+                : '<!doctype html><meta charset="utf-8"><title>网站尚未就绪</title><p>网站尚未完成安装或暂时不可用，请通过管理后台检查状态。</p><a href="/admin">管理后台</a>',
             );
         return res
           .status(503)
-          .json({ error: "网站尚未安装或暂时不可用", state: state.state });
+          .json({ error: state.state==='upgrade_required'?'网站需要维护升级':"网站尚未安装或暂时不可用", state: state.state });
       }
       next();
     }),

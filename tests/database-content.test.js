@@ -308,7 +308,8 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
   await f.store.transaction(async (tx) => {
     await contentRepository(tx).importBundle(bundle);
     await tx.query(
-      "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',1)",
+      "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',$1)",
+      [require('../admin-server/migrations').currentSchemaVersion],
     );
   });
   const html = await (await f.request("/")).text();

@@ -1,4 +1,5 @@
 const { fail } = require("./security");
+const {normalizeConfig} = require('../shared/site-identity');
 const { initialConfig, appFile, baseUIL } = require("./importers/disk");
 const { contentRepository } = require("./repositories/content");
 const { auditRepository } = require("./repositories/audit");
@@ -326,7 +327,7 @@ async function restore(store, id, revision, actor = null) {
   if (!Number.isSafeInteger(id) || id < 1) throw fail(404, "版本不存在");
   const row = await contentRepository(store).getVersion(id);
   if (!row) throw fail(404, "版本不存在");
-  return saveDraft(store, row.snapshot.config, revision, actor);
+  return saveDraft(store, normalizeConfig(row.snapshot.config), revision, actor);
 }
 async function createPreview(store, revision, options, owner) {
   const { draft } = await validatedDraft(store, revision, options);

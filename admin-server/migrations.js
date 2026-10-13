@@ -1,12 +1,7 @@
-const { readFileSync } = require("node:fs");
-const { join } = require("node:path");
 const { createHash } = require("node:crypto");
-const sql = readFileSync(join(__dirname, "migrations/001-initial.sql"), "utf8");
+const {migrations,currentSchemaVersion,checksum,schemaSignature} = require('./migration-registry');
+const {validateIdentity} = require('../shared/site-identity');
 const digest = (value) => createHash("sha256").update(value).digest("hex");
-const checksum = digest(sql);
-// PostgreSQL 18 catalog signature of the exact 001 schema, excluding row data.
-const schemaSignature =
-  "d707b879563d88ac731f0e95982187542f1d260bec0ad866110bc3f155f90534";
 
 // Catalog definitions, not row data or object OIDs, detect structural drift.
 const signatureQuery = `
@@ -45,7 +40,12 @@ async function supportedPostgresVersion(store) {
   return version >= 180000 && version < 190000;
 }
 
-async function inspectInstallation(store) {
+function knownPrefix(rows) {
+  return rows.length > 0 && rows.length <= migrations.length && rows.every((row,index)=>
+    row.version===migrations[index].version && row.checksum===migrations[index].checksum);
+}
+async function inspectInstallation(store,{verifyStructure=true}={}) {
+  if (store.configured === false) return {state:'unconfigured',schemaVersion:null};
   if (!(await supportedPostgresVersion(store)))
     return { state: "incompatible", schemaVersion: null };
   const exists = (
@@ -54,28 +54,24 @@ async function inspectInstallation(store) {
     )
   ).rows[0].present;
   if (!exists) return { state: "uninstalled", schemaVersion: null };
-  const signature = digest(
-    JSON.stringify((await store.query(signatureQuery)).rows),
-  );
-  if (signature !== schemaSignature)
+  // Check catalog before reading tables: missing tables are incompatible here,
+  // while the lightweight request guard still lets query failures propagate.
+  if (verifyStructure && digest(JSON.stringify((await store.query(signatureQuery)).rows)) !== schemaSignature)
     return { state: "incompatible", schemaVersion: null };
   const versions = (
     await store.query(
       "SELECT version,checksum FROM personal_site.schema_migrations ORDER BY version",
     )
   ).rows;
-  if (
-    versions.length !== 1 ||
-    versions[0].version !== 1 ||
-    versions[0].checksum !== checksum
-  )
+  if (!knownPrefix(versions))
     return { state: "incompatible", schemaVersion: null };
+  const schemaVersion = versions.at(-1).version;
   const rows = (
     await store.query("SELECT schema_version FROM personal_site.installation")
   ).rows;
-  if (rows.length > 1 || (rows.length && rows[0].schema_version !== 1))
-    return { state: "incompatible", schemaVersion: 1 };
-  return { state: rows.length ? "installed" : "uninstalled", schemaVersion: 1 };
+  if (rows.length > 1 || rows.some(row=>row.schema_version !== schemaVersion))
+    return { state: "incompatible", schemaVersion };
+  return { state: !rows.length ? "uninstalled" : schemaVersion < currentSchemaVersion ? "upgrade_required" : "installed", schemaVersion };
 }
 async function migrate(tx) {
   await tx.query("SELECT pg_advisory_xact_lock($1)", [734216901]);
@@ -84,18 +80,24 @@ async function migrate(tx) {
       status: 503,
     });
   const state = await inspectInstallation(tx);
-  if (state.state === "incompatible")
+  if (!['uninstalled','upgrade_required','installed'].includes(state.state))
     throw new Error("Incompatible personal_site schema");
-  if (state.schemaVersion !== null) return;
-  await tx.query(sql);
-  await tx.query(
-    "INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)",
-    [1, checksum],
-  );
+  for (const migration of migrations.filter(m=>m.version>(state.schemaVersion||0))) {
+    await tx.query(migration.sql);
+    await tx.query('INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)',[migration.version,migration.checksum]);
+    await tx.query('UPDATE personal_site.installation SET schema_version=$1',[migration.version]);
+    const after = await inspectInstallation(tx);
+    if (after.state==='incompatible' || after.schemaVersion!==migration.version) throw Error('Migration validation failed');
+  }
+  const identities=(await tx.query("SELECT site FROM personal_site.site_settings UNION ALL SELECT schema_config->'site' AS site FROM personal_site.templates")).rows;
+  for(const row of identities) validateIdentity(row.site);
 }
 module.exports = {
   migrate,
   inspectInstallation,
   checksum,
   supportedPostgresVersion,
+  currentSchemaVersion,
+  signatureQuery,
+  schemaSignature,
 };

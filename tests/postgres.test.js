@@ -2,7 +2,7 @@ const {test} = require('node:test');
 const assert = require('node:assert/strict');
 const {postgresFixture} = require('./helpers/postgres');
 const {openPostgres, toSafeInteger} = require('../admin-server/postgres');
-const {migrate, inspectInstallation} = require('../admin-server/migrations');
+const {migrate, inspectInstallation, currentSchemaVersion} = require('../admin-server/migrations');
 
 test('transaction rollback releases a single-client pool and leaves no event', async t => {
   let single;
@@ -31,20 +31,20 @@ test('concurrent transactions each stay on their own connection', async t => {
 });
 test('migration repeats safely and installation record is authoritative', async t => {
   const {store} = await postgresFixture(t);
-  assert.deepEqual(await inspectInstallation(store), {state:'uninstalled', schemaVersion:1});
+  assert.deepEqual(await inspectInstallation(store), {state:'uninstalled', schemaVersion:currentSchemaVersion});
   await store.transaction(migrate);
-  assert.equal((await store.query('SELECT count(*)::int AS n FROM personal_site.schema_migrations')).rows[0].n, 1);
-  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('test',1)");
-  assert.deepEqual(await inspectInstallation(store), {state:'installed', schemaVersion:1});
+  assert.equal((await store.query('SELECT count(*)::int AS n FROM personal_site.schema_migrations')).rows[0].n, currentSchemaVersion);
+  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('test',$1)",[currentSchemaVersion]);
+  assert.deepEqual(await inspectInstallation(store), {state:'installed', schemaVersion:currentSchemaVersion});
 });
 test('absent schema alone is uninstalled', async t => {
   const {store} = await postgresFixture(t, {migrated:false});
   assert.deepEqual(await inspectInstallation(store), {state:'uninstalled', schemaVersion:null});
 });
-test('concurrent migrations serialize and create only one migration record', async t => {
+test('concurrent migrations serialize and create each migration record only once', async t => {
   const {store} = await postgresFixture(t, {migrated:false});
   await Promise.all([store.transaction(migrate), store.transaction(migrate)]);
-  assert.equal((await store.query('SELECT count(*)::int AS n FROM personal_site.schema_migrations')).rows[0].n, 1);
+  assert.equal((await store.query('SELECT count(*)::int AS n FROM personal_site.schema_migrations')).rows[0].n, currentSchemaVersion);
 });
 test('Pool enforces catalog search path even when URL requests application schema', async t => {
   let alternate;
@@ -54,7 +54,7 @@ test('Pool enforces catalog search path even when URL requests application schem
   url.searchParams.set('options', '-c search_path=personal_site,public');
   alternate = openPostgres({databaseUrl:url.href});
   assert.equal((await alternate.query('SHOW search_path')).rows[0].search_path, 'pg_catalog');
-  assert.equal((await inspectInstallation(alternate)).schemaVersion, 1);
+  assert.equal((await inspectInstallation(alternate)).schemaVersion, currentSchemaVersion);
 });
 test('limited non-superuser can migrate and inspect its owned application schema', async t => {
   const {store,databaseUrl} = await postgresFixture(t, {migrated:false});
@@ -65,7 +65,7 @@ test('limited non-superuser can migrate and inspect its owned application schema
     await tx.query(`GRANT CREATE ON DATABASE "${role}" TO "${role}"`);
     await tx.query(`SET LOCAL ROLE "${role}"`);
     await migrate(tx);
-    assert.deepEqual(await inspectInstallation(tx), {state:'uninstalled',schemaVersion:1});
+    assert.deepEqual(await inspectInstallation(tx), {state:'uninstalled',schemaVersion:currentSchemaVersion});
     await migrate(tx);
     throw Error('cleanup-limited-role');
   }), /cleanup-limited-role/);
@@ -78,7 +78,7 @@ test('server-side statement timeout cancels work and releases the client', async
 });
 for (const [name, sql] of [
   ['checksum tampering', "UPDATE personal_site.schema_migrations SET checksum='corrupt'"],
-  ['future migration', "INSERT INTO personal_site.schema_migrations(version,checksum) VALUES(2,'future')"],
+  ['future migration', `INSERT INTO personal_site.schema_migrations(version,checksum) VALUES(${currentSchemaVersion+1},'future')`],
   ['missing table', 'DROP TABLE personal_site.audit_events'],
   ['missing column', 'ALTER TABLE personal_site.audit_events DROP COLUMN actor'],
   ['unknown table', 'CREATE TABLE personal_site.unknown(id int)'],

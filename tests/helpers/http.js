@@ -1,4 +1,5 @@
 const { createApp } = require("../../admin-server/app");
+const {currentSchemaVersion} = require('../../admin-server/migrations');
 const { postgresFixture } = require("./postgres");
 const { contentFixture } = require("./content");
 const {
@@ -30,7 +31,8 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
     await store.transaction(async (tx) => {
       await contentRepository(tx).importBundle(bundle);
       await tx.query(
-        "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',1)",
+        "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',$1)",
+        [currentSchemaVersion],
       );
     });
   }

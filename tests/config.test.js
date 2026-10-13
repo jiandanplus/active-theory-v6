@@ -30,6 +30,9 @@ test("imports current values and rejects unknown fields or unsafe resource URLs"
     fs.writeFileSync(path.join(root, "cms/projects-dev.json"), "[]");
     const base = initialConfig(root);
     assert.equal(base.site.title, "My real site");
+    assert.equal(base.site.language, "en");
+    assert.equal(base.site.description, "");
+    assert.equal(base.site.socialImage, "");
     const field = base.scenes.find((s) => s.id === "About").fields[0];
     assert.equal(field.value, "My name");
     const updated = structuredClone(base);
@@ -97,6 +100,8 @@ test("configuration versions save atomically, conflict and restore only to draft
   await restore(store, v1, next);
   assert.equal((await repo.getDraft()).config.site.title, original.site.title);
   assert.equal((await repo.getDraft()).published, v2);
+  assert.equal((await repo.getDraft()).config.site.language, "en");
+  assert.equal(Object.hasOwn((await repo.getVersion(v1)).snapshot.config.site, "language"), false);
 });
 
 test("JSONB object key order does not invalidate site config", (t) => {

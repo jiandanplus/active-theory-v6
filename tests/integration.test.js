@@ -17,7 +17,8 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
       .contentRepository(tx)
       .importBundle(bundle);
     await tx.query(
-      "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',1)",
+      "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',$1)",
+      [require('../admin-server/migrations').currentSchemaVersion],
     );
   });
   await f.createAdmin();

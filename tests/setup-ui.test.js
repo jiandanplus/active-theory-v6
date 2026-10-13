@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 test("database outage never renders account creation", () => {
   const { setupView } = require("../admin-ui/setup");
-  for (const status of ["unavailable", "unconfigured", "incompatible"])
+  for (const status of ["unavailable", "unconfigured", "incompatible", "upgrade_required"])
     for (const authorized of [false, true])
       assert.equal(setupView(status, authorized), "maintenance");
   assert.equal(setupView("installed", false), "login");

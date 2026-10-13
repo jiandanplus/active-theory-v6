@@ -421,6 +421,8 @@ test("empty bundle removes personal content and missing runtime prevents readine
   assert.deepEqual(b.draft.config.songs, []);
   assert.equal(b.draft.config.site.email, "");
   assert.equal(b.draft.config.site.labUrl, "");
+  assert.equal(b.draft.config.site.language, "en");
+  assert.equal(b.schema.site.language, "en");
   assert.equal(b.draft.template.contact.email, "");
   assert.equal(b.draft.template.metadata.title, "");
   assert.equal(

@@ -1,7 +1,7 @@
 const {
   inspectInstallation,
   migrate,
-  checksum,
+  currentSchemaVersion,
   supportedPostgresVersion,
 } = require("./migrations");
 const { contentRepository } = require("./repositories/content");
@@ -12,33 +12,7 @@ const { hashPassword, fail } = require("./security");
 // Runtime authority deliberately does not fingerprint catalogs on every request.
 // A present schema with missing/broken tables throws; it is never a new site.
 async function installationStatus(store) {
-  if (store.configured === false)
-    return { state: "unconfigured", schemaVersion: null };
-  if (!(await supportedPostgresVersion(store)))
-    return { state: "incompatible", schemaVersion: null };
-  const exists = (
-    await store.query(
-      "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
-    )
-  ).rows[0].present;
-  if (!exists) return { state: "uninstalled", schemaVersion: null };
-  const versions = (
-    await store.query(
-      "SELECT version,checksum FROM personal_site.schema_migrations ORDER BY version",
-    )
-  ).rows;
-  if (
-    versions.length !== 1 ||
-    versions[0].version !== 1 ||
-    versions[0].checksum !== checksum
-  )
-    return { state: "incompatible", schemaVersion: null };
-  const rows = (
-    await store.query("SELECT schema_version FROM personal_site.installation")
-  ).rows;
-  if (rows.length > 1 || (rows.length && rows[0].schema_version !== 1))
-    return { state: "incompatible", schemaVersion: 1 };
-  return { state: rows.length ? "installed" : "uninstalled", schemaVersion: 1 };
+  return inspectInstallation(store,{verifyStructure:false});
 }
 async function preflight(options, mode) {
   if (!["empty", "bundle", "legacy"].includes(mode))
@@ -95,7 +69,7 @@ async function installSite(store, { bundle, account, expectedDigest, mode }) {
     if (!bundle.admin) await authRepository(tx).replaceAdmin(prehashed);
     await tx.query(
       "INSERT INTO personal_site.installation(source,schema_version) VALUES($1,$2)",
-      [mode, 1],
+      [mode, currentSchemaVersion],
     );
     await auditRepository(tx).append(
       "installation.complete",
@@ -125,7 +99,7 @@ function mountInstallation(app, { store, options }) {
         }
         if (state.state === "uninstalled")
           state = await inspectInstallation(store);
-        res.status(state.state === "incompatible" ? 503 : 200).json(state);
+        res.status(['incompatible','upgrade_required'].includes(state.state) ? 503 : 200).json(state);
       } catch {
         res.status(503).json({ state: "unavailable", schemaVersion: null });
       }
@@ -138,10 +112,9 @@ function mountInstallation(app, { store, options }) {
   router.use(auth.requireSession);
   async function notInstalled() {
     const state = await installationStatus(store);
-    if (state.state === "incompatible") throw fail(503, "数据库不兼容");
-    if (state.state === "installed")
-      throw fail(409, "站点不可重复初始化或结构不兼容");
-    if (state.state === "unconfigured") throw fail(503, "数据库未配置");
+    if (state.state !== "uninstalled")
+      throw fail(state.state==='installed'?409:503,
+        state.state==='upgrade_required'?'站点需要由服务器管理员显式升级':'站点不可初始化或暂时不可用');
   }
   router.get(
     "/database",
