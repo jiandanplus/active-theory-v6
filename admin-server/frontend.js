@@ -395,7 +395,6 @@ function mountFrontend(app, store, options) {
           path.join(options.root, "index.html"),
           "utf8",
         );
-        html = renderPageMetadata(html, meta, {preview:String(id).startsWith('preview-')});
         html = html.replace(
           /(<link\b[^>]*\bhref=["'])([^"']+)(["'][^>]*>)/gi,
           (all, start, url, end) =>
@@ -416,6 +415,7 @@ function mountFrontend(app, store, options) {
         );
         html=html.replace(/<head\b[^>]*>/i,head=>head+
           `<script src="/api/site/${id}/identity.js"></script><script src="/api/site/${id}/bridge.js"></script>`);
+        html = renderPageMetadata(html, meta, {preview:String(id).startsWith('preview-')});
         if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
         res.type("html").send(html);
       } catch (error) {

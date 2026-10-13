@@ -8,14 +8,20 @@ test('server identity ignores hostile host/query and unknown projects are 404',a
   const response=await f.request('/work/one?source=https://evil.example',{headers:{Host:'evil.example'}});
   assert.equal(response.status,200);
   const html=await response.text();
-  assert(html.indexOf('/identity.js')>=0 && html.indexOf('/identity.js')<html.indexOf('/bridge.js'));
+  const titleIndex=html.indexOf('<title>One · Fixture</title>');
+  const canonicalIndex=html.indexOf('<link rel="canonical"');
+  const identityIndex=html.indexOf('/identity.js');
+  const bridgeIndex=html.indexOf('/bridge.js');
+  assert(titleIndex>=0 && canonicalIndex>=0 && identityIndex>=0 && bridgeIndex>=0);
+  assert(titleIndex<identityIndex && canonicalIndex<identityIndex,
+    'server-rendered title and canonical must precede identity bridge scripts');
+  assert(identityIndex<bridgeIndex,'identity script must precede bridge script');
   const program=await f.request(html.match(/src="([^"]+\/identity\.js)"/)[1]);
   assert.equal(program.status,200);
   const source=await program.text();
   assert.match(source,/SiteMetadataDOM/);
   assert.doesNotMatch(source,/DATABASE_URL|MASTER_KEY|\/Users\//);
   assert.match(html,/href="http:\/\/localhost:3000\/work\/one"/);
-  assert.match(html,/<title>One · Fixture<\/title>/);
   assert.doesNotMatch(html,/evil\.example|activetheory\.net/);
   const missing=await f.request('/work/not-present');
   assert.equal(missing.status,404);
