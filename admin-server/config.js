@@ -1,5 +1,5 @@
 const { fail } = require("./security");
-const {normalizeConfig} = require('../shared/site-identity');
+const {normalizeConfig,validateIdentity} = require('../shared/site-identity');
 const { initialConfig, appFile, baseUIL } = require("./importers/disk");
 const { contentRepository } = require("./repositories/content");
 const { auditRepository } = require("./repositories/audit");
@@ -44,7 +44,10 @@ function validateConfig(config, schema) {
     Object.keys(config.site).some((key) => !Object.hasOwn(schema.site, key))
   )
     throw fail(400, "网站配置字段无效");
+  validateIdentity(config.site);
   for (const [key, value] of Object.entries(config.site)) {
+    if (key === 'description' || key === 'language') continue;
+    if (key === 'socialImage') { safeURL(value); continue; }
     plain(value, 1000);
     if (key === "labUrl") safeURL(value);
   }
@@ -218,6 +221,7 @@ async function saveDraft(store, config, revision, actor = null) {
     );
     const rows = await resources.list();
     const urls = [
+      config.site.socialImage,
       ...config.projects.flatMap((p) =>
         ["video", "image", "projectLogo"].flatMap((k) => [
           p[k]?.url,
@@ -275,6 +279,11 @@ async function saveDraft(store, config, revision, actor = null) {
         owner: "selected",
       };
       savedTemplate.legacyMap[url] = slot;
+    }
+    if (config.site.socialImage) {
+      const asset = resourceAsset(savedTemplate, config.site.socialImage);
+      if (!rows.some(row => row.id === asset?.resourceId && row.kind === 'image'))
+        throw fail(400, '分享图片必须引用已登记的图片资源');
     }
     await tx.query(
       "UPDATE personal_site.templates SET content=$1 WHERE id=(SELECT template_id FROM personal_site.site_settings WHERE id=true)",

@@ -1,4 +1,6 @@
+const {normalizeSite} = require('../shared/site-identity');
 const SITE_KEYS = [
+  "description", "language", "socialImage",
   "title",
   "navWork",
   "navContact",
@@ -159,6 +161,8 @@ function collectReferences(snapshot) {
       }
     }
   };
+  if (snapshot.config.site?.socialImage)
+    resolve(snapshot.config.site.socialImage, 'config.site.socialImage');
   const walk = (value, slot) => {
     if (typeof value === "string") resolve(value, slot);
     else if (value && typeof value === "object")
@@ -219,7 +223,7 @@ function publicSnapshot(snapshot, versionId) {
       keys.filter((k) => Object.hasOwn(value, k)).map((k) => [k, value[k]]),
     );
   const publicConfig = structuredClone({
-    site: pick(config.site, SITE_KEYS),
+    site: pick(normalizeSite(config.site), SITE_KEYS),
     projects: config.projects.map((p) => ({
       ...pick(p, [
         "slug",
@@ -247,6 +251,7 @@ function publicSnapshot(snapshot, versionId) {
     songs: config.songs.map((s) => pick(s, ["title", "src"])),
   });
   const media = (value) => mapResourceURL(snapshot, versionId, value);
+  publicConfig.site.socialImage = media(publicConfig.site.socialImage);
   for (const p of publicConfig.projects)
     for (const kind of ["video", "image", "projectLogo"])
       if (p[kind])

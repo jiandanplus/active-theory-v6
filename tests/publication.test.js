@@ -3,6 +3,60 @@ const assert = require("node:assert/strict");
 const { httpFixture } = require("./helpers/http");
 const { contentRepository } = require("../admin-server/repositories/content");
 const { validatePublication } = require("../admin-server/publication");
+test('site image publication grants survive clear and restore without rewriting history', async t => {
+  const f = await httpFixture(t), repo = contentRepository(f.store);
+  const {saveDraft,publish,restore} = require('../admin-server/config');
+  await f.store.query("UPDATE personal_site.resources SET details=$1 WHERE id='unused'",[{path:'assets/images/image.png'}]);
+  const history = (await f.store.query('SELECT snapshot::text AS snapshot FROM personal_site.versions WHERE id=42')).rows;
+  const draft = await repo.getDraft();
+  draft.config.site.socialImage='/media/unused';
+  draft.config.site.description='中文描述';
+  draft.config.site.language='zh-CN';
+  const revision=await saveDraft(f.store,draft.config,draft.revision);
+  assert.equal((await f.request('/api/site/42/resources/unused/unused.png')).status,404);
+  const version=await publish(f.store,revision,{root:f.root,dataDir:f.root+'/data'});
+  const config=await (await f.request(`/api/site/${version}/config`)).json();
+  assert.match(config.site.socialImage,new RegExp(`^/api/site/${version}/resources/unused/`));
+  assert.equal(config.site.description,'中文描述');
+  assert.equal(config.site.language,'zh-CN');
+  assert.equal((await f.request(config.site.socialImage)).status,200);
+  const next=await repo.getDraft(); next.config.site.socialImage='';
+  await saveDraft(f.store,next.config,next.revision);
+  assert.equal((await f.request(config.site.socialImage)).status,200);
+  await restore(f.store,42,(await repo.getDraft()).revision);
+  assert.equal((await repo.getDraft()).config.site.language,'en');
+  assert.deepEqual((await f.store.query('SELECT snapshot::text AS snapshot FROM personal_site.versions WHERE id=42')).rows,history);
+});
+for (const patch of [{status:'disabled'},{status:'missing'},{status:'failed'},{trashed:true},{kind:'audio'}])
+  test(`site image publication rejects ${JSON.stringify(patch)}`,async t=>{
+    const f=await httpFixture(t), repo=contentRepository(f.store);
+    const {saveDraft,publish}=require('../admin-server/config');
+    const draft=await repo.getDraft(); draft.config.site.socialImage='/media/unused';
+    const revision=await saveDraft(f.store,draft.config,draft.revision);
+    await f.store.query('UPDATE personal_site.resources SET status=$1,trashed=$2,kind=$3 WHERE id=$4',[patch.status||'ready',patch.trashed||false,patch.kind||'image','unused']);
+    await assert.rejects(publish(f.store,revision,{root:f.root,dataDir:f.root+'/data'}),{status:422});
+  });
+test('site image rejects known audio identities when saving',async t=>{
+  const f=await httpFixture(t), draft=await contentRepository(f.store).getDraft();
+  draft.config.site.socialImage='/media/audio';
+  await assert.rejects(require('../admin-server/config').saveDraft(f.store,draft.config,draft.revision),/图片/);
+});
+test('site image rejects registered external audio without changing its kind',async t=>{
+  const f=await httpFixture(t), repo=contentRepository(f.store), {saveDraft}=require('../admin-server/config');
+  const url='https://external.invalid/song.mp3', first=await repo.getDraft();
+  first.config.songs.push({id:'external',title:'External',src:url});
+  await saveDraft(f.store,first.config,first.revision);
+  const next=await repo.getDraft(); next.config.site.socialImage=url;
+  await assert.rejects(saveDraft(f.store,next.config,next.revision),/图片/);
+  assert.equal((await f.store.query('SELECT kind FROM personal_site.resources WHERE url=$1',[url])).rows[0].kind,'audio');
+});
+test('site text does not create incidental media grants',()=>{
+  const {collectReferences}=require('../admin-server/snapshots');
+  const snapshot={config:{site:{title:'/media/private',description:'/media/private',socialImage:''},projects:[],scenes:[],songs:[]},template:{baseUIL:{}},assets:{},legacyMap:{}};
+  assert.deepEqual(collectReferences(snapshot),[]);
+  snapshot.config.site.socialImage='/media/image';
+  assert.deepEqual(collectReferences(snapshot),[{resourceId:'image',slot:'config.site.socialImage'}]);
+});
 test("publication rejects missing managed resources and uses database font coverage", async (t) => {
   const { store, root } = await httpFixture(t);
   const draft = (await contentRepository(store).getDraft()).snapshot;

@@ -26,6 +26,25 @@ const sourceHashes = (root) =>
       }),
   );
 
+test('legacy historical-only site image is inventoried without draft grants or source mutation',async t=>{
+  const f=importFixture(t), url='https://historical.invalid/share.png';
+  const db=new DatabaseSync(f.legacyPath);
+  try {
+    const row=db.prepare('SELECT config FROM versions WHERE id=41').get();
+    const config=JSON.parse(row.config); config.site.socialImage=url;
+    db.prepare('UPDATE versions SET config=? WHERE id=41').run(JSON.stringify(config));
+  } finally { db.close(); }
+  const before=sourceHashes(f.root), bundle=await readLegacy(f);
+  assert.deepEqual(sourceHashes(f.root),before);
+  const image=bundle.resources.find(r=>r.url===url);
+  assert.ok(image); assert.equal(image.kind,'image');
+  assert.equal(bundle.versions.find(v=>v.id===41).snapshot.config.site.socialImage,url);
+  assert.equal(bundle.draft.config.site.socialImage,'');
+  const {collectReferences}=require('../admin-server/snapshots');
+  assert(!collectReferences(bundle.draft).some(r=>r.resourceId===image.id));
+  assert(collectReferences(bundle.versions.find(v=>v.id===41).snapshot).some(r=>r.resourceId===image.id&&r.slot==='config.site.socialImage'));
+});
+
 test("legacy private bytes are checked read-only with checksums and required geometry readiness", async (t) => {
   const f = importFixture(t);
   const before = sourceHashes(f.root);

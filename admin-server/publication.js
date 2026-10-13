@@ -51,6 +51,11 @@ async function checkPublicationState(store, snapshot) {
     }
     rows.push(row);
   }
+  if (snapshot.config.site?.socialImage) {
+    const id = resourceId(snapshot, snapshot.config.site.socialImage);
+    if (!rows.some(row => row.id === id && row.kind === 'image'))
+      throw fail(422, '分享图片必须引用可用的图片资源');
+  }
   if (snapshot.template.readiness?.missingRequired?.length)
     throw fail(422, "缺少前台运行所需资源");
   return rows;
@@ -59,7 +64,7 @@ async function checkPublicationState(store, snapshot) {
 async function validatePublication(store, options = {}, snapshot) {
   const rows = await checkPublicationState(store, snapshot),
     warnings = new Set();
-  const media = [];
+  const media = [snapshot.config.site?.socialImage].filter(Boolean);
   for (const p of snapshot.config.projects)
     for (const kind of ["video", "image", "projectLogo"])
       for (const key of ["url", "thumbnail"])

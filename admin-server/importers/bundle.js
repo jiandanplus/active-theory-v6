@@ -131,6 +131,7 @@ async function complete({
   const catalog = await inventoryResources({
     root,
     config: combined,
+    siteImages: allConfigs.map(config => config.site?.socialImage).filter(Boolean),
     template,
   });
   const existing = new Map(resources.map((r) => [r.id, structuredClone(r)]));
@@ -166,6 +167,7 @@ async function complete({
               "scene",
               "uil",
               "legacy",
+              "site",
             ].includes(a.owner),
         )
         .map(([slot, a]) => [slot, a.url]),

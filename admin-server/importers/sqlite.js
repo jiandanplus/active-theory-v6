@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { baseline, complete } = require("./bundle");
 const { validateConfig } = require("../config");
+const {normalizeConfig} = require('../../shared/site-identity');
 const { decryptCredentials, localFile } = require("../storage");
 const { conflict, checksum } = require("../resource-catalog");
 const KEYS = new Set([
@@ -16,6 +17,8 @@ const KEYS = new Set([
 ]);
 function validate(config, schema) {
   try {
+    config = normalizeConfig(config);
+    schema = normalizeConfig(schema);
     // SQLite JSON key order is not a semantic part of site configuration.
     if (
       !config?.site ||

@@ -80,6 +80,7 @@ function localURL(value) {
 async function inventoryResources({
   root,
   config = {},
+  siteImages = [],
   template = {},
   manifest = defaultManifest,
 }) {
@@ -239,6 +240,9 @@ async function inventoryResources({
     return id;
   }
   for (const entry of manifest.assets || manifest) await register(entry);
+  for (const url of new Set([config.site?.socialImage, ...siteImages].filter(Boolean)))
+    await register({owner:'site', slot:`site:socialImage:${digest(url).slice(0,24)}`,
+      url, type:'image', required:false});
   for (const [i, p] of (config.projects || []).entries())
     for (const type of ["video", "image", "projectLogo"])
       for (const field of ["url", "thumbnail"])

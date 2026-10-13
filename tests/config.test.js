@@ -3,6 +3,17 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs"),
   os = require("node:os"),
   path = require("node:path");
+test('identity fields use their own limits and safe image URL validation',()=>{
+  const {initialConfig,validateConfig}=require('../admin-server/config');
+  const schema=initialConfig('/nonexistent'), config=structuredClone(schema);
+  config.site.description='文'.repeat(500); config.site.language='zh-TW';
+  config.site.socialImage='https://image.invalid/'+ 'x'.repeat(1500);
+  assert.doesNotThrow(()=>validateConfig(config,schema));
+  for (const [key,value] of [['description','文'.repeat(501)],['description','<script>'],['language','fr'],['socialImage','javascript:alert(1)']]) {
+    const invalid=structuredClone(config); invalid.site[key]=value;
+    assert.throws(()=>validateConfig(invalid,schema),{status:400});
+  }
+});
 test("imports current values and rejects unknown fields or unsafe resource URLs", () => {
   const {
     initialConfig,
@@ -105,7 +116,7 @@ test("configuration versions save atomically, conflict and restore only to draft
 });
 
 test("JSONB object key order does not invalidate site config", (t) => {
-  const schema = require("./helpers/content").contentFixture(t).bundle.schema;
+  const schema = require('../shared/site-identity').normalizeConfig(require("./helpers/content").contentFixture(t).bundle.schema);
   const config = structuredClone(schema);
   config.site = Object.fromEntries(Object.entries(config.site).reverse());
   assert.doesNotThrow(() =>
@@ -113,7 +124,7 @@ test("JSONB object key order does not invalidate site config", (t) => {
   );
 });
 test("scene and field identities are checked independently from ordering", (t) => {
-  const config = require("./helpers/content").contentFixture(t).bundle.schema;
+  const config = require('../shared/site-identity').normalizeConfig(require("./helpers/content").contentFixture(t).bundle.schema);
   config.scenes.push({
     id: "Other",
     label: "Other",
