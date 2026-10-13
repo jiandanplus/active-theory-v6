@@ -1,6 +1,22 @@
 # PostgreSQL 18 部署、升级与旧站切换
 
-这是操作指南，不是对当前真实实例已迁移的声明。2026-10-13 的隔离验收与已知边界见 [实际验证记录](verification/postgresql-installation.md)。当前用户的 3000 端口服务未由本次操作重新启动，也未进行生产切换或 push。
+这是操作指南，不是对任何真实实例已迁移的声明。2026-10-13 的隔离验收与已知边界见 [实际验证记录](verification/postgresql-installation.md)。将代码推送到 GitHub 不会初始化数据库、重启当前服务或完成生产切换。
+
+## 从哪里开始
+
+- 首次部署：阅读下方数据库权限说明，然后选择「Compose 首次部署」或「外部数据库部署」。
+- 旧 SQLite 站点：先阅读「旧站停机迁移门槛」，在新数据库与新媒体卷演练，不直接覆盖旧实例。
+- 已安装 PostgreSQL 站点：先备份，再按「显式升级」维护；不要重复运行首次安装向导。
+- 本机开发与功能介绍：见 [README](../README.md)；后台操作与 S3 设置见 [后台指南](ADMIN.md)。
+
+当前功能位于 `feat/authenticated-resource-admin` 分支。新目录可使用以下命令；已有部署应先确认当前分支、备份和维护窗口，不要直接覆盖工作区：
+
+```sh
+git clone --branch feat/authenticated-resource-admin https://github.com/jiandanplus/active-theory-v6.git
+cd active-theory-v6
+```
+
+仓库不包含被忽略的 `assets/`。完整 3D 页面需自行提供有授权的运行包，缺包时可以安装后台但公开页不会启动残缺场景。不要把历史下载脚本当作生产资源授权或初始化方案。
 
 ## 部署目标和权限
 
@@ -22,7 +38,7 @@ REVOKE CREATE ON SCHEMA public FROM PUBLIC;
 
 ## Compose 首次部署
 
-使用现代 Docker Compose v2（本次实际验证 v5.1.4）；模板未使用新式 `!reset`/`!override` 标签。准备已授权的 assets 内容包、域名 HTTPS 代理和受限部署环境文件，例如 `deployment.env`（0600）：
+使用现代 Docker Compose（本次实际验证 v5.1.4）；模板未使用新式 `!reset`/`!override` 标签。准备已授权的 assets 内容包、域名 HTTPS 代理和受限部署环境文件，例如 `.env.deployment`（0600）。该名称受现有 `.env.*` 忽略规则保护，仍须检查 `git status`，不得强制加入 Git；示例中的口令、令牌和密钥必须替换，不能原样启动：
 
 ```dotenv
 SITE_ORIGIN=https://your-domain.example
@@ -43,23 +59,35 @@ TRUST_PROXY=loopback
 若容器内看到的代理 IP 不是回环地址，应配置准确的受信任地址/网段，而非照抄 loopback。应用在生产模式拒绝 HTTP `SITE_ORIGIN`；代理必须提供 HTTPS，转发 Host 与协议，并覆盖上传大小和模型请求超时。命令中的项目名和端口必须确认不与已有实例冲突。
 
 ```sh
-docker compose --env-file deployment.env -p personal-site -f compose.yaml config --quiet
-docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d --build --wait
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml config --quiet
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d --build --wait
 ```
 
 `config --quiet` 只验证，禁止直接输出展开的生产 config。数据库不映射宿主机端口；site 依赖 `pg_isready` healthy 后启动，运行期间断连仍返回维护状态。`site-data` 媒体卷和 `pg-data` 数据库卷独立；assets 只读挂载。PG18 官方镜像的 `PGDATA` 是 `/var/lib/postgresql/18/docker`，卷挂载父目录 `/var/lib/postgresql`；不能照抄 PG17 的 `/var/lib/postgresql/data`。镜像参考：[官方镜像说明](https://github.com/docker-library/docs/blob/master/postgres/README.md#pgdata)。生产应记录/固定经验证的镜像 digest，再评估升级，不假定浮动 18 标签永远同一小版本。
 
-经 HTTPS 访问 `/admin/`：令牌授权 → 检查数据库 → 选择空白/服务器内容包/旧站来源 → 预检 → 创建或保留管理员 → 确认安装 → 手动登录。缺 `DATABASE_URL` 或数据库断连时后台壳仍可达，但不能安装。空白站点只建立后台；缺运行包/字体/素材不会被装成“完整视觉网站”。`cms/` 仅是显式安装内容包的输入，运行时配置由 PG 快照提供，不从原 CMS 回源。
+经 HTTPS 访问 `/admin/`：令牌授权 → 检查数据库 → 选择空白/服务器内容包/旧站来源 → 预检 → 创建或保留管理员 → 确认安装 → 手动登录。缺 `DATABASE_URL` 或数据库断连时后台壳仍可达，但不能安装。空白模式清空业务内容，授权运行资源齐全时仍可加载模板；缺运行包/字体/素材不会被装成“完整视觉网站”。`cms/` 仅是显式安装内容包的输入，运行时配置由 PG 快照提供，不从原 CMS 回源。
+
+### 上线前验收
+
+`up --wait` 只等待容器运行／健康，不代表账号初始化或 3D 页面已验收。逐项确认：
+
+1. HTTPS 域名与 `SITE_ORIGIN` 一致；无数据库时后台显示维护提示，而非重新创建账号。
+2. 安装后移除 `SETUP_TOKEN`，重建自己的 site 容器；旧账号仍可登录，不能再次初始化。
+3. 上传小文件、保存草稿、登录预览、确认发布、退出登录，再用匿名窗口访问；私有草稿不可读。
+4. 实际检查 Logo、黑洞、作品、联系浮层及音频；外链和 S3 的权限、CDN 与 CORS 使用最终域名验证。
+5. 重建 site 后核对账号、发布版本和上传字节；另在独立目标演练恢复，不覆盖正在运行的库。
+
+状态接口是 `/api/setup/status`，后台入口是 `/admin/`；旧 `/api/projects` 不是当前部署健康检查契约。容器日志查看仅限自己的 Compose 项目，分享前移除私有路径、临时 URL 与其他敏感信息。[Docker 官方环境文件说明](https://docs.docker.com/compose/how-tos/environment-variables/variable-interpolation/)、[启动与等待行为](https://docs.docker.com/reference/cli/docker/compose/up/)。
 
 ## 外部数据库部署
 
 `compose.external.yaml` 是完整独立替代文件，**仅用 `-f compose.external.yaml`，不要与 `compose.yaml` 合并**。它没有 db 服务、depends_on、bootstrap 密码插值；只填外部非超级用户 `DATABASE_URL`、SITE_ORIGIN、令牌/密钥和资源配置。
 
 ```sh
-docker compose --env-file external.env -p personal-site -f compose.external.yaml config --quiet
-docker compose --env-file external.env -p personal-site -f compose.external.yaml config --services
+docker compose --env-file .env.external -p personal-site -f compose.external.yaml config --quiet
+docker compose --env-file .env.external -p personal-site -f compose.external.yaml config --services
 # 应只列 site；不要求填写 POSTGRES_PASSWORD/POSTGRES_APP_PASSWORD。
-docker compose --env-file external.env -p personal-site -f compose.external.yaml up -d --build
+docker compose --env-file .env.external -p personal-site -f compose.external.yaml up -d --build
 ```
 
 外部库同样必须为 PG18，提供上述 CREATE 权限且未预建 personal_site；或恢复完整、受 checksum 与目录指纹校验的已安装 schema。任意手工建表、空 schema 或从无关库复制的指纹都不视作合法安装。
@@ -69,9 +97,9 @@ docker compose --env-file external.env -p personal-site -f compose.external.yaml
 先备份并确认维护窗口，停止应用写入，再运行 `npm run db:migrate`。它仅接受已安装实例，使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹与迁移 checksum，再调用版本迁移。当前只存在 001，因此在合法 v1 上重复运行是验证式 no-op；不会创建管理员，也不把未安装库变成已安装。未来 schema 升级需要增加经审查的顺序迁移及对应旧版本校验规则，不能修改已发布 001 来让 checksum“通过”。
 
 ```sh
-docker compose --env-file deployment.env -p personal-site -f compose.yaml stop site
-docker compose --env-file deployment.env -p personal-site -f compose.yaml run --rm --no-deps site npm run db:migrate
-docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d site
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml stop site
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml run --rm --no-deps site npm run db:migrate
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d site
 ```
 
 失败时保持维护并检查，不删 schema、不重置账号、不自动恢复旧 SQLite。不是 PG 主版本升级工具；当前拒绝 PG17/PG19。
@@ -83,11 +111,11 @@ docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d 
 ```sh
 umask 077
 mkdir -p backup-YYYYMMDD
-docker compose --env-file deployment.env -p personal-site -f compose.yaml stop site
-docker compose --env-file deployment.env -p personal-site -f compose.yaml exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup-YYYYMMDD/database.dump
-docker compose --env-file deployment.env -p personal-site -f compose.yaml run --rm --no-deps -T site tar -C /app/data -czf - uploads > backup-YYYYMMDD/uploads.tar.gz
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml stop site
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup-YYYYMMDD/database.dump
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml run --rm --no-deps -T site tar -C /app/data -czf - uploads > backup-YYYYMMDD/uploads.tar.gz
 # 单独备份授权 assets、运行版本/SQL/清单以及部署配置；独立加密保管 SITE_MASTER_KEY。
-docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d site
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d site
 ```
 
 无 uploads 目录的空白站点需记录“尚无上传文件”，不能忽略 tar 错误当作备份成功。S3 dump 仅含对象引用与加密凭证，不含对象字节：启用桶版本控制/异地备份并记录 Endpoint、Bucket、前缀、公开 URL、对象策略、CORS 和保留期。历史版本引用不变，不会自动搬迁云对象或 bundled 媒体。主密钥丢失时旧凭证无法解密。
@@ -132,9 +160,9 @@ services:
 ```sh
 export LEGACY_BACKUP_DIR=/ABSOLUTE/PRIVATE/STOPPED_BACKUP
 migration_project=NEW_UNIQUE_MIGRATION_PROJECT
-migration_env=deployment.env
+migration_env=.env.deployment
 migration_base=compose.yaml
-# 外部 PG 改成 external.env + compose.external.yaml；不要同时叠加两个 base。
+# 外部 PG 改成 .env.external + compose.external.yaml；不要同时叠加两个 base。
 dc() {
   docker compose --env-file "$migration_env" -p "$migration_project" \
     -f "$migration_base" -f compose.legacy-copy.yaml "$@"
@@ -173,7 +201,7 @@ unset LEGACY_BACKUP_DIR
 
 确认新容器没有 `/legacy-backup` 挂载，再收起临时 override 文件；保留备份，不删除原站数据。外部 PG 采用完全相同的临时 override、复制、预检、移除挂载步骤，只是 base 必须独立使用 `compose.external.yaml`，且跳过 `db` 服务命令。[Docker 官方 Compose 多文件合并说明](https://docs.docker.com/compose/how-tos/multiple-compose-files/merge/)、[bind mount 说明](https://docs.docker.com/engine/storage/bind-mounts/)。这些新迁移命令的验证范围见验证记录，不代表已执行生产迁移。
 
-真实切换必须先交付验收给用户，确认数据库目标和维护时间；再针对明确 PID/服务停止旧写入（不 kill 所有 Node），备份 SQLite/WAL/SHM、本地媒体、资源与主密钥，设置受信任 `LEGACY_SQLITE_PATH` 进行首次安装。保留账号/ID/密文；会话失效需重新登录。不得删旧 data，不能以 SQLite 备份覆盖 PG 上线后的新写入。回滚需要明确的数据边界和用户确认；本次没有自动切换、发布公网或 push。
+真实切换必须先交付验收给用户，确认数据库目标和维护时间；再针对明确 PID/服务停止旧写入（不 kill 所有 Node），备份 SQLite/WAL/SHM、本地媒体、资源与主密钥，设置受信任 `LEGACY_SQLITE_PATH` 进行首次安装。保留账号/ID/密文；会话失效需重新登录。不得删旧 data，不能以 SQLite 备份覆盖 PG 上线后的新写入。回滚需要明确的数据边界和用户确认；Git 推送与生产切换是两个独立操作。
 
 ## PG18 schema 指纹复现
 

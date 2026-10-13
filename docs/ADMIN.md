@@ -80,8 +80,8 @@ TRUST_PROXY=loopback
 提供 `Dockerfile`、内置 PostgreSQL 的 `compose.yaml` 和仅外部数据库的 `compose.external.yaml`。部署密码/令牌放在权限为 0600 的服务器环境文件；不要覆盖现有 `.env`。完整命令、权限和停机迁移门槛见 [PostgreSQL 部署迁移指南](POSTGRESQL-MIGRATION.md)。内置数据库示例：
 
 ```sh
-docker compose --env-file deployment.env -p personal-site -f compose.yaml config --quiet
-docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d --build --wait
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml config --quiet
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d --build --wait
 # 经 HTTPS 代理访问 /admin/ 完成首次安装；不会自动创建管理员。
 ```
 
@@ -98,9 +98,12 @@ docker compose --env-file deployment.env -p personal-site -f compose.yaml up -d 
 ## 验证
 
 ```sh
+docker compose -p site-pg-test -f compose.test.yaml up -d --wait
 npm test
-npm run test:postgres
+# npm run test:postgres 是同一测试入口，不必重复执行。
 npm audit
+# 只关闭本次专用测试项目，不是正式数据库。
+docker compose -p site-pg-test -f compose.test.yaml down
 ```
 
 测试使用 UUID 隔离 PostgreSQL 数据库、临时上传目录、只读旧 SQLite 样本及隔离 S3 HTTP 服务。测试入口不以生产 `DATABASE_URL` 回退；先启动 `compose.test.yaml` 的专用测试服务。真实 S3 账户、生产 HTTPS 代理和 CDN/CORS 需部署者配置后实际验收。
