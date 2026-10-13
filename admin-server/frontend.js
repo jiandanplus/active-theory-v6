@@ -4,6 +4,8 @@ const express = require("express");
 const { buildUIL, appFile } = require("./config");
 const { fail } = require("./security");
 const { route } = require("./http");
+const { pageMetadata } = require('../shared/site-identity');
+const { renderPageMetadata } = require('./page-metadata');
 const {
   resolveVersion,
   resolvePublishedResource,
@@ -293,7 +295,7 @@ function mountFrontend(app, store, options) {
     route(async (req, res, next) => {
       try {
         const { id, config, snapshot } = await versionConfig(req);
-        res.set("Cache-Control", "no-store");
+        if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
         switch (req.params.file) {
           case "config":
             return res.json(config);
@@ -365,6 +367,9 @@ function mountFrontend(app, store, options) {
             );
         }
         const { id, config, snapshot } = resolved;
+        const meta = pageMetadata(config, options.origin, req.path);
+        if (meta.status === 404) return res.status(404).set('X-Robots-Tag','noindex, nofollow')
+          .type('html').send('<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="robots" content="noindex, nofollow"><title>页面不存在</title></head><body><h1>页面不存在</h1><a href="/">返回首页</a></body></html>');
         if (
           !appFile(options.root) ||
           !fs.existsSync(path.join(options.root, "index.html"))
@@ -379,10 +384,7 @@ function mountFrontend(app, store, options) {
           path.join(options.root, "index.html"),
           "utf8",
         );
-        html = html.replace(
-          /<title>[\s\S]*?<\/title>/,
-          () => `<title>${escapeHTML(config.site.title)}</title>`,
-        );
+        html = renderPageMetadata(html, meta, {preview:String(id).startsWith('preview-')});
         html = html.replace(
           /(<link\b[^>]*\bhref=["'])([^"']+)(["'][^>]*>)/gi,
           (all, start, url, end) =>
@@ -407,7 +409,8 @@ function mountFrontend(app, store, options) {
             "<head>",
             `<head><script src="/api/site/${id}/bridge.js"></script>`,
           );
-        res.set("Cache-Control", "no-store").type("html").send(html);
+        if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
+        res.type("html").send(html);
       } catch (error) {
         next(error);
       }

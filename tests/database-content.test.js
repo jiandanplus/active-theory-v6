@@ -314,7 +314,8 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
   });
   const html = await (await f.request("/")).text();
   assert.match(html, /href="\/api\/site\/42\/resources\//);
-  assert.match(html, /href="https:\/\/outside.test\/page"/);
+  assert.match(html, /rel="canonical" href="http:\/\/localhost:3000\/"/);
+  assert.doesNotMatch(html, /outside\.test/);
   fs.unlinkSync(path.join(f.root, "assets/meta/manifest.json"));
   const doc = await (
     await f.request(

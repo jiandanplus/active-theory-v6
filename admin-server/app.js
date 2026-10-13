@@ -74,8 +74,9 @@ function createApp(options = {}) {
       );
     if (options.production)
       res.set("Strict-Transport-Security", "max-age=31536000");
-    if (req.path.startsWith("/api/admin") || req.path.startsWith("/admin"))
-      res.set("Cache-Control", "no-store");
+    const privateResponse = req.path.startsWith('/admin') || req.path.startsWith('/api/admin') ||
+      req.path.startsWith('/api/setup') || /^\/api\/site\/preview-[^/]+\//.test(req.path) || Object.hasOwn(req.query,'preview');
+    if (privateResponse) res.set('Cache-Control','private, no-store').set('X-Robots-Tag','noindex, nofollow');
     next();
   });
   mountInstallation(app, { store, options });
@@ -84,6 +85,7 @@ function createApp(options = {}) {
     express.static(path.join(__dirname, "../admin-ui"), {
       index: "index.html",
       dotfiles: "deny",
+      cacheControl: false,
     }),
   );
   app.use(

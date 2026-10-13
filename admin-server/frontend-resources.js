@@ -52,7 +52,8 @@ async function resolvePublishedResource(store, { version, id, admin }) {
   return resource;
 }
 async function sendResource(req, res, next, resource, options) {
-  res.set("X-Content-Type-Options", "nosniff").set("Cache-Control", "no-store");
+  res.set("X-Content-Type-Options", "nosniff");
+  if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
   if (resource.document)
     return res.type("application/manifest+json").send(resource.document);
   if (resource.source === "external")

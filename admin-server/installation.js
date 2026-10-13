@@ -83,7 +83,7 @@ function mountInstallation(app, { store, options }) {
   const auth = require("./setup-auth").setupAuth(options);
   const router = express.Router();
   router.use((req, res, next) => {
-    res.set("Cache-Control", "no-store");
+    if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
     next();
   });
   router.use(express.json({ limit: "64kb" }));
