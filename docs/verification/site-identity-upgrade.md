@@ -42,7 +42,7 @@ shasum -a 256 admin-server/migrations/001-initial.sql
 
 容器内 `require('./shared/site-identity').normalizeSite({}).language` 返回 `en`，实际 HTTP `/admin/site-identity.js` 返回 200、`application/javascript`、`private, no-store`、`noindex, nofollow`，证明 shared 在应用镜像内且能经 HTTP 提供，不只是宿主文件存在。这是打包 smoke，不声称容器完整 3D 或生产部署已验证。
 
-本代理已 stop/remove 上述唯一容器，remove 临时镜像标签；无持久卷、无实际绑定素材删除。父代理已清理全部浏览器 fixture（见下文）；专用 PG 服务有意保留供最终分支审查/新鲜验证，尚未关闭，由父代理在最终收尾更新。
+本代理已 stop/remove 上述唯一容器，remove 临时镜像标签；无持久卷、无实际绑定素材删除。父代理已清理全部浏览器 fixture（见下文）；专用 PG 服务在最终审查与新鲜验证通过后也已关闭，具体所有权核对和命令见下文。
 
 ## 实际浏览器与未验证项
 
@@ -61,6 +61,8 @@ shasum -a 256 admin-server/migrations/001-initial.sql
 
 隔离所有权与清理：基线 `127.0.0.1:64853`（exec95503/PID67286）、首候选 `127.0.0.1:61023`（exec62884/PID88294）、最终向导 `127.0.0.1:64361`（TTY exec53357）均由本次 harness 创建；前两者核验精确 PID 后 SIGTERM 走自身清理，向导 stdin stop。三者均输出 CLEANED，关闭 server/store、删除各自 UUID 测试库及受守卫临时素材副本。三个命名浏览器会话分别关闭；PG 查询只余 site_test_control。原素材、真实 data、其他容器和现存 3000 服务未操作。
 
-父代理在全部 Task7 断言后再次独立运行安全全套：242/242、失败 0、跳过 0、exit0（12.575 秒）。最终整分支独立审查及专用 PG 服务关闭仍由父代理收尾，不把保留中的服务写成已关闭。
+父代理在全部 Task7 断言后独立运行安全全套：242/242、失败 0、跳过 0、exit0（12.575 秒）；最终交付前在 `7f8305c` 再次运行同一命令，242/242、失败 0、跳过 0、取消 0、exit0（12.678 秒）。整段 `3c21926..7f8305c` 的独立代码审查已通过：无 Critical、Important 或剩余 Minor，结论为 Ready to merge。审查覆盖全部 3,190 行差异及关键调用链；浏览器和完整套件以父代理实际执行记录为依据，不冒称审查者重新执行了这些检查。此前深层克隆测试缺口、初始 head 重复均已关闭；SQLite 实验性告警属于既有行为。
+
+最终清理前查询专用 PostgreSQL 只余 `site_test_control`。核对容器 labels 为 `project=site-pg-test`、`service=db`、配置文件为本工作树 `compose.test.yaml`，绑定 `127.0.0.1:55432` 且无宿主持久挂载后，实际执行 `docker compose --env-file /dev/null -p site-pg-test -f compose.test.yaml down`。该容器及其专用网络均已移除，再次按项目 label 查询为空；tmpfs 测试数据随容器删除，不需要保留或恢复，可按测试模板重建。没有操作其他容器或真实数据库。截图、日志和独立 Git 工作树保留；尚未合并、推送或部署。
 
 真实 S3/CDN 公网可读性、CORS、目标服务器 HTTPS/代理、实际生产数据库迁移/备份恢复未验证；本地受控 S3 HTTP 测试不替代这些项目。

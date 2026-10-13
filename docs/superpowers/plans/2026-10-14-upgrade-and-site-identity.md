@@ -45,9 +45,9 @@
 
 ### 首次执行前（属于任务 1 的环境准备，不是迁移真实站点）
 
-- [ ] 读取 using-git-worktrees 技能，检查当前 task 已附着 worktree 后确定是否使用隔离检出；不得复制 `.env`、data 或全部未跟踪文件。若隔离检出没有授权 assets，纯测试/集成测试仍可执行，完整引擎测试需另行只读使用明确的授权包，不强行提交素材。
-- [ ] 记录 `rtk git status --short`、`rtk git rev-parse HEAD`，确认只有本任务文件进入后续提交。
-- [ ] 只读检查依赖与专用测试实例；端口被其他服务占用时不停止它：
+- [x] 读取 using-git-worktrees 技能，检查当前 task 已附着 worktree 后确定是否使用隔离检出；不得复制 `.env`、data 或全部未跟踪文件。若隔离检出没有授权 assets，纯测试/集成测试仍可执行，完整引擎测试需另行只读使用明确的授权包，不强行提交素材。
+- [x] 记录 `rtk git status --short`、`rtk git rev-parse HEAD`，确认只有本任务文件进入后续提交。
+- [x] 只读检查依赖与专用测试实例；端口被其他服务占用时不停止它：
 
 ```sh
 rtk proxy node --version
@@ -56,7 +56,7 @@ rtk proxy docker ps --format '{{.Names}} {{.Ports}}'
 rtk proxy lsof -nP -iTCP:55432 -sTCP:LISTEN
 ```
 
-- [ ] 若 55432 空闲，启动已定义的临时测试库；若已存在本项目专用测试实例，核对 Compose labels 后复用并记录非本次所有。不得把 DATABASE_URL 传入测试：
+- [x] 若 55432 空闲，启动已定义的临时测试库；若已存在本项目专用测试实例，核对 Compose labels 后复用并记录非本次所有。不得把 DATABASE_URL 传入测试：
 
 ```sh
 rtk proxy docker compose -p site-pg-test -f compose.test.yaml up -d --wait
@@ -76,7 +76,7 @@ rtk proxy node scripts/test-postgres.js
 - `normalize*` 返回新对象、只补缺失的新字段，不读当前草稿、不删除未知键、不把显式空值替换成其他历史内容。
 - `validateIdentity` 只校验新字段的基础类型/枚举/描述；已有 URL 安全规则继续由 config.safeURL 执行。
 
-- [ ] **Step 1: 写纯函数失败测试。**
+- [x] **Step 1: 写纯函数失败测试。**
 
 ```js
 const { test } = require('node:test');
@@ -102,8 +102,8 @@ test('new identity values are explicit, not coerced', () => {
 });
 ```
 
-- [ ] **Step 2: 运行红灯。** `rtk proxy node --test tests/site-identity.test.js`；预期缺模块而失败，不需要数据库。
-- [ ] **Step 3: 新增共享模块。**
+- [x] **Step 2: 运行红灯。** `rtk proxy node --test tests/site-identity.test.js`；预期缺模块而失败，不需要数据库。
+- [x] **Step 3: 新增共享模块。**
 
 ```js
 (function (root, factory) {
@@ -135,7 +135,7 @@ test('new identity values are explicit, not coerced', () => {
 });
 ```
 
-- [ ] **Step 4: 绿灯并验证浏览器分支不访问 DOM。** 在同一测试文件追加：
+- [x] **Step 4: 绿灯并验证浏览器分支不访问 DOM。** 在同一测试文件追加：
 
 ```js
 test('same contract runs as a browser script without DOM globals', () => {
@@ -148,7 +148,7 @@ test('same contract runs as a browser script without DOM globals', () => {
 ```
 
 Run: `rtk proxy node --test tests/site-identity.test.js`；全部通过后 review。
-- [ ] **Step 5: 提交且只含该任务文件。**
+- [x] **Step 5: 提交且只含该任务文件。**
 
 ```sh
 rtk proxy git add -- shared/site-identity.js tests/site-identity.test.js
@@ -169,7 +169,7 @@ rtk proxy git commit -m "feat: define shared site identity contract"
 - Produces: registry `{migrations,currentSchemaVersion,checksum,schemaSignature}`；`inspectInstallation(store,{verifyStructure=true}={})`；`migrate(tx)`；`upgradeInstalled(store) -> {schemaVersion,previousSchemaVersion,upgraded}`。
 - 状态固定为 unconfigured/uninstalled/installed/upgrade_required/incompatible；数据库错误继续抛给已有 unavailable 处理。
 
-- [ ] **Step 1: 建真实 V1 测试夹具，不调用新版默认迁移。**
+- [x] **Step 1: 建真实 V1 测试夹具，不调用新版默认迁移。**
 
 ```js
 // tests/helpers/v1.js
@@ -208,7 +208,7 @@ async function v1Fixture(t) {
 module.exports = {v1Fixture};
 ```
 
-- [ ] **Step 2: 写升级、重复、并发和事务失败测试，先运行红灯。**
+- [x] **Step 2: 写升级、重复、并发和事务失败测试，先运行红灯。**
 
 ```js
 const {test} = require('node:test');
@@ -262,7 +262,7 @@ test('failure after 002 SQL rolls back data and migration records', async t => {
 
 Run: `rtk proxy node scripts/test-postgres.js tests/schema-upgrade.test.js`；预期当前代码无 schema2/upgrade_required，断言失败。
 
-- [ ] **Step 3: 新增仅数据变换的 SQL 002。**
+- [x] **Step 3: 新增仅数据变换的 SQL 002。**
 
 ```sql
 DO $$ BEGIN
@@ -281,7 +281,7 @@ SET schema_config=jsonb_set(schema_config,'{site}',
 
 该 SQL 不更新 versions/previews、installation、账号或资源；安装版本由 runner 同事务更新。新装时没有 site/template 行，导入边界必须执行 Step 6。
 
-- [ ] **Step 4: 新增明确清单；001 指纹与 catalog 查询保留。**
+- [x] **Step 4: 新增明确清单；001 指纹与 catalog 查询保留。**
 
 ```js
 // admin-server/migration-registry.js
@@ -346,7 +346,7 @@ module.exports = {migrate,inspectInstallation,checksum,supportedPostgresVersion,
 
 不要把一个指纹看作唯一数据库版本：002 无 DDL，两个版本指纹相同。指纹测试从导出读取，不继续用源文件正则提取变量。
 
-- [ ] **Step 5: 连接轻量状态、CLI、网页安装。**
+- [x] **Step 5: 连接轻量状态、CLI、网页安装。**
 
 ```js
 // installation.js: replace only installationStatus; retain import preflight.
@@ -410,7 +410,7 @@ console.error(messages[error.code]||(connectionFailure
 process.exitCode=1;
 ```
 
-- [ ] **Step 6: 归一化仅位于新草稿/schema/恢复入口，绝不放进 composeSnapshot。**
+- [x] **Step 6: 归一化仅位于新草稿/schema/恢复入口，绝不放进 composeSnapshot。**
 
 各文件导入 shared/site-identity 对应函数，替换点如下：
 
@@ -433,7 +433,7 @@ return saveDraft(store, normalizeConfig(row.snapshot.config), revision, actor);
 
 新字段严格业务校验在 Task 3；此任务仍保留 config 现有精确键集合校验。历史 importer 用 stableIDs 保持原行为，不给每个旧 snapshot.config 塞新字段。
 
-- [ ] **Step 7: 更新隔离 fixture 和失败边界测试，完整绿灯。**
+- [x] **Step 7: 更新隔离 fixture 和失败边界测试，完整绿灯。**
 
 `tests/helpers/http.js` 安装 INSERT 改参数化 currentSchemaVersion；只有专门 V1 测试仍写 1。用导出 currentSchemaVersion 替换 latest-fixture 断言；future migration 使用 currentSchemaVersion+1，不能把真实 002 当“未来”。保留纯 001 指纹测试并补 schema2 相同签名断言。
 
@@ -475,7 +475,7 @@ rtk proxy shasum -a 256 admin-server/migrations/001-initial.sql
 ```
 
 预期全部新增/已有后端测试通过，001 checksum 与 Global Constraints 一致；缺授权包的 skip 独立记录。
-- [ ] **Step 8: 审查后显式暂存 Files 列表中的本任务文件，提交 `feat: add safe incremental schema upgrades`。** 不运行 `git add .`；不用更改测试期望掩盖真实安装/兼容行为回归。
+- [x] **Step 8: 审查后显式暂存 Files 列表中的本任务文件，提交 `feat: add safe incremental schema upgrades`。** 不运行 `git add .`；不用更改测试期望掩盖真实安装/兼容行为回归。
 
 ## Task 3: 新字段校验与分享图的完整资源链路
 
@@ -489,7 +489,7 @@ rtk proxy shasum -a 256 admin-server/migrations/001-initial.sql
 - Produces 明确引用槽 `config.site.socialImage`；publicSnapshot 的 site 含新字段，socialImage 为版本化受控 URL。
 - inventoryResources 增加可选 `siteImages=[]` 参数，收集当前和历史的分享图；不递归扫描 site。
 
-- [ ] **Step 1: 新增资源发布与恢复的失败测试。**
+- [x] **Step 1: 新增资源发布与恢复的失败测试。**
 
 ```js
 test('site image uses publication grants, clear preserves historical references',async t=>{
@@ -526,7 +526,7 @@ test('site image rejects non-image resource identity on the server',async t=>{
 
 Run: `rtk proxy node scripts/test-postgres.js tests/database-content.test.js tests/config.test.js`；确认新增失败来自字段/引用尚未接入。
 
-- [ ] **Step 2: 按字段职责分派校验与保存。**
+- [x] **Step 2: 按字段职责分派校验与保存。**
 
 config.js 使用 Task 1 的 validateIdentity。在原 site 循环前调用；替换统一 plain 循环：
 
@@ -552,7 +552,7 @@ if (config.site.socialImage) {
 
 现有 HTTPS 登记逻辑默认推断 image，但若同一 URL 已作为 audio/video 登记，必须拒绝而不是更改其类型。不要在 `resourceAsset` 提前 continue 处跳过最终图片类型检查。
 
-- [ ] **Step 3: 增加明确引用、公共映射和锁内检查。**
+- [x] **Step 3: 增加明确引用、公共映射和锁内检查。**
 
 ```js
 // snapshots.js: SITE_KEYS append description/language/socialImage.
@@ -575,7 +575,7 @@ if (snapshot.config.site?.socialImage) {
 
 其他资源状态、存储可用性、文件检查仍按原逻辑执行；description 和 language 不参加 3D 字形检查。
 
-- [ ] **Step 4: 覆盖新旧导入和历史独有分享图。**
+- [x] **Step 4: 覆盖新旧导入和历史独有分享图。**
 
 ```js
 // inventoryResources signature adds siteImages = [];
@@ -602,7 +602,7 @@ test('site text does not create incidental media grants',()=>{
 });
 ```
 
-- [ ] **Step 5: 参数化验证发布拒绝状态，绿灯后提交。**
+- [x] **Step 5: 参数化验证发布拒绝状态，绿灯后提交。**
 
 ```js
 for (const patch of [{status:'disabled'},{status:'missing'},{status:'failed'},{trashed:true}])
@@ -632,7 +632,7 @@ Review 后显式暂存本任务文件，提交 `feat: publish site identity with
 - Produces: server `renderPageMetadata(html,meta,{preview=false}={})` 与 `ownedMeta(key)`。
 - 输入是已做资源 URL 映射的 publicSnapshot；metadata.json 旧引擎接口不改。
 
-- [ ] **Step 1: 写页面投影和 SSR 失败测试。**
+- [x] **Step 1: 写页面投影和 SSR 失败测试。**
 
 ```js
 const {test}=require('node:test');
@@ -665,7 +665,7 @@ test('SSR removes duplicate original metadata, escapes and preserves program scr
 
 Run: `rtk proxy node --test tests/site-identity.test.js tests/metadata.test.js`；缺接口红灯。
 
-- [ ] **Step 2: 在共享 factory 中追加纯投影与 head 描述符，并导出。**
+- [x] **Step 2: 在共享 factory 中追加纯投影与 head 描述符，并导出。**
 
 ```js
 function publicPathForState(state) {
@@ -722,7 +722,7 @@ function headEntries(meta,{preview=false}={}) {
 
 用户标题不拼入引擎模板字面量；这里保留美元符号/反引号/反斜线，由 HTML/DOM 边界安全编码。
 
-- [ ] **Step 3: 服务器渲染器只处理受控模板中的 head 身份标签。**
+- [x] **Step 3: 服务器渲染器只处理受控模板中的 head 身份标签。**
 
 ```js
 // admin-server/page-metadata.js
@@ -756,7 +756,7 @@ module.exports={renderPageMetadata,ownedMeta};
 
 模板是部署代码，不是用户可上传的任意 HTML。测试要覆盖单双引号、属性顺序、大小写和 twitter 的 name/property 两种旧写法；不把正则清理当成不可信 HTML sanitizer。
 
-- [ ] **Step 4: 接入路由、真实 404 和私有响应头。**
+- [x] **Step 4: 接入路由、真实 404 和私有响应头。**
 
 在 HTML 路由拿到 `{id,config,snapshot}` 后先解析页面；不存在作品直接返回固定 404 页面，不加载引擎：
 
@@ -787,7 +787,7 @@ sendResource 仍设置 nosniff，不能因已有 cache 头跳过它。HTML 最�
 
 将 contentFixture 的最小 index.html 写成真正的 `<html><head><title>Fixture</title></head><body></body></html>`，不能让新测试绕开 renderer。
 
-- [ ] **Step 5: HTTP 安全验收。**
+- [x] **Step 5: HTTP 安全验收。**
 
 ```js
 const {test}=require('node:test');
@@ -821,7 +821,7 @@ test('preview dependencies remain owner-authenticated and private',async t=>{
 Task 5 添加 identity.js/client 导航后，将其加入相同矩阵；同时覆盖 app.js、compiled.vs 和 preview 资源响应。对 fixture 缺 shader 的情况只在临时 root 创建小型 shader 测试文件，不绕过 endpoint。
 
 Run: `rtk proxy node --test tests/site-identity.test.js tests/metadata.test.js` 与 `rtk proxy node scripts/test-postgres.js tests/metadata-http.test.js tests/database-content.test.js tests/admin.test.js tests/installation.test.js`。
-- [ ] **Step 6: 审查后提交 `feat: render trusted route metadata and private previews`。** 包含 frontend-resources.js/installation.js 的响应头小改动，不包含任何真实 assets。
+- [x] **Step 6: 审查后提交 `feat: render trusted route metadata and private previews`。** 包含 frontend-resources.js/installation.js 的响应头小改动，不包含任何真实 assets。
 
 ## Task 5: 浏览器导航共用投影，移除旧引擎的标题覆盖
 
@@ -836,7 +836,7 @@ Run: `rtk proxy node --test tests/site-identity.test.js tests/metadata.test.js` 
 - bridgeSource 增加第四个参数 `origin`；mountFrontend 一律传 options.origin，现有直接调用测试同步提供测试 origin。
 - 浏览器全局 `__SITE_UPDATE_IDENTITY__(state?)`；state 缺省读取 location.pathname，否则归一化已知 Router/state 字符串。
 
-- [ ] **Step 1: DOM adapter 的失败测试。** 在 metadata.test.js 增加独立假 DOM，不依赖任何数据库或原站引擎：
+- [x] **Step 1: DOM adapter 的失败测试。** 在 metadata.test.js 增加独立假 DOM，不依赖任何数据库或原站引擎：
 
 ```js
 function fakeDocument() {
@@ -867,7 +867,7 @@ test('DOM updates clear old image/description and do not inject HTML',()=>{
 
 Run: `rtk proxy node --test tests/metadata.test.js`；预期缺模块失败。
 
-- [ ] **Step 2: DOM adapter 实现。** ownedMeta 是 Task 4 的纯键识别器，将其定义收进 shared factory 并导出，服务器从 shared 导入，不复制第二套名单。
+- [x] **Step 2: DOM adapter 实现。** ownedMeta 是 Task 4 的纯键识别器，将其定义收进 shared factory 并导出，服务器从 shared 导入，不复制第二套名单。
 
 shared factory 的最终返回列表应为：
 
@@ -901,7 +901,7 @@ return {DEFAULTS,LANGUAGES,normalizeSite,normalizeConfig,validateIdentity,
 });
 ```
 
-- [ ] **Step 3: 版本化程序路由与加载顺序。** 在已调用 versionConfig 的 switch 中新增固定文件 case；不新增宽泛 static/shared 路由：
+- [x] **Step 3: 版本化程序路由与加载顺序。** 在已调用 versionConfig 的 switch 中新增固定文件 case；不新增宽泛 static/shared 路由：
 
 ```js
 case 'identity.js':
@@ -918,7 +918,7 @@ html=html.replace(/<head\b[^>]*>/i,head=>head+
 
 Dockerfile 在 COPY admin-ui 后添加 `COPY shared ./shared`。deployment.test.js 加断言 `/COPY shared/`，不改基础镜像或存储挂载。
 
-- [ ] **Step 4: bridge 安装单一更新函数，移除 document.title 的旧赋值。**
+- [x] **Step 4: bridge 安装单一更新函数，移除 document.title 的旧赋值。**
 
 ```js
 function identityBridgeSource(config,origin,preview) {
@@ -935,7 +935,7 @@ function identityBridgeSource(config,origin,preview) {
 
 在 bridgeSource 现有返回字符串中保留 `window.__SITE_VERSION__`，把紧随其后的 `document.title=...` 替换为上面函数生成的源码；参数 preview 由 `String(version).startsWith('preview-')` 得出。保留所有原 fetch/XHR/Worker 资源路径映射。
 
-- [ ] **Step 5: ViewController 唯一锚点接入，不编辑原 assets。** 用以下内容替换现有 ViewController 的 title 字符串补丁块：
+- [x] **Step 5: ViewController 唯一锚点接入，不编辑原 assets。** 用以下内容替换现有 ViewController 的 title 字符串补丁块：
 
 ```js
 source=replaceClass(source,'ViewController',code=>{
@@ -950,7 +950,7 @@ source=replaceClass(source,'ViewController',code=>{
 
 已确认 Router/state 是字符串，正常 history 模式在 pushState/replaceState 之后触发；内部滚动场景先 replaceState("") 再设置 about/contact 等私有状态。Work/project 的数据是 reshaped title/perma，不把它当原始 name/slug 再复制一套元信息逻辑。
 
-- [ ] **Step 6: 验证状态序列、真实源码锚点和私有脚本响应。**
+- [x] **Step 6: 验证状态序列、真实源码锚点和私有脚本响应。**
 
 在 frontend.test.js 使用已有 runtimeTest/runtimeClass：
 
@@ -986,7 +986,7 @@ test('bridge uses same projection for detail/list/internal home transitions',()=
 元信息脚本 `/api/site/preview-*/identity.js` 加入 Task 4 私有矩阵，同时验证匿名 401、owner/过期检查仍有效。HTML 验证 identity.js 位于 bridge.js 之前，内容不包含存储凭证/部署路径。
 
 Run: `rtk proxy node --test tests/metadata.test.js tests/frontend.test.js`；`rtk proxy node scripts/test-postgres.js tests/metadata-http.test.js tests/database-content.test.js tests/deployment.test.js`。
-- [ ] **Step 7: 审查后提交 `feat: synchronize metadata with legacy navigation`。**
+- [x] **Step 7: 审查后提交 `feat: synchronize metadata with legacy navigation`。**
 
 ## Task 6: 管理端描述、语言、分享图编辑
 
@@ -998,7 +998,7 @@ Run: `rtk proxy node --test tests/metadata.test.js tests/frontend.test.js`；`rt
 - 固定 `/admin/site-identity.js` 返回 shared/site-identity.js；无需登录可读取程序源码，与已有 admin shell 一致，不返回用户内容或数据。
 - 不增加第二个配置 API；新字段与现有网站设置同一次保存、同一个 revision。
 
-- [ ] **Step 1: 在已有 admin-ui VM/假 DOM 测试中增加失败断言。** 扩展 field harness 的 fake Node 支持 `append` 和 `tagName`，直接调用从实际源码提取的 field：
+- [x] **Step 1: 在已有 admin-ui VM/假 DOM 测试中增加失败断言。** 扩展 field harness 的 fake Node 支持 `append` 和 `tagName`，直接调用从实际源码提取的 field：
 
 ```js
 const selected=[];
@@ -1017,7 +1017,7 @@ assert.equal(description.maxLength,500);
 沿用 tests/admin-ui.test.js 已有 source slice + VM 的测试风格，不能用“源码含 select 字符串”代替上述行为断言。
 Run: `rtk proxy node --test tests/admin-ui.test.js`；应因尚未支持 choices/maxLength 失败。
 
-- [ ] **Step 2: 固定 shared 路由和加载顺序。** app.js 在 `/admin` static 之前注册：
+- [x] **Step 2: 固定 shared 路由和加载顺序。** app.js 在 `/admin` static 之前注册：
 
 ```js
 app.get('/admin/site-identity.js',(req,res)=>res.type('js').sendFile(
@@ -1032,7 +1032,7 @@ admin-ui/index.html 在 setup.js 前添加：
 
 不得公开整个 shared/仓库目录；既有 CSP 无需放宽。
 
-- [ ] **Step 3: field 增加受控选项和字数限制。** 替换创建 input 的三行，并在 value 设置之前填选项；复用后面的标签/id/help：
+- [x] **Step 3: field 增加受控选项和字数限制。** 替换创建 input 的三行，并在 value 设置之前填选项；复用后面的标签/id/help：
 
 ```js
 const input=node(options.choices?'select':options.multiline?'textarea':'input');
@@ -1049,7 +1049,7 @@ input.addEventListener(options.choices?'change':'input',()=>
 
 删除原来的 input listener，避免同一变更触发两次；资源选择器分支保持原样。
 
-- [ ] **Step 4: siteView 将新字段放入“搜索与分享”面板，保留原基本信息和音乐。** 原基本信息遍历增加过滤：
+- [x] **Step 4: siteView 将新字段放入“搜索与分享”面板，保留原基本信息和音乐。** 原基本信息遍历增加过滤：
 
 ```js
 for(const [key,value] of Object.entries(state.config.site).filter(([key])=>
@@ -1077,7 +1077,7 @@ identity.append(node('p','网站域名来自服务器 SITE_ORIGIN。修改先保
 
 不改默认存储、不自动上传文件，不把输入值写 localStorage。复用已有保存时 dirty 状态保护。
 
-- [ ] **Step 5: UI 与 HTTP 回归。** 增加脚本顺序断言与伪输入交互断言，再通过真实 HTTP 保存三字段并确认匿名已发布 config 在发布前不变：
+- [x] **Step 5: UI 与 HTTP 回归。** 增加脚本顺序断言与伪输入交互断言，再通过真实 HTTP 保存三字段并确认匿名已发布 config 在发布前不变：
 
 ```js
 test('admin identity contract is self-hosted and read-only',async t=>{
@@ -1093,7 +1093,7 @@ test('admin identity contract is self-hosted and read-only',async t=>{
 ```
 
 Run: `rtk proxy node --test tests/admin-ui.test.js tests/setup-ui.test.js` 与 `rtk proxy node scripts/test-postgres.js tests/admin.test.js tests/metadata-http.test.js`。
-- [ ] **Step 6: 审查后提交 `feat: edit published site description language and share image`。**
+- [x] **Step 6: 审查后提交 `feat: edit published site description language and share image`。**
 
 ## Task 7: 跨边界回归、实际浏览器验收与交付文档
 
@@ -1105,7 +1105,7 @@ Run: `rtk proxy node --test tests/admin-ui.test.js tests/setup-ui.test.js` 与 `
 **Interfaces:**
 - 消费前六个任务，不再新增生产行为。实际验证记录必须区分通过、失败、跳过和未验证，不能使用上一轮 199 项结果证明新代码。
 
-- [ ] **Step 1: 封闭跨任务验收缺口。** 在测试中加入以下实际断言，不只检查返回 200：
+- [x] **Step 1: 封闭跨任务验收缺口。** 在测试中加入以下实际断言，不只检查返回 200：
 
 ```js
 // In the V1 upgrade test, include stable textual JSONB checks around upgrade:
@@ -1125,7 +1125,7 @@ Task 2 的 V1 helper 已种入第二个历史版本、一个预览、一条会�
 
 旧 SQLite 预检/导入/恢复测试比较临时源 SHA-256 前后相同，不能使用用户实际 SQLite。当前草稿与历史分别检查分享图，拒绝错资源种类，删除/清空不删除旧版本引用。
 
-- [ ] **Step 2: 完整自动化验证与容器打包检查。**
+- [x] **Step 2: 完整自动化验证与容器打包检查。**
 
 ```sh
 rtk proxy node --test tests/site-identity.test.js tests/metadata.test.js tests/admin-ui.test.js tests/setup-ui.test.js
@@ -1140,7 +1140,7 @@ rtk proxy docker compose -f compose.test.yaml -p site-pg-test config --quiet
 
 若依赖/平台 API 需要查当前文档，遵守项目 ctx7 规则（先 library 再 docs，最多三条命令）；本计划基于现有源码接口，不要求更换依赖版本。
 
-- [ ] **Step 3: 在隔离实例做实际浏览器验收。** 执行前读取合适的 browse/playwright 技能与其必要引用；不把现有 `localhost:3000/admin/` 当测试目标。实例必须使用明确的临时 root/dataDir、测试 store、回环测试端口和固定的假管理员；不调用 loadOptions 读取实际 .env。
+- [x] **Step 3: 在隔离实例做实际浏览器验收。** 执行前读取合适的 browse/playwright 技能与其必要引用；不把现有 `localhost:3000/admin/` 当测试目标。实例必须使用明确的临时 root/dataDir、测试 store、回环测试端口和固定的假管理员；不调用 loadOptions 读取实际 .env。
 
 逐项记录实际结果：
 
@@ -1155,7 +1155,7 @@ rtk proxy docker compose -f compose.test.yaml -p site-pg-test config --quiet
 
 此步骤的服务必须有已记录所有者、PID/容器名和清理方式。结束时只关闭本次创建的实例；若复用了别人已运行的专用测试库，不关闭它。
 
-- [ ] **Step 4: 更新用户文档，使用以下已确定的文案。** 在对应章节合并，不重复矛盾说明：
+- [x] **Step 4: 更新用户文档，使用以下已确定的文案。** 在对应章节合并，不重复矛盾说明：
 
 ```markdown
 ### 网站描述、语言与分享图片
@@ -1177,8 +1177,8 @@ canonical 与分享 URL 的域名来自服务器 SITE_ORIGIN，不能在浏览�
 
 README 将“只有校验的迁移命令”解释更新为已实际支持 1→2，注明实际测试日期/范围；不宣称阶段 B/C/D 已完成。
 
-- [ ] **Step 5: 写验证记录并独立审查整段 diff。** `docs/verification/site-identity-upgrade.md` 记录：执行提交、Node/PG 版本、隔离目标、实际命令、通过/失败/skip 数、浏览器路径与截图位置、原始 001 摘要、历史快照保持证明、未验证外部项和清理结果。未执行项目写“未验证”，不预填成功。
-- [ ] **Step 6: 完整通过后提交 `docs: document schema 2 upgrade and site identity verification`。** 最终报告仅声称第一阶段完成；真实站点升级和 GitHub 推送仍需另行授权。
+- [x] **Step 5: 写验证记录并独立审查整段 diff。** `docs/verification/site-identity-upgrade.md` 记录：执行提交、Node/PG 版本、隔离目标、实际命令、通过/失败/skip 数、浏览器路径与截图位置、原始 001 摘要、历史快照保持证明、未验证外部项和清理结果。未执行项目写“未验证”，不预填成功。
+- [x] **Step 6: 完整通过后提交 `docs: document schema 2 upgrade and site identity verification`。** 最终报告仅声称第一阶段完成；真实站点升级和 GitHub 推送仍需另行授权。
 
 ## 规格覆盖与计划自审
 
@@ -1204,4 +1204,4 @@ README 将“只有校验的迁移命令”解释更新为已实际支持 1→2�
 1. **子代理逐项实施（推荐）**：当前会话中为每项任务分配实施者，依次做规格符合性和代码质量审查；主代理负责集成与最终真实验证。
 2. **当前代理顺序实施**：使用 executing-plans 技能在当前会话分批执行，同样保留红绿测试、检查点与独立审查。
 
-状态：已按用户选择的子代理逐项方式实施第一阶段 A，并完成逐任务审查、242 项隔离回归及实际浏览器验收（2026-10-14）。详见[验证记录](../../verification/site-identity-upgrade.md)；整分支最终独立审查与测试服务关闭仍由主代理收尾。B/C/D 未实施，没有真实数据库升级、GitHub 推送或部署。
+状态：已按用户选择的子代理逐项方式完成第一阶段 A，包括逐任务审查、242 项隔离回归、实际浏览器验收及整分支最终独立审查（2026-10-14）。详见[验证记录](../../verification/site-identity-upgrade.md)；专用测试服务已清理，独立分支等待用户选择集成方式。B/C/D 未实施，没有真实数据库升级、GitHub 推送或部署。
