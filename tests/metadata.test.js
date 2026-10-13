@@ -2,6 +2,39 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const identity=require('../shared/site-identity');
 const config={site:{title:'A $& ` \\',navWork:'Works',description:'Site & more',language:'zh-CN',socialImage:'/api/site/8/resources/i/share.png'},projects:[{slug:'one',name:'One',description:'Project',image:{url:'/api/site/8/resources/p/one.png'}}]};
+function fakeDocument() {
+  const items=[],doc={title:'',documentElement:{lang:''}};
+  doc.createElement=tag=>({tagName:tag.toUpperCase(),attributes:{},textContent:'',setAttribute(k,v){this.attributes[k]=String(v);},getAttribute(k){return this.attributes[k]??null;},remove(){const index=items.indexOf(this);if(index>=0)items.splice(index,1);}});
+  doc.head={querySelectorAll(){return [...items];},appendChild(item){items.push(item);}};
+  doc.items=items;return doc;
+}
+test('DOM updates clear old image/description and do not inject HTML',()=>{
+  const {applyPageMetadata}=require('../shared/page-metadata-dom'),doc=fakeDocument();
+  const viewport=doc.createElement('meta');viewport.setAttribute('name','viewport');doc.head.appendChild(viewport);
+  applyPageMetadata(doc,identity.pageMetadata(config,'https://owner.example','/work/one'));
+  assert.equal(doc.title,'One · A $& ` \\');
+  const blank={...config,site:{...config.site,title:'<img src=x>',description:'',socialImage:''},projects:[]};
+  applyPageMetadata(doc,identity.pageMetadata(blank,'https://owner.example','/'),{preview:true});
+  assert.equal(doc.documentElement.lang,'zh-CN');
+  assert.equal(doc.items.filter(n=>n.getAttribute('name')==='viewport').length,1);
+  assert.equal(doc.items.filter(n=>/image$/.test(n.getAttribute('name')||n.getAttribute('property')||'')).length,0);
+  assert.equal(doc.items.filter(n=>/description$/.test(n.getAttribute('name')||n.getAttribute('property')||'')).length,0);
+  assert.equal(doc.items.filter(n=>n.tagName==='TITLE').length,1);
+  assert.equal(doc.items.find(n=>n.tagName==='TITLE').textContent,'<img src=x>');
+  assert.equal(doc.items.find(n=>n.getAttribute('name')==='robots').getAttribute('content'),'noindex, nofollow');
+});
+test('bridge uses same projection for detail/list/internal home transitions',()=>{
+  const document=fakeDocument(),window={SiteIdentity:identity,SiteMetadataDOM:require('../shared/page-metadata-dom'),fetch:async()=>{}};
+  function XHR(){} XHR.prototype.open=function(){};
+  const location={origin:'https://owner.example',pathname:'/work/one'};
+  const script=require('../admin-server/frontend').bridgeSource(8,config,{assets:{},legacyMap:{}},location.origin);
+  require('node:vm').runInNewContext(script,{window,document,location,URL,Request,XMLHttpRequest:XHR});
+  assert.equal(document.title,identity.pageMetadata(config,location.origin,location.pathname).title);
+  for(const state of ['work/one','work','about','contact','work/one','unknown']) {
+    window.__SITE_UPDATE_IDENTITY__(state);
+    assert.equal(document.title,identity.pageMetadata(config,location.origin,identity.publicPathForState(state)||'/__not-found').title);
+  }
+});
 test('route projection uses trusted origin and real project data',()=>{
   const detail=identity.pageMetadata(config,'https://owner.example','/work/one?preview=x');
   assert.equal(detail.title,'One · A $& ` \\');

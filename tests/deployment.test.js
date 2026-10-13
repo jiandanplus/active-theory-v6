@@ -63,6 +63,7 @@ test('deployment includes non-superuser init, PG18 parent volume and all install
   assert.match(docker, /USER node/);
   assert.match(docker, /COPY admin-server/);
   assert.match(docker, /COPY admin-ui/);
+  assert.match(docker, /COPY shared/);
   const external = readFileSync('compose.external.yaml','utf8');
   assert.doesNotMatch(external, /POSTGRES_PASSWORD|depends_on|\n  db:/);
   const scripts = JSON.parse(readFileSync('package.json')).scripts;

@@ -1,7 +1,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
-const runtimeRoot = require("node:path").join(__dirname, "..");
-const licensedRuntime = require("../admin-server/config").appFile(runtimeRoot);
+const authorizedRoot = process.env.AUTHORIZED_RUNTIME_ROOT;
+if (authorizedRoot && authorizedRoot !== '/Users/jiandan/Code/MyCode/active-theory-v6') throw Error('Unauthorized runtime root');
+const runtimeRoot = authorizedRoot || require("node:path").join(__dirname, "..");
+const licensedRuntime = authorizedRoot ? 'app.1778129964370.js' : require("../admin-server/config").appFile(runtimeRoot);
+const viewAnchor = '_this.bind("navigate", (path => _this.navigate(path))), document.title = "AGI旅行者· AGI Voyager", _this.bind("Work/project", (data => { document.title = data ? `${data.title} · Active Theory` : "AGI旅行者· AGI Voyager" }));';
 const runtimeTest = (name, fn) => test(`authorized runtime: ${name}`, {
   skip: !licensedRuntime && "Authorized original runtime bundle absent; engine compatibility is not verified",
 }, fn);
@@ -13,6 +16,17 @@ function runtimeClass(source, name) {
   const end = source.indexOf("Class((function ", start + 20);
   return source.slice(start, end < 0 ? source.length : end);
 }
+runtimeTest('ViewController metadata hook replaces both legacy title writers',()=>{
+  const patched=require('../admin-server/frontend').patchAppSource(runtimeSource(),{site:{title:'Name'},songs:[]});
+  const view=runtimeClass(patched,'ViewController');
+  assert.match(view,/__SITE_UPDATE_IDENTITY__/);
+  assert.doesNotMatch(view,/document\.title\s*=/);
+  assert.doesNotMatch(view,/data\.title\} · Active Theory/);
+});
+test('ViewController incompatible or duplicate navigation anchors fail closed',()=>{
+  const {patchAppSource}=require('../admin-server/frontend');
+  for(const body of ['document.title="old";',viewAnchor+viewAnchor]) assert.throws(()=>patchAppSource('Class((function ViewController(){'+body+'}));',{site:{},songs:[]}),error=>error.status===503);
+});
 runtimeTest("ContactUI empty and one-character text are safe and zero-width layout completes", async () => {
   const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
   const code = runtimeClass(source, "ContactUI");
@@ -220,7 +234,7 @@ test("bridge maps media at actual loader entry and preserves Request headers and
     window: { fetch: (...args) => calls.push(args) },
   };
   context.XMLHttpRequest.prototype.open = (...args) => xhr.push(args);
-  vm.runInNewContext(bridgeSource(9, snapshot.config, snapshot), context);
+  vm.runInNewContext(bridgeSource(9, snapshot.config, snapshot, 'http://site.test'), context);
   const request = new Request("http://site.test/assets/images/pic.png", {
     headers: { "x-test": "yes" },
   });
@@ -306,6 +320,7 @@ test("bridge and snapshot mappings distinguish exact external queries without re
       9,
       snapshot.config,
       snapshot,
+      'http://site.test',
     ),
     context,
   );
@@ -437,12 +452,12 @@ test("versioned bridge rewrites CMS and shader requests without embedding secret
     site: { title: "My site", navWork: "作品", navContact: "联系" },
     songs: [],
   };
-  const script = bridgeSource(7, config);
+  const script = bridgeSource(7, config, undefined, 'http://site.test');
   assert.match(script, /api\/site\/7/);
   assert.doesNotThrow(() => new Function(script));
   const source =
-    'Class((function ViewController(){ document.title = "AGI旅行者· AGI Voyager"; })), Class((function Main(){}));';
-  assert.match(patchAppSource(source, config), /My site/);
+    'Class((function ViewController(){'+viewAnchor+'})), Class((function Main(){}));';
+  assert.match(patchAppSource(source, config), /__SITE_UPDATE_IDENTITY__/);
 });
 test("converted models use engine-compatible geometry aliases", () => {
   const { buildUIL } = require("../admin-server/config");
@@ -471,9 +486,10 @@ test("patches preserve dollar replacement characters and empty music lists", () 
     songs: [],
   };
   const source =
-    'Class((function ViewController(){ document.title = "AGI旅行者· AGI Voyager"; }));Class((function NavUI(){let x={text: "Work", _type: 1};}));Class((function ContactUI(){let x={_innerText: "old", refName: "email"};})); let SONGS = [{title:"old",src:"x"}];';
+    'Class((function ViewController(){'+viewAnchor+'}));Class((function NavUI(){let x={text: "Work", _type: 1};}));Class((function ContactUI(){let x={_innerText: "old", refName: "email"};})); let SONGS = [{title:"old",src:"x"}];';
   const patched = patchAppSource(source, config);
-  assert(patched.includes('"$& title"'));
+  assert.match(patched,/__SITE_UPDATE_IDENTITY__/);
+  assert.equal(require('../shared/site-identity').pageMetadata(config,'http://site.test','/').title,'$& title');
   assert(patched.includes('"$& work"'));
   assert(patched.includes('"$& email"'));
   assert(patched.includes("let SONGS = [];"));

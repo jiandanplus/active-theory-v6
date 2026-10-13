@@ -1,9 +1,5 @@
-const {headEntries}=require('../shared/site-identity');
+const {headEntries,ownedMeta}=require('../shared/site-identity');
 const escape=value=>String(value).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-function ownedMeta(key) {
-  key=String(key||'').toLowerCase();
-  return ['description','robots','apple-mobile-web-app-title'].includes(key)||key.startsWith('og:')||key.startsWith('twitter:');
-}
 function attribute(tag,name) {
   const match=new RegExp('(?:^|\\s)'+name+'\\s*=\\s*(?:"([^"]*)"|\'([^\']*)\'|([^\\s>]+))','i').exec(tag);
   return match?.[1]??match?.[2]??match?.[3]??'';

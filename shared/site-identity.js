@@ -64,5 +64,9 @@
     if(preview||meta.status===404) add('robots','noindex, nofollow');
     return out;
   }
-  return {DEFAULTS,LANGUAGES,normalizeSite,normalizeConfig,validateIdentity,publicPathForState,pageMetadata,headEntries};
+  function ownedMeta(key) {
+    key=String(key||'').toLowerCase();
+    return ['description','robots','apple-mobile-web-app-title'].includes(key)||key.startsWith('og:')||key.startsWith('twitter:');
+  }
+  return {DEFAULTS,LANGUAGES,normalizeSite,normalizeConfig,validateIdentity,publicPathForState,pageMetadata,headEntries,ownedMeta};
 });

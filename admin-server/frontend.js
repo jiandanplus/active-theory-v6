@@ -89,14 +89,11 @@ function patchAppSource(source, config) {
       '(path.includes("assets/geometry") || path.startsWith("/api/site/"))',
     ),
   );
-  source = replaceClass(source, "ViewController", (code) =>
-    code
-      .replaceAll('"AGI旅行者· AGI Voyager"', () => quote(site.title))
-      .replace(
-        "${data.title} · Active Theory",
-        () => "${data.title} · " + String(site.title).replace(/[`$\\]/g, ""),
-      ),
-  );
+  source = replaceClass(source, 'ViewController', code=>{
+    const anchor='_this.bind("navigate", (path => _this.navigate(path))), document.title = "AGI旅行者· AGI Voyager", _this.bind("Work/project", (data => { document.title = data ? `${data.title} · Active Theory` : "AGI旅行者· AGI Voyager" }));';
+    if(code.split(anchor).length!==2) throw fail(503,'前台导航与当前运行包不兼容');
+    return code.replace(anchor,()=> '_this.bind("navigate", (path => _this.navigate(path))), _this.bind("Router/state", (state => window.__SITE_UPDATE_IDENTITY__?.(state))), window.__SITE_UPDATE_IDENTITY__?.();');
+  });
   source = replaceClass(source, "NavUI", (code) =>
     code
       .replace(
@@ -176,10 +173,21 @@ function patchAppSource(source, config) {
     );
   return source;
 }
+function identityBridgeSource(config,origin,preview) {
+  return `const identityConfig=${quote(config)},identityOrigin=${quote(origin)};
+    window.__SITE_UPDATE_IDENTITY__=function(state){
+      if(!window.SiteIdentity||!window.SiteMetadataDOM)return;
+      const path=state===undefined?location.pathname:window.SiteIdentity.publicPathForState(state);
+      const meta=window.SiteIdentity.pageMetadata(identityConfig,identityOrigin,path||'/__not-found');
+      window.SiteMetadataDOM.applyPageMetadata(document,meta,{preview:${JSON.stringify(preview)}});
+    };
+    window.__SITE_UPDATE_IDENTITY__();`;
+}
 function bridgeSource(
   version,
   config,
   snapshot = { assets: {}, legacyMap: {} },
+  origin,
 ) {
   const allowed = snapshot.config
     ? new Set(collectReferences(snapshot).map((r) => r.resourceId))
@@ -206,7 +214,7 @@ function bridgeSource(
     window.__SITE_RESOURCE_URL__=map;
     const fetchOriginal=window.fetch;window.fetch=function(input,init){const old=input instanceof Request?input.url:String(input);const next=map(old);return fetchOriginal.call(this,next!==old&&input instanceof Request?new Request(new URL(next,location.origin).href,input):next!==old?next:input,init);};
     const open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(method,url,...args){return open.call(this,method,map(url),...args);};
-    window.__SITE_VERSION__=${quote(String(version))};document.title=${quote(config.site.title)};
+    window.__SITE_VERSION__=${quote(String(version))};${identityBridgeSource(config,origin,String(version).startsWith('preview-'))}
   })();`;
 }
 function patchShaders(source, config) {
@@ -300,7 +308,10 @@ function mountFrontend(app, store, options) {
           case "config":
             return res.json(config);
           case "bridge.js":
-            return res.type("js").send(bridgeSource(id, config, snapshot));
+            return res.type("js").send(bridgeSource(id, config, snapshot, options.origin));
+          case 'identity.js':
+            return res.type('js').send(['site-identity.js','page-metadata-dom.js']
+              .map(name=>fs.readFileSync(path.join(__dirname,'../shared',name),'utf8')).join('\n;\n'));
           case "app.js": {
             const file = appFile(options.root);
             if (!file) throw fail(503, "缺少前台运行资源，请阅读部署说明");
@@ -403,12 +414,8 @@ function mountFrontend(app, store, options) {
           /s = "assets\/js\/app\." \+ window\._CACHE_ \+ "\.js"/,
           `s = "/api/site/${id}/app.js"`,
         );
-        html = html
-          .replace("</head>", `</head>`)
-          .replace(
-            "<head>",
-            `<head><script src="/api/site/${id}/bridge.js"></script>`,
-          );
+        html=html.replace(/<head\b[^>]*>/i,head=>head+
+          `<script src="/api/site/${id}/identity.js"></script><script src="/api/site/${id}/bridge.js"></script>`);
         if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
         res.type("html").send(html);
       } catch (error) {

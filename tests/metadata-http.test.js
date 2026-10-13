@@ -8,6 +8,12 @@ test('server identity ignores hostile host/query and unknown projects are 404',a
   const response=await f.request('/work/one?source=https://evil.example',{headers:{Host:'evil.example'}});
   assert.equal(response.status,200);
   const html=await response.text();
+  assert(html.indexOf('/identity.js')>=0 && html.indexOf('/identity.js')<html.indexOf('/bridge.js'));
+  const program=await f.request(html.match(/src="([^"]+\/identity\.js)"/)[1]);
+  assert.equal(program.status,200);
+  const source=await program.text();
+  assert.match(source,/SiteMetadataDOM/);
+  assert.doesNotMatch(source,/DATABASE_URL|MASTER_KEY|\/Users\//);
   assert.match(html,/href="http:\/\/localhost:3000\/work\/one"/);
   assert.match(html,/<title>One · Fixture<\/title>/);
   assert.doesNotMatch(html,/evil\.example|activetheory\.net/);
@@ -29,11 +35,25 @@ test('preview dependencies and failures remain authenticated and private',async 
     assert.equal(response.headers.get('cache-control'),'private, no-store',endpoint);
     assert.match(response.headers.get('x-robots-tag'),/noindex/);
   }
-  for(const endpoint of [`/api/site/${id}/config`,`/api/site/${id}/resources/image/image.png`,'/api/admin/config']) {
+  const program=await f.request(`/api/site/${id}/identity.js`,{headers});
+  assert.equal(program.status,200);
+  assert.equal(program.headers.get('cache-control'),'private, no-store');
+  assert.match(program.headers.get('x-robots-tag'),/noindex/);
+  for(const endpoint of [`/api/site/${id}/identity.js`,`/api/site/${id}/config`,`/api/site/${id}/resources/image/image.png`,'/api/admin/config']) {
     const response=await f.request(endpoint);
     assert.equal(response.status,401);
     assert.equal(response.headers.get('cache-control'),'private, no-store');
     assert.equal(response.headers.get('x-content-type-options'),'nosniff');
     assert.match(response.headers.get('x-robots-tag'),/noindex/);
+  }
+  const repo=require('../admin-server/repositories/content').contentRepository;
+  await assert.rejects(require('../admin-server/frontend-resources').resolveVersion(f.store,{version:id,admin:{username:'other'}}),error=>error.status===404);
+  for(const [owner,expires] of [['owner',new Date(Date.now()-1000)]]) {
+    const deniedId='preview-denied-'+owner;
+    await f.store.transaction(tx=>repo(tx).putPreview({id:deniedId,owner,expires,snapshot:f.bundle.draft}));
+    const denied=await f.request(`/api/site/${deniedId}/identity.js`,{headers});
+    assert.equal(denied.status,404);
+    assert.equal(denied.headers.get('cache-control'),'private, no-store');
+    assert.match(denied.headers.get('x-robots-tag'),/noindex/);
   }
 });
