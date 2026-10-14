@@ -1,6 +1,6 @@
 # 阶段 B：固定运行包交付验证
 
-日期：2026-10-15（Asia/Shanghai）。执行工作区：隔离 `feat/engine-delivery`，Task 14 输入提交 `48afdb4e6bfe551bd7fe3de50cd3ec2830b99fac`。本页记录实际证据，不是生产部署证明。Task 14 提交本身以 Git 历史为准；提交后的独立任务审查、整分支审查及主代理重新全量测试尚需另记，不能预填通过。
+日期：2026-10-15（Asia/Shanghai）。执行工作区：隔离 `feat/engine-delivery`，Task 14 输入提交 `48afdb4e6bfe551bd7fe3de50cd3ec2830b99fac`。本页记录实际证据，不是生产部署证明。最终应用代码为 `a00cd397c61b4b8dabf2b564ebb29f62e27a1aa9`；14 项任务复核、整分支独立审查、主代理全量测试与新镜像身份检查已完成，见末节。下文按时间保留早期结果和已关闭问题；原视觉与明确未验证项仍未解除。
 
 ## 范围和来源
 
@@ -24,7 +24,7 @@ Node 24.14.0、专用 PostgreSQL 18.4（父代理拥有 `site-pg-test-db-1`、�
 | assets/js/lib/qrious.js | 17579 | db99dcaf40a926181bce4522477c2efc5924f6c4b29111b6a97faea477c9528b |
 | assets/shaders/compiled.vs | 270305 | e2cf6406b30f86ab838b000cc3313e4de520e60484b1eb6402ba0016c09c8f98 |
 
-## 自动化结果（本次提交的应用代码）
+## 自动化结果（Task 14 焦点修复前的阶段记录）
 
 所有实际 shell 命令前缀 `/Users/jiandan/.cargo/bin/rtk proxy`，cwd 为隔离工作区。测试共同环境前缀如下，既清除生产/外来测试变量又固定 Node：
 
@@ -70,7 +70,7 @@ env -u DATABASE_URL -u TEST_DATABASE_URL -u TEST_DATABASE_CONFIRMED \
 | 已知夹具修正 | 两个 manifest.json 图标未复制导致首次发布 422；补入确切授权 PNG、另建新 DB 后重走正常 HTTP 安装。没有 SQL 修改 readiness 或删除必需引用。另有 7 个缺失字体 fallback 用明确自建 SFNT/WOFF 及授权 WOFF2 同格式副本作测试字体；3 个唯一编码分别 FontFace.load 成功，不能说原字体恢复。 |
 | 内容 A/B 与持久化 | 同一固定生产包发布不同内容 A/B；17 个 A endpoint 后续 hash 不变、B config hash 不同。app 内容相同可去重，worker 包含 target 因而 A/B digest 不同。生产 profile 固定全部 11 hash，本容器并没有制造不同程序包 B；跨包 A/B 是独立自动化矩阵的证据。 |
 | 预览/私有路径 | 17 个预览依赖及 HTML private/no-store/noindex；退出后延迟 worker 401。直接 delivery/objects、staging、manifest 私有路径 404。 |
-| 双击/未知结果 | 浏览器双击确认只发 1 次 publish POST。人为丢弃服务端已提交的响应，显示结果未知且没有自动重试；历史可见已提交 v6。**错误后焦点缺口见下节，不能称全部 UI 验收通过。** |
+| 双击/未知结果 | 浏览器双击确认只发 1 次 publish POST。人为丢弃服务端已提交的响应，显示结果未知且没有自动重试；历史可见已提交 v6。此轮暴露的焦点缺口已在后续窄修与复审中关闭，但仍不能称全部浏览器矩阵通过。 |
 | 浏览器运行能力 | 实际 Basis/Draco WASM 的 WebAssembly.compile 成功；固定版本 Hydra Worker 在独立线程创建、500ms 内无 error 后 terminate。仅证明编译/加载，不是 Basis/Draco 场景解码。 |
 | unsupported | 新受限 browser context 禁用 WebAssembly，跳至 `/api/site/6/unsupported.html`；6 个请求均同版本 owned origin、200，无外部 gtag、ES5 或 JS decoder 请求。 |
 | 一致备份/恢复 | 停止 owned app 后 pg_dump -Fc、pg_restore --list、文件归档、恢复到另一个新 DB/新 root：全部 exit 0。dump 95,425B，SHA `3bbd0cc73cd0c0029f1727f8a89af437f52b3b82c5600ee86531dc68539a99a1`；文件 archive 9,507,090B，SHA `5058875b3cf23efea435af256ac78f176ffe38f5423443ab5452f48e317fe4b2`。126 文件 SHA/权限模式相同，包含 data/媒体，测试密钥 env 随一致备份恢复，未输出值。 |
@@ -96,15 +96,15 @@ site_test_e28b171344884f4d8471ef09e971ade5
 site_test_04bdc7c4c66f41f28c0962abcfda1a74
 ```
 
-父代理另行检查 `docker ps -a --filter name=task14-` 为空。共享 `site-pg-test-db-1`/网络/控制库未删除，仍由父代理负责最终清理。无源目录删除/覆盖，也未停止其他容器。
+该轮结束时，父代理另行检查 `docker ps -a --filter name=task14-` 为空。共享 `site-pg-test-db-1`/网络/控制库当时保留，由父代理负责最后清理（最终结果见末节）。无源目录删除/覆盖，也未停止其他容器。
 
-### 尚未通过的 UI 验收
+### 早期 UI 验收缺口（后续已修复）
 
-无包的客户端拒绝快照将发布按钮标为 active；但服务器 422 和已提交响应被丢弃、显示“结果未知”后，按钮重新可用，快照却标外层 generic 为 active，操作按钮未标 active。**没有单独捕获 `document.activeElement` 测量，不据此断言 DOM 焦点必定为 body**；这里是待独立复现的焦点恢复疑点，不能写为通过。
+无包的客户端拒绝快照将发布按钮标为 active；但服务器 422 和已提交响应被丢弃、显示“结果未知”后，按钮重新可用，快照却标外层 generic 为 active，操作按钮未标 active。**这一轮没有单独捕获 `document.activeElement` 测量，不据此断言 DOM 焦点必定为 body**；当时作为待独立复现疑点记录，后续实测、修复和复审见下文，不改写早期证据强度。
 
 证据目录：`output/playwright/task14-acceptance-61852/.playwright-cli/`。422：点击 f2e75、确认 f2e90，`page-2026-10-14T17-24-29-983Z.yml`；未知结果：点击 f3e97、确认 f3e153，`page-2026-10-14T17-28-57-688Z.yml`。后者下一历史画面截图为 `page-2026-10-14T17-29-05-006Z.png`，不是精确错误状态截图；未捕获的截图不能补称存在。客户端拒绝对照为 `17-23-59-927` 快照，f1e199 active。fresh fixer 应先在真实 DOM 测量确认原因。未知结果历史确有提交且未自动重试，不是提交结果判断失败。
 
-父代理要求保持本次应用代码冻结：先提交证据，由独立 Task 14 审查评估，再派 fresh fixer 做窄修与覆盖测试。本提交不能标为“所有验收通过/最终可交付”。
+当时父代理要求冻结应用代码，先提交证据，经独立 Task 14 审查后派 fresh fixer 做窄修。该流程已完成；不能把这一问题的关闭扩大为“所有验收通过”。
 
 ## 明确未验证/阻塞
 
@@ -123,4 +123,26 @@ site_test_04bdc7c4c66f41f28c0962abcfda1a74
 
 GREEN 两条路径 settled 都为 `publish`/enabled/notbusy；422 保留错误消息，截断保留“结果可能已生效…不要自动重试”。用户聚焦 Other 后仍为 Other；聚焦 Other 再 blur 后仍为 BODY；sessionEpoch 改变、按钮断开后仍为 BODY；取消确认回到 publish。pending 均维持 disabled/busy。实际 helper 回归还覆盖初始无焦点、残余 busy/禁用与 observer 清理。TDD 首 RED `recover false !== true`；增加取消边界 RED `cancel false !== true`；最终 admin-ui 23/23、full test-postgres 474/474，0fail/0skip，exit0，30461.839708ms，`git diff --check` exit0。full 命令使用前文规定清除 DB env + Node24.14.0 + 获准 AUTHORIZED_RUNTIME_ROOT；共享 PG 不清理。
 
-本地非 Git 证据 `output/playwright/focus-20261015/measurements.md`、`harness.cjs` 及 `.playwright-cli/`。仅自有 `http://127.0.0.1:55011`，fresh `focus14-safe` 在 about:blank 单独成功安装 exact-origin + blob/data 路由后才导航。过程偏差如实记录：首 session 的 route 命令语法失败后，已排队 goto 仍触达该自有 origin；立即关闭并新建 safe session。初始 session 无持久完整 requests 日志，不推断完整网络覆盖。未使用原3000/外部原站/用户 tab/私有输入。当前 runtime/image 的先前证据仍适用于未改后台；此前 image **不是本次修复后的 UI 字节**，最终镜像身份和独立复审仍由父代理执行。其余“明确未验证/阻塞”不因本修复而解除。
+本地非 Git 证据 `output/playwright/focus-20261015/measurements.md`、`harness.cjs` 及 `.playwright-cli/`。仅自有 `http://127.0.0.1:55011`，fresh `focus14-safe` 在 about:blank 单独成功安装 exact-origin + blob/data 路由后才导航。过程偏差如实记录：首 session 的 route 命令语法失败后，已排队 goto 仍触达该自有 origin；立即关闭并新建 safe session。初始 session 无持久完整 requests 日志，不推断完整网络覆盖。未使用原3000/外部原站/用户 tab/私有输入。先前 runtime/image 证据仍适用于未改后台；此前 image **不是本次修复后的 UI 字节**。当时尚待父代理执行的最终镜像身份和独立复审，结果现记于末节。其余“明确未验证/阻塞”不因本修复而解除。
+
+## 最终独立审查、主代理验证与清理
+
+审查范围：`87b572e7117c4764fc4babe0046ea2d6b374fde7..a00cd397c61b4b8dabf2b564ebb29f62e27a1aa9`（20 个实现提交）。Task 14 焦点 Important 已经同一独立审查者复审关闭；另一位独立审查者完成整个分支的规格、代码、测试与跨模块锁/授权检查，结论为 **代码可合并、无 Critical/Important，保留一个非阻塞 Minor**。审查结论不是合并或生产部署授权，也不是视觉验收通过。
+
+保留的 Minor：`builder.js:71/74/76/108/114`、`projection.js:32/37/81/87`、`candidates.js:57` 及 `delivery-publish.test.js:141/152/160/201` 存在密集多操作行，影响后续审查可读性。未发现顺序错误；后续可做保持语义的小范围拆行并跑相关测试，本轮不扩展为大范围格式重写。
+
+主代理在同一最终应用提交独立执行：
+
+| 检查 | 实际结果 |
+| --- | --- |
+| `node scripts/test-postgres.js tests/admin-ui.test.js tests/delivery-admin.test.js` | exit 0，28 pass / 0 fail / 0 skip，2,676.9885 ms |
+| `node scripts/test-postgres.js`，使用前文规定的隔离环境及授权程序根 | exit 0，**474 pass / 0 fail / 0 skip**，32,168.617666 ms |
+| 001、002、003 SQL SHA-256 | 与批准的不可变值一致；003 为 `542595564db05b045bd2f6f87e444d3a2749d9d88bcc4277903b213bd0e49d1e` |
+| 最新 Docker build | exit 0；镜像 `sha256:ef56ee3e9b3dfcc25ecdc90fd7c59279718f922ffeabe5fa8f18bb2aebe7a493` |
+| 新镜像与工作区字节身份 | 全部 **78 个交付应用文件**的相对路径/SHA-256 数组完全相同，包括新 UI；宿主与容器检查命令均 exit 0 |
+
+新镜像身份检查以 `docker run --rm --network none --read-only` 执行，不映射端口、不挂载业务目录、不连接数据库。镜像 Node 24.21.0、UID 1000；宿主 Node 24.14.0。比较范围为 `admin-server/`、`admin-ui/`、`shared/`、`scripts/`、`cms/`、`server.js`、`index.html`、`package.json` 和 `package-lock.json`。新 UI SHA-256 为 `3e98c23c989ffb69f618ade802eed5b1ff0df63ec1fe95944635c27a7ff9adaa`；audit 与 CAS 摘要仍与先前恢复演练相同。这个检查补齐新 UI 的打包身份，**不声称重新执行整套容器恢复或生产 TLS 验收**。
+
+最终清理前，专用网络仅有父代理创建的 `site-pg-test-db-1`；除 control 库外有一个较早测试遗留、0 连接的随机测试库（目录修改时间早于本次最终全套）。主代理以明确 project/config 执行 `docker compose -p site-pg-test -f compose.test.yaml down`，exit 0，移除该专用 tmpfs 数据库容器及网络；测试数据不再保留。最新检查镜像/tag 也按确切名称移除，exit 0；未执行 Docker prune。浏览器证据和独立 Git 工作区保留，原项目未提交修改保持原样。
+
+交付状态：阶段 B 代码与上述隔离验证完成；原视觉、未覆盖的实际浏览器门禁及生产外部服务仍是明确未验证项。没有自动合并、推送、部署、正式数据库迁移或当前 3000 服务切换。阶段 C/D 尚未实施。
