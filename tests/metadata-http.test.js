@@ -68,3 +68,39 @@ test('preview dependencies and failures remain authenticated and private',async 
     assert.match(denied.headers.get('x-robots-tag'),/noindex/);
   }
 });
+test('unsupported relative CSS media retain target authorization and live resource status',async t=>{
+  const f=await httpFixture(t); await f.createAdmin(); const headers=await f.login();
+  const snapshot=structuredClone(f.bundle.draft);
+  snapshot.legacyMap['assets/fonts/fixture.woff2']='font';
+  snapshot.legacyMap['assets/images/unsupported-bg.jpg']='image';
+  fs.writeFileSync(path.join(f.root,'assets/fonts/fixture.woff2'),'fixture font');
+  fs.writeFileSync(path.join(f.root,'unsupported.html'),`<style>@font-face{src:url('./assets/fonts/fixture.woff2')}body{background-image:url('./assets/images/unsupported-bg.jpg')}</style>`);
+  for(const [id,assetPath] of [['font','assets/fonts/fixture.woff2'],['image','assets/images/image.png']])
+    await f.store.query('UPDATE personal_site.resources SET details=details || $1::jsonb WHERE id=$2',[JSON.stringify({path:assetPath}),id]);
+  const id='preview-unsupported';
+  await require('../admin-server/repositories/content').contentRepository(f.store).putPreview({id,owner:'owner',expires:new Date(Date.now()+60000),snapshot});
+  await f.store.query('UPDATE personal_site.versions SET snapshot=$1::jsonb WHERE id=42',[JSON.stringify(snapshot)]);
+  for(const target of ['42',id]) {
+    const response=await f.request(`/api/site/${target}/unsupported.html`,{headers});
+    assert.equal(response.status,200);
+    assert.equal(response.headers.get('cache-control'),target===id?'private, no-store':'no-store');
+    if(target===id) assert.match(response.headers.get('x-robots-tag'),/noindex/);
+    const html=await response.text();
+    assert.doesNotMatch(html,/url\(['"]\.\/assets|\/api\/site\/[^/]+\/assets\//);
+    const urls=[...html.matchAll(/url\(['"]([^'"]+)['"]\)/g)].map(match=>match[1]);
+    assert.equal(urls.length,2);
+    for(const url of urls) {
+      assert(url.startsWith(`/api/site/${target}/resources/`));
+      assert.equal((await f.request(url,{headers})).status,200);
+      if(target===id) assert.equal((await f.request(url)).status,401);
+    }
+    await f.store.query("UPDATE personal_site.resources SET status='disabled' WHERE id='font'");
+    assert.equal((await f.request(urls[0],{headers})).status,404);
+    await f.store.query("UPDATE personal_site.resources SET status='ready' WHERE id='font'");
+  }
+  fs.writeFileSync(path.join(f.root,'unsupported.html'),`<style>body{background:url('./assets/unmapped.png')}</style>`);
+  const rejected=await f.request(`/api/site/${id}/unsupported.html`,{headers});
+  assert.equal(rejected.status,422);
+  assert.equal(rejected.headers.get('cache-control'),'private, no-store');
+  assert.match(rejected.headers.get('x-robots-tag'),/noindex/);
+});

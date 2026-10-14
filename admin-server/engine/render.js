@@ -1,5 +1,6 @@
 const {buildUIL}=require('./legacy-adapter');
-const {canonicalResourceURL,mapResourceURL}=require('../snapshots');
+const {canonicalResourceURL,mapResourceURL,resourceAsset}=require('../snapshots');
+const {fail}=require('../security');
 const {pageMetadata}=require('../../shared/site-identity');
 const {renderPageMetadata}=require('../page-metadata');
 const {exactReplace}=require('./patches');
@@ -86,4 +87,22 @@ function renderHTML({html,snapshot,target,origin,programs={},pathname='/'}) {
   html=renderPageMetadata(html,pageMetadata(snapshot.config,origin,pathname),{preview:target.type==='preview'});
   return {source:html,report};
 }
-module.exports={bridgeSource,identityBridgeSource,versionedUIL,renderHTML};
+function renderUnsupportedHTML({html,snapshot,target,references=[]}) {
+  const allowed=new Set(references.map(reference=>reference.resourceId));
+  // Only CSS media URLs are rewritten: navigation and program links are not
+  // resource grants. Normalize the legacy document's single ./ prefix only.
+  const source=html.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/g,(all,q,value)=>{
+    const url=value.trim();
+    if(!/^(?:\.\/|\/)?assets\//.test(url))return all;
+    const normalized=url.replace(/^\.\//,'');
+    const key=canonicalResourceURL(normalized);
+    if(key.split('/').some(part=>part==='.'||part==='..'||part.includes('\\')))
+      throw fail(422,'不支持的页面资源引用');
+    const asset=resourceAsset(snapshot,normalized);
+    if(!asset?.resourceId||!asset.fileName||!allowed.has(asset.resourceId))
+      throw fail(422,'不支持的页面资源引用');
+    return `url(${q}${mapResourceURL(snapshot,target.id,normalized)}${q})`;
+  });
+  return {source,report:[]};
+}
+module.exports={bridgeSource,identityBridgeSource,versionedUIL,renderHTML,renderUnsupportedHTML};

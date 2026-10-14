@@ -114,3 +114,20 @@ test('shader mutations preserve unrelated duplicate sections and fail on logo dr
   assert(result.source.endsWith('{@}Other{@}time'));
   for(const bad of [source.replace('time time','time'),source+'{@}LogoParticleShader.glsl{@}'+body,source.replace('vec4(color, 1.0)','old')])assert.throws(()=>patchShaders(bad,config),{status:422});
 });
+test('unsupported CSS maps relative font and background only through frozen references',()=>{
+  const {renderUnsupportedHTML}=require('../admin-server/engine/render');
+  const snapshot={assets:{font:{resourceId:'font',fileName:'font.woff2'},bg:{resourceId:'bg',fileName:'bg.jpg'}},legacyMap:{'assets/fonts/font.woff2':'font','assets/images/unsupported-bg.jpg':'bg'}};
+  const html=`<style>@font-face{src:url('./assets/fonts/font.woff2')}body{background-image:url('./assets/images/unsupported-bg.jpg')}</style><a href="./assets/navigation">Link</a><script src="./assets/js/program.js"></script>`;
+  const references=[{resourceId:'font',slot:'font'},{resourceId:'bg',slot:'bg'}];
+  for(const id of ['42','preview-exact']) {
+    const result=renderUnsupportedHTML({html,snapshot,target:{id},references});
+    assert.match(result.source,new RegExp(`/api/site/${id}/resources/font/font\\.woff2`));
+    assert.match(result.source,new RegExp(`/api/site/${id}/resources/bg/bg\\.jpg`));
+    assert.match(result.source,/href="\.\/assets\/navigation"/);
+    assert.match(result.source,/src="\.\/assets\/js\/program.js"/);
+  }
+  for(const source of [html,`<style>body{background:url('./assets/missing.png')}</style>`,`<style>body{background:url('./assets/../secret.png')}</style>`])
+    assert.throws(()=>renderUnsupportedHTML({html:source,snapshot,target:{id:'42'},references:[]}),error=>error.status===422);
+  const external=`<style>body{background:url('https://external.test/assets/image.png')}</style>`;
+  assert.equal(renderUnsupportedHTML({html:external,snapshot,target:{id:'42'},references:[]}).source,external);
+});

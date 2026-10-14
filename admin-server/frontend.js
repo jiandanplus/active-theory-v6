@@ -3,7 +3,7 @@ const fs = require("node:fs"),
 const express = require("express");
 const { appFile } = require("./config");
 const {patchAppSource,patchShaders}=require("./engine/legacy-adapter");
-const {bridgeSource,versionedUIL,renderHTML}=require("./engine/render");
+const {bridgeSource,versionedUIL,renderHTML,renderUnsupportedHTML}=require("./engine/render");
 const { fail } = require("./security");
 const { route } = require("./http");
 const { pageMetadata } = require('../shared/site-identity');
@@ -85,7 +85,7 @@ function mountFrontend(app, store, options) {
           case 'unsupported.html': {
             const file=path.join(options.root,'unsupported.html');
             if(!fs.existsSync(file))throw fail(503,'缺少前台运行资源，请阅读部署说明');
-            return res.type('html').send(fs.readFileSync(file,'utf8'));
+            return res.type('html').send(renderUnsupportedHTML({html:fs.readFileSync(file,'utf8'),snapshot,target:{id},references:collectReferences(snapshot)}).source);
           }
           case "app.js": {
             const file = appFile(options.root);
