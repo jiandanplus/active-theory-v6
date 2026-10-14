@@ -114,3 +114,13 @@ site_test_04bdc7c4c66f41f28c0962abcfda1a74
 - 真正 Basis/Draco 场景解码、浏览器 GPU表现与流畅度必须与 HTTP 请求/Worker 独立线程/WASM 编译证据分别列明，不自动推定。
 - 实际浏览器 Work A/B/About/Contact/前进后退导航、原空内容引擎生命周期、旧 schema 升级后 legacy 按钮及 origin 变化、另一 owner/expiry/reset 的浏览器门禁未执行。相应自动化协议测试是另一证据层，不能称本轮浏览器都通过。
 - S3 私有签名 URL、真实外链公网可读性/CORS、CDN、生产 HTTPS、目标服务器、正式迁移/回滚/切流均未执行。无合并、推送、部署、自动 GC；C/D 未实施。
+
+## Task 14 窄焦点修复（2026-10-15）
+
+基线 `710408937ac30cfbcb2539b1d764dad985946ed2` 的 fresh helper 浏览器复现首次直接测量 `document.activeElement`，不是对先前 accessibility snapshot 的推断。确切生产 `confirmAction/run/api/publish/building/updateStatus` 定义配最小 fixture 状态、真实 DOM 和本机延迟 HTTP；未重跑完整安装/容器/原六场景验收。
+
+两条 RED（延迟 422、模拟提交后响应截断）的阶段相同：before `publish`/enabled；confirmation `BUTTON`/disabled；pending `BODY`/disabled/busy；settled `BODY`/enabled/notbusy。修复删除确认框关闭时的单次焦点 timer，改在 `run` 完成、按钮重新启用后恢复；仅原按钮初始有焦点、会话 epoch 未变、仍连接、未禁用、用户未主动移焦点且当前焦点为 body 时执行。focusin 观察忽略确认框内部焦点并在 finally 移除，不新增重试或改发布/未知结果语义。
+
+GREEN 两条路径 settled 都为 `publish`/enabled/notbusy；422 保留错误消息，截断保留“结果可能已生效…不要自动重试”。用户聚焦 Other 后仍为 Other；聚焦 Other 再 blur 后仍为 BODY；sessionEpoch 改变、按钮断开后仍为 BODY；取消确认回到 publish。pending 均维持 disabled/busy。实际 helper 回归还覆盖初始无焦点、残余 busy/禁用与 observer 清理。TDD 首 RED `recover false !== true`；增加取消边界 RED `cancel false !== true`；最终 admin-ui 23/23、full test-postgres 474/474，0fail/0skip，exit0，30461.839708ms，`git diff --check` exit0。full 命令使用前文规定清除 DB env + Node24.14.0 + 获准 AUTHORIZED_RUNTIME_ROOT；共享 PG 不清理。
+
+本地非 Git 证据 `output/playwright/focus-20261015/measurements.md`、`harness.cjs` 及 `.playwright-cli/`。仅自有 `http://127.0.0.1:55011`，fresh `focus14-safe` 在 about:blank 单独成功安装 exact-origin + blob/data 路由后才导航。过程偏差如实记录：首 session 的 route 命令语法失败后，已排队 goto 仍触达该自有 origin；立即关闭并新建 safe session。初始 session 无持久完整 requests 日志，不推断完整网络覆盖。未使用原3000/外部原站/用户 tab/私有输入。当前 runtime/image 的先前证据仍适用于未改后台；此前 image **不是本次修复后的 UI 字节**，最终镜像身份和独立复审仍由父代理执行。其余“明确未验证/阻塞”不因本修复而解除。

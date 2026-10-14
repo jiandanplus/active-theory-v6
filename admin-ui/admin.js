@@ -114,8 +114,7 @@ function startAdmin() {
   }
   function confirmAction(message) {
     return new Promise((resolve) => {
-      const previous = document.activeElement,
-        dialog = node("dialog", undefined, "modal");
+      const dialog = node("dialog", undefined, "modal");
       const title = node("h2", "确认操作"),
         description = node("p", message),
         actions = node("div", undefined, "form-actions");
@@ -145,9 +144,6 @@ function startAdmin() {
         () => {
           dialog.remove();
           resolve(accepted);
-          setTimeout(() => {
-            if (previous?.isConnected) previous.focus();
-          }, 0);
         },
         { once: true },
       );
@@ -157,6 +153,12 @@ function startAdmin() {
     });
   }
   async function run(action, b) {
+    const epoch = state.sessionEpoch, hadFocus = b && document.activeElement === b;
+    let movedFocus = false;
+    const watchFocus = (event) => {
+      if (event.target !== b && !event.target.closest?.("dialog")) movedFocus = true;
+    };
+    if (hadFocus) document.addEventListener("focusin", watchFocus);
     if (b) b.disabled = true;
     try {
       await action();
@@ -164,6 +166,9 @@ function startAdmin() {
       notify(e.message, true);
     } finally {
       if (b) b.disabled = !!(state.busy && b.dataset.busyAction);
+      if (hadFocus) document.removeEventListener("focusin", watchFocus);
+      if (hadFocus && !movedFocus && epoch === state.sessionEpoch &&
+          b.isConnected && !b.disabled && document.activeElement === document.body) b.focus();
     }
   }
   async function api(path, method = "GET", body) {

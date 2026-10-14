@@ -298,6 +298,32 @@ test('unselected runtime explains server registration before preview POST',async
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function tick(){return new Promise(resolve=>setImmediate(resolve));}
+test('failed action restores trigger focus only within its live session and unchanged focus intent',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  for(const scenario of ['recover','cancel','session','removed','disabled','moved','moved-back','pending-busy','not-focused']){
+    const pending=deferred(),body={},listeners=new Set(),state={busy:false,sessionEpoch:0};
+    const document={body,activeElement:null,addEventListener(type,fn){listeners.add(fn);},removeEventListener(type,fn){listeners.delete(fn);}};
+    const b={disabled:false,dataset:{busyAction:'true'},isConnected:true,focus(){document.activeElement=this;},closest(){return null;}};
+    document.activeElement=scenario==='not-focused'?body:b;
+    const context={state,document,notify(){}};
+    const run=require('node:vm').runInNewContext(source.slice(source.indexOf('  async function run('),source.indexOf('  async function api('))+'\nrun;',context);
+    const request=run(()=>pending.promise,b);
+    document.activeElement=body;
+    assert.equal(b.disabled,true);
+    if(scenario==='session')state.sessionEpoch++;
+    if(scenario==='removed')b.isConnected=false;
+    if(scenario==='disabled'||scenario==='pending-busy')state.busy=true;
+    if(scenario.startsWith('moved')){
+      const other={closest(){return null;}};document.activeElement=other;
+      for(const fn of listeners)fn({target:other});
+      if(scenario==='moved-back')document.activeElement=body;
+    }
+    if(scenario==='cancel')pending.resolve();else pending.reject(new Error('delayed failure'));await request;
+    assert.equal(document.activeElement===b,scenario==='recover'||scenario==='cancel',scenario);
+    assert.equal(b.disabled,scenario==='disabled'||scenario==='pending-busy',scenario);
+    assert.equal(listeners.size,0,'focus observer cleaned');
+  }
+});
 test('older overview runtime GET cannot replace a newer selection or redraw its old panel',async()=>{
   const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
   const a='a'.repeat(64),b='b'.repeat(64),bundles=[a,b].map(digest=>({digest,profileId:'fixture',files:1,bytes:12,registeredAt:'2026-01-01T00:00:00Z'}));
