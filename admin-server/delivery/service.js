@@ -10,12 +10,11 @@ function createDeliveryService({store,options={},registry=require('../engine/reg
   options=Object.freeze({...options,root:options.root||path.resolve(__dirname,'../..'),
     dataDir:path.resolve(options.dataDir||path.join(options.root||path.resolve(__dirname,'../..'),'data')),origin:origin.origin});
   const cas=createCAS(options.dataDir),dependencies={store,options,registry,cas,build};
-  const unavailable=async()=>{throw fail(501,'交付操作尚未接入');};
   return Object.freeze({
     publish:({revision,actor,withWarnings=false})=>require('./publish').publish({...dependencies,revision,actor,withWarnings}),
     preview:({revision,actor})=>require('./preview').preview({...dependencies,revision,actor}),
     legacy:({versionId,expectedGeneration,actor})=>require('./legacy').legacy({...dependencies,versionId,expectedGeneration,actor}),
-    read:unavailable,cas,
+    read:({version,preview,admin}={})=>require('./reader').resolveDelivery({store,cas,options,version,preview,admin}),cas,
     register:input=>{assertActor(input.actor);return registerRuntime({...input,store,cas,registry,actor:input.actor.username});},
     select:input=>{assertActor(input.actor);return selectRuntime({...input,store,cas,registry,actor:input.actor.username});},
   });

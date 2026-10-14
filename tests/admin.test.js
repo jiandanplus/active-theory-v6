@@ -105,7 +105,7 @@ test('admin identity contract is self-hosted and read-only',async t=>{
   assert.equal((await f.request('/shared/site-identity.js')).status,404);
 });
 test('identity fields save in one draft revision and change public config only on publication',async t=>{
-  const f=await require('./helpers/delivery').deliveryFixture(t); const headers=f.headers;
+  const f=await require('./helpers/delivery').deliveryFixture(t,{publish:true}); const headers=f.headers;
   const draft=await (await f.request('/api/admin/config',{headers})).json();
   const publicURL=`/api/site/${draft.published}/config`;
   const before=await (await f.request(publicURL)).json();

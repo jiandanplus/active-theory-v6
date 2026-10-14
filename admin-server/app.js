@@ -64,8 +64,12 @@ function createApp(options = {}, {deliveryService} = {}) {
   deliveryService ||= require('./delivery/service').createDeliveryService({store,options});
   app.locals.deliveryService = deliveryService;
   app.disable("x-powered-by");
+  app.disable('etag');
   if (options.trustProxy) app.set("trust proxy", options.trustProxy);
   app.use((req, res, next) => {
+    // Express res.send/json must never turn a non-program response into 304.
+    Object.defineProperty(req,'fresh',{get:()=>false});
+    res.set('Cache-Control','no-store');
     res.set("X-Content-Type-Options", "nosniff");
     res.set("Referrer-Policy", "same-origin");
     res.set("X-Frame-Options", "SAMEORIGIN");
@@ -82,14 +86,21 @@ function createApp(options = {}, {deliveryService} = {}) {
     next();
   });
   mountInstallation(app, { store, options });
+  app.use('/admin',(req,res,next)=>{
+    delete req.headers['if-none-match'];
+    delete req.headers['if-modified-since'];
+    next();
+  });
   app.get('/admin/site-identity.js', (req, res) => res.type('js').sendFile(
-    path.join(__dirname, '../shared/site-identity.js'), { cacheControl: false }));
+    path.join(__dirname, '../shared/site-identity.js'), { cacheControl: false,etag:false,lastModified:false }));
   app.use(
     "/admin",
     express.static(path.join(__dirname, "../admin-ui"), {
       index: "index.html",
       dotfiles: "deny",
       cacheControl: false,
+      etag:false,
+      lastModified:false,
     }),
   );
   app.use(
@@ -100,6 +111,7 @@ function createApp(options = {}, {deliveryService} = {}) {
         state = await installationStatus(store);
       } catch (error) {
         if (!publicPage) throw error;
+        require('./delivery/response').noStore(res,{error:true});
         return res
           .status(503)
           .type("html")
@@ -108,6 +120,7 @@ function createApp(options = {}, {deliveryService} = {}) {
           );
       }
       if (state.state !== "installed") {
+        require('./delivery/response').noStore(res,{error:true});
         if (publicPage)
           return res
             .status(503)
@@ -221,11 +234,15 @@ function createApp(options = {}, {deliveryService} = {}) {
   app.use(["/api/projects", "/api/build"], requireAuth, (req, res) =>
     res.status(410).json({ error: "旧接口已停用，请使用 /admin" }),
   );
-  mountFrontend(app, store, options);
-  app.use((req, res) => res.status(404).json({ error: "未找到资源" }));
+  mountFrontend(app, store, options, {cas:deliveryService.cas});
+  app.use((req, res) => {
+    require('./delivery/response').noStore(res,{error:true});
+    res.status(404).json({ error: "未找到资源" });
+  });
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
     const { status, message } = publicError(err);
+    require('./delivery/response').noStore(res,{error:true});
     if (status === 500) console.error("[admin]", err.code || err.name);
     res.status(status).json({
       error: message,

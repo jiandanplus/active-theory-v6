@@ -6,7 +6,10 @@ const { glb } = require("./fixtures/model");
 test("HTTP workflow keeps drafts private and publishes uploaded converted models through engine aliases", async (t) => {
   const { httpFixture } = require("./helpers/http");
   const runtime=require('./helpers/runtime').testRuntime(t);
-  const serviceFactory=({store,options})=>require('../admin-server/delivery/service').createDeliveryService({store,options,registry:runtime.registry});
+  // This integration covers scene geometry overrides as well as package bytes.
+  // Its explicit test profile must project those fields into the built UIL.
+  const registry={get:id=>({...runtime.registry.get(id),transformUIL:snapshot=>({data:require('../admin-server/config').buildUIL(snapshot),report:[]})})};
+  const serviceFactory=({store,options})=>require('../admin-server/delivery/service').createDeliveryService({store,options,registry});
   const f = await httpFixture(t, { installed: false, serviceFactory });
   const bundle = structuredClone(f.bundle);
   bundle.admin = null;
@@ -31,6 +34,7 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
   const service=f.app.locals.deliveryService;
   const registered=await service.register({root:runtime.root,manifest:runtime.manifest,actor});
   await service.select({digest:registered.digest,expectedGeneration:0,actor});
+  await service.legacy({versionId:42,expectedGeneration:0,actor});
   const api = async (url, body, method = "POST") => {
     const response = await fetch(base + "/api/admin" + url, {
       method,

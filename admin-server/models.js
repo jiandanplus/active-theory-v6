@@ -147,13 +147,18 @@ function mountModels({ app, admin, store, options }) {
             !(await resourceRepository(store).isPublished(resource.id)))
         )
           throw fail(404, "模型不存在");
+        await require('./frontend-resources').assertLiveResource(store,resource);
+        await require('./frontend-resources').rejectTargetlessDocument(store,resource.id);
+        require('./delivery/response').noStore(res);
+        delete req.headers['if-none-match'];
+        delete req.headers['if-modified-since'];
         if (resource.source === "s3")
           return res.redirect(302, resource.publicUrl);
         const file = await localFile(
           path.join(options.dataDir, "uploads"),
           resource.key,
         );
-        res.type("application/octet-stream").sendFile(file);
+        res.type("application/octet-stream").sendFile(file,{cacheControl:false,etag:false,lastModified:false});
       } catch (error) {
         next(error);
       }

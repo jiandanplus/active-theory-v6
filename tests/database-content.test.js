@@ -30,7 +30,8 @@ test("database outage on public page is maintenance not a new installation", asy
 });
 
 test("after closing the old pool and restarting the published UIL needs no source JSON", async (t) => {
-  const f = await httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
+  await f.service.legacy({versionId:42,expectedGeneration:0,actor:f.actor});
   const oldStore = f.store;
   const before = await (await f.request("/api/site/42/uil.json")).json();
   fs.renameSync(
@@ -60,7 +61,8 @@ test("after closing the old pool and restarting the published UIL needs no sourc
 });
 
 test("version resource endpoints authorize snapshot references not filenames or draft inventory", async (t) => {
-  const f = await httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
+  await f.service.legacy({versionId:42,expectedGeneration:0,actor:f.actor});
   await f.store.query(
     "UPDATE personal_site.resources SET details=details || $1::jsonb WHERE id='image'",
     [JSON.stringify({ path: "assets/images/image.png" })],
@@ -97,7 +99,8 @@ test("version resource endpoints authorize snapshot references not filenames or 
   );
   assert.equal((await f.request("/assets/data/uil.fixture.json")).status, 404);
   assert.equal((await f.request("/assets/data/private.js")).status, 404);
-  assert.equal((await f.request("/assets/js/app.fixture.js")).status, 200);
+  assert.equal((await f.request("/assets/js/app.fixture.js")).status, 404);
+  assert.equal((await f.request("/api/site/42/runtime/app")).status, 200);
 });
 test("missing runtime code shows an explanatory page without launching partial 3D", async (t) => {
   const f = await httpFixture(t);
@@ -105,20 +108,23 @@ test("missing runtime code shows an explanatory page without launching partial 3
   const response = await f.request("/");
   assert.equal(response.status, 503);
   const html = await response.text();
+  assert.match(response.headers.get('content-type'),/text\/html/);
   assert.match(html, /缺少前台运行资源/);
   assert.doesNotMatch(html, /<script/);
 });
 
 test("version snapshots retain resource identity after a new published snapshot", async (t) => {
-  const f = await httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
+  await f.service.legacy({versionId:42,expectedGeneration:0,actor:f.actor});
   const snapshot = structuredClone(f.bundle.draft);
-  snapshot.assets.image.resourceId = "unused";
   snapshot.config.projects[0].video.url = "/media/unused";
   await f.store.transaction(async (tx) => {
     const repo = contentRepository(tx);
     assert.equal((await repo.insertVersion(snapshot)).id,43);
+    await tx.query("INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES(43,'legacy')");
     await repo.setPublished(43);
   });
+  await f.service.legacy({versionId:43,expectedGeneration:0,actor:f.actor});
   const old = await (await f.request("/api/site/42/config")).json();
   const next = await (await f.request("/api/site/43/config")).json();
   assert.equal(
@@ -276,7 +282,13 @@ test("expired preview and another owner cannot authorize resource bytes", async 
 });
 test("manifest is catalogued with frozen icon dependencies and HTML preserves navigation", async (t) => {
   const { inventoryResources } = require("../admin-server/resource-catalog");
-  const f = await httpFixture(t, { installed: false });
+  const runtime=require('./helpers/runtime').testRuntime(t);
+  const htmlSource='<html><head><link rel="manifest" href="assets/meta/manifest.json"><link rel="canonical" href="https://outside.test/page"></head><body>TEST_RUNTIME</body></html>';
+  fs.writeFileSync(path.join(runtime.root,'index.html'),htmlSource);
+  Object.assign(runtime.manifest.files.find(file=>file.key==='index'),{size:Buffer.byteLength(htmlSource),sha256:require('../admin-server/delivery/contracts').sha256(htmlSource)});
+  const serviceFactory=({store,options})=>require('../admin-server/delivery/service').createDeliveryService({store,options,registry:runtime.registry});
+  const options={origin:'http://localhost:3000'};
+  const f = await httpFixture(t, { installed: false,serviceFactory,options });
   fs.mkdirSync(path.join(f.root, "assets/meta"));
   fs.writeFileSync(
     path.join(f.root, "assets/meta/manifest.json"),
@@ -299,6 +311,7 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
   assert.ok(manifest, "manifest itself must be a database resource");
   assert.equal(manifest.document.icons[0].src, "assets/images/image.png");
   const bundle = structuredClone(f.bundle);
+  bundle.admin=null;
   bundle.resources.push(...catalog.resources);
   for (const snap of [bundle.draft, bundle.versions[0].snapshot]) {
     Object.assign(snap.assets, catalog.assets);
@@ -314,10 +327,25 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
       [require('../admin-server/migrations').currentSchemaVersion],
     );
   });
+  await f.createAdmin();const headers=await f.login();
+  const actor=(await f.store.query('SELECT id,username FROM personal_site.sessions')).rows[0];
+  const service=f.app.locals.deliveryService;
+  const registered=await service.register({root:runtime.root,manifest:runtime.manifest,actor});
+  await service.select({digest:registered.digest,expectedGeneration:0,actor});
+  // Target-less derived documents must not return their original raw source,
+  // including the imported legacy version before its delivery is built.
+  for(const alias of [`/media/${manifest.resourceId}`,`/models/${manifest.resourceId}.bin`,`/assets/geometry/admin/${manifest.resourceId}.bin`]) {
+    assert.equal((await f.request(alias,{headers})).status,404,alias);
+  }
+  await service.legacy({versionId:42,expectedGeneration:0,actor});
   const html = await (await f.request("/")).text();
   assert.match(html, /href="\/api\/site\/42\/resources\//);
   assert.match(html, /rel="canonical" href="http:\/\/localhost:3000\/"/);
   assert.doesNotMatch(html, /outside\.test/);
+  const pinned=await service.publish({revision:3,actor});
+  const preview=await service.preview({revision:3,actor});
+  assert.equal((await f.request(`/media/${manifest.resourceId}`,{headers})).status,404);
+  assert.equal((await f.request('/assets/meta/manifest.json',{headers})).status,404);
   fs.unlinkSync(path.join(f.root, "assets/meta/manifest.json"));
   const doc = await (
     await f.request(
@@ -326,4 +354,45 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
   ).json();
   assert.match(doc.icons[0].src, /^\/api\/site\/42\/resources\//);
   assert.equal((await f.request(doc.icons[0].src)).status, 200);
+  for(const alias of [`/media/${manifest.resourceId}`,`/models/${manifest.resourceId}.bin`,`/assets/geometry/admin/${manifest.resourceId}.bin`])assert.equal((await f.request(alias,{headers})).status,404,alias);
+  for(const target of [42,pinned,preview]) {
+    const route=`/api/site/${target}/resources/${manifest.resourceId}/decorative.json`;
+    const response=await f.request(route,{headers:{...headers,'If-None-Match':'*'}});
+    assert.equal(response.status,200);assert.equal(response.headers.get('etag'),null);
+    assert.equal(response.headers.get('cache-control'),target===preview?'private, no-store':'no-store');
+    assert.match((await response.json()).icons[0].src,new RegExp(`/api/site/${target}/resources/`));
+    if(target===preview)assert.equal((await f.request(route)).status,401);
+    for(const field of ['status','trashed']) {
+      await f.store.query(`UPDATE personal_site.resources SET ${field}=$1 WHERE id=$2`,[field==='status'?'disabled':true,manifest.resourceId]);
+      assert.equal((await f.request(route,{headers:{...headers,'If-None-Match':'*'}})).status,404);
+      await f.store.query(`UPDATE personal_site.resources SET ${field}=$1 WHERE id=$2`,[field==='status'?'ready':false,manifest.resourceId]);
+    }
+    const binding=await require('../admin-server/repositories/deliveries').deliveryRepository(f.store).getBinding({type:target===preview?'preview':'version',id:String(target)});
+    const artifact=await require('../admin-server/repositories/deliveries').deliveryRepository(f.store).getArtifact(binding.artifactDigest);
+    const entry=artifact.manifest.files.find(file=>file.key===artifact.manifest.documents[manifest.resourceId]);
+    const objectPath=path.join(f.root,'data/delivery/objects',entry.sha256),bytes=fs.readFileSync(objectPath);
+    fs.writeFileSync(objectPath,Buffer.alloc(bytes.length));
+    assert.equal((await f.request(route,{headers:{...headers,'If-None-Match':`"${entry.sha256}"`}})).status,503);
+    fs.writeFileSync(objectPath,bytes);
+    // Neither runtime selectors nor arbitrary endpoint names may expose documents.
+    assert.equal((await f.request(`/api/site/${target}/runtime/${entry.key}`,{headers})).status,404);
+    assert.equal((await f.request(`/api/site/${target}/${entry.key}`,{headers})).status,404);
+  }
+  const ordinary=Object.values(catalog.assets).find(asset=>asset.url==='assets/fonts/font.json');
+  assert(ordinary&&!ordinary.document,'font geometry JSON is ordinary media, not a derived document');
+  const ordinaryResponse=await f.request(`/media/${ordinary.resourceId}`,{headers});
+  assert.equal(ordinaryResponse.status,200);
+  assert.deepEqual(await ordinaryResponse.json(),JSON.parse(fs.readFileSync(path.join(f.root,'assets/fonts/font.json'),'utf8')));
+  const documentRoutes=[42,pinned,preview].map(target=>`/api/site/${target}/resources/${manifest.resourceId}/x.json`);
+  options.origin='https://changed.test';await f.restart();
+  for(const route of documentRoutes)assert.equal((await f.request(route,{headers:{...headers,'If-None-Match':'*'}})).status,503);
+  options.origin='http://localhost:3000';await f.restart();
+  await f.store.query('UPDATE personal_site.previews SET expires=$1 WHERE id=$2',[new Date(Date.now()-1000),preview]);
+  assert.equal((await f.request(documentRoutes[2],{headers:{...headers,'If-None-Match':'*'}})).status,404);
+  assert.equal((await f.store.query('SELECT id FROM personal_site.previews WHERE id=$1',[preview])).rowCount,1);
+  await f.store.query('ALTER TABLE personal_site.installation RENAME TO unavailable_installation');
+  for(const route of documentRoutes) {
+    const response=await f.request(route,{headers:{...headers,'If-None-Match':'*'}});
+    assert.equal(response.status,503);assert.equal(response.headers.get('etag'),null);assert.match(response.headers.get('cache-control'),/no-store/);
+  }
 });

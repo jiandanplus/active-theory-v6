@@ -417,6 +417,9 @@ function mountResources({ app, admin, store, options }) {
       )
         throw S.fail("资源不存在", 404);
       res.set("X-Content-Type-Options", "nosniff");
+      await require('./frontend-resources').assertLiveResource(store,r);
+      await require('./frontend-resources').rejectTargetlessDocument(store,r.id);
+      require('./delivery/response').noStore(res);
       if (r.source === "external")
         return res.redirect(302, S.externalUrl(r.url));
       if (r.source === "s3")
@@ -446,6 +449,7 @@ function mountResources({ app, admin, store, options }) {
           if (!m || (!m[1] && !m[2]))
             return res
               .status(416)
+              .set('X-Robots-Tag','noindex, nofollow')
               .set("Content-Range", `bytes */${size}`)
               .end();
           if (!m[1]) start = Math.max(0, size - Number(m[2]));
@@ -456,6 +460,7 @@ function mountResources({ app, admin, store, options }) {
           if (start > end || start >= size)
             return res
               .status(416)
+              .set('X-Robots-Tag','noindex, nofollow')
               .set("Content-Range", `bytes */${size}`)
               .end();
           res.status(206).set("Content-Range", `bytes ${start}-${end}/${size}`);

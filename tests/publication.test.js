@@ -127,12 +127,18 @@ test("preview is owned, expires after thirty minutes, prunes references and keep
   await f.store.query(
     "UPDATE personal_site.previews SET expires=now()-interval '1 second'",
   );
+  const refsBefore=(await f.store.query("SELECT * FROM personal_site.resource_references WHERE owner_type='preview' ORDER BY owner_id,resource_id,slot")).rows;
   assert.equal((await f.request(url)).status, 401);
   assert.equal((await f.request(url, { headers })).status, 404);
+  assert.deepEqual((await f.store.query("SELECT * FROM personal_site.resource_references WHERE owner_type='preview' ORDER BY owner_id,resource_id,slot")).rows,refsBefore);
+  assert.equal((await f.store.query('SELECT id FROM personal_site.previews')).rowCount,5);
+  const cleanup=await f.request('/api/admin/preview',{method:'POST',headers,body:JSON.stringify({revision:3})});
+  assert.equal(cleanup.status,200);
+  assert.equal((await f.store.query('SELECT id FROM personal_site.previews')).rowCount,1);
   assert.equal(
     (
       await f.store.query(
-        "SELECT * FROM personal_site.resource_references WHERE owner_type='preview'",
+        "SELECT * FROM personal_site.resource_references WHERE owner_type='preview' AND owner_id=ANY($1::text[])",[rows.map(row=>row.id)],
       )
     ).rowCount,
     0,

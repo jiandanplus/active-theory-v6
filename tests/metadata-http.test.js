@@ -4,7 +4,7 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {httpFixture}=require('./helpers/http');
 test('server identity ignores hostile host/query and unknown projects are 404',async t=>{
-  const f=await httpFixture(t);
+  const f=await require('./helpers/delivery').deliveryFixture(t,{publish:true});
   const response=await f.request('/work/one?source=https://evil.example',{headers:{Host:'evil.example'}});
   assert.equal(response.status,200);
   const html=await response.text();
@@ -43,7 +43,7 @@ test('preview dependencies and failures remain authenticated and private',async 
   const id=await require('../admin-server/config').createPreview(f.store,draft.revision,{root:f.root,dataDir:f.root+'/data'},actor,{deliveryService:f.app.locals.deliveryService});
   for(const endpoint of [`/?preview=${id}`,`/api/site/${id}/config`,`/api/site/${id}/bridge.js`,`/api/site/${id}/app.js`,`/api/site/${id}/compiled.vs`,`/api/site/${id}/unsupported.html`,`/api/site/${id}/resources/image/image.png`,`/assets/js/app.fixture.js?preview=${id}`,'/admin/','/api/setup/status']) {
     const response=await f.request(endpoint,{headers});
-    assert.equal(response.status,/\/api\/site\/[^/]+\/(?:app\.js|compiled\.vs)$/.test(endpoint)?422:200,endpoint);
+    assert.equal(response.status,endpoint.startsWith('/assets/js/')?404:200,endpoint);
     assert.equal(response.headers.get('cache-control'),'private, no-store',endpoint);
     assert.match(response.headers.get('x-robots-tag'),/noindex/);
   }
@@ -71,7 +71,11 @@ test('preview dependencies and failures remain authenticated and private',async 
   }
 });
 test('unsupported relative CSS media retain target authorization and live resource status',async t=>{
-  const f=await httpFixture(t); await f.createAdmin(); const headers=await f.login();
+  const runtime=require('./helpers/runtime').testRuntime(t);
+  const unsupported=`<html><head><style>@font-face{src:url('./assets/fonts/fixture.woff2')}body{background-image:url('./assets/images/unsupported-bg.jpg')}</style></head></html>`;
+  fs.writeFileSync(path.join(runtime.root,'unsupported.html'),unsupported);
+  Object.assign(runtime.manifest.files.find(file=>file.key==='unsupported'),{size:Buffer.byteLength(unsupported),sha256:require('../admin-server/delivery/contracts').sha256(unsupported)});
+  const f=await require('./helpers/delivery').deliveryFixture(t,{runtime}); const headers=f.headers;
   const snapshot=structuredClone(f.bundle.draft);
   snapshot.legacyMap['assets/fonts/fixture.woff2']='font';
   snapshot.legacyMap['assets/images/unsupported-bg.jpg']='image';
@@ -79,10 +83,10 @@ test('unsupported relative CSS media retain target authorization and live resour
   fs.writeFileSync(path.join(f.root,'unsupported.html'),`<style>@font-face{src:url('./assets/fonts/fixture.woff2')}body{background-image:url('./assets/images/unsupported-bg.jpg')}</style>`);
   for(const [id,assetPath] of [['font','assets/fonts/fixture.woff2'],['image','assets/images/image.png']])
     await f.store.query('UPDATE personal_site.resources SET details=details || $1::jsonb WHERE id=$2',[JSON.stringify({path:assetPath}),id]);
-  const id='preview-unsupported';
-  await require('../admin-server/repositories/content').contentRepository(f.store).insertPreview({id,owner:'owner',expires:new Date(Date.now()+60000),snapshot,
-    references:require('../admin-server/snapshots').collectReferences(snapshot)});
+  await f.store.query('UPDATE personal_site.templates SET content=$1::jsonb',[JSON.stringify({template:snapshot.template,assets:snapshot.assets,legacyMap:snapshot.legacyMap})]);
+  const id=await f.service.preview({revision:3,actor:f.actor});
   await f.store.query('UPDATE personal_site.versions SET snapshot=$1::jsonb WHERE id=42',[JSON.stringify(snapshot)]);
+  await f.service.legacy({versionId:42,expectedGeneration:0,actor:f.actor});
   for(const target of ['42',id]) {
     const response=await f.request(`/api/site/${target}/unsupported.html`,{headers});
     assert.equal(response.status,200);
@@ -102,8 +106,16 @@ test('unsupported relative CSS media retain target authorization and live resour
     await f.store.query("UPDATE personal_site.resources SET status='ready' WHERE id='font'");
   }
   fs.writeFileSync(path.join(f.root,'unsupported.html'),`<style>body{background:url('./assets/unmapped.png')}</style>`);
-  const rejected=await f.request(`/api/site/${id}/unsupported.html`,{headers});
-  assert.equal(rejected.status,422);
-  assert.equal(rejected.headers.get('cache-control'),'private, no-store');
-  assert.match(rejected.headers.get('x-robots-tag'),/noindex/);
+  const frozen=await f.request(`/api/site/${id}/unsupported.html`,{headers});
+  assert.equal(frozen.status,200);
+  assert.doesNotMatch(await frozen.text(),/unmapped/);
+  assert.equal(frozen.headers.get('cache-control'),'private, no-store');
+  assert.match(frozen.headers.get('x-robots-tag'),/noindex/);
+  // Unmapped input is rejected at build time, never reparsed during a read.
+  const bad=Buffer.from('<html><head><style>body{background:url("./assets/unmapped.png")}</style></head></html>');
+  fs.writeFileSync(path.join(runtime.root,'unsupported.html'),bad);
+  Object.assign(runtime.manifest.files.find(file=>file.key==='unsupported'),{size:bad.length,sha256:require('../admin-server/delivery/contracts').sha256(bad)});
+  const registered=await f.service.register({root:runtime.root,manifest:runtime.manifest,actor:f.actor});
+  await f.service.select({digest:registered.digest,expectedGeneration:1,actor:f.actor});
+  await assert.rejects(f.service.preview({revision:3,actor:f.actor}),error=>error.status===422);
 });
