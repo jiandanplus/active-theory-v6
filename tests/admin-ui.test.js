@@ -231,7 +231,7 @@ test('runtime choice serializes pending selection and leaves unsaved draft untou
   let release,posts=0,choice,notices=[];
   const pending=new Promise(resolve=>release=resolve);
   const p={replaceChildren(){},append(){}};
-  const context={state,api:async path=>{if(path==='/runtime/selection'){posts++;return pending;}return {selection:{digest:b,generation:2},bundles:[bundle(a),bundle(b)]};},
+  const context={state,runtimeRequestSequence:0,api:async path=>{if(path==='/runtime/selection'){posts++;return pending;}return {selection:{digest:b,generation:2},bundles:[bundle(a),bundle(b)]};},
     updateStatus(){},node:()=>({}),field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},focus(){}};},
     empty(){},notify:message=>notices.push(message),run:async action=>{try{await action();}catch(e){notices.push(e.message);}}};
   const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
@@ -294,4 +294,90 @@ test('unselected runtime explains server registration before preview POST',async
   vm.runInNewContext(helpers+actions+'\nthis.previewAction=preview;',context);
   await assert.rejects(context.previewAction(),/服务器.*运行包/);
   assert.equal(posts,0);
+});
+
+function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
+function tick(){return new Promise(resolve=>setImmediate(resolve));}
+test('older overview runtime GET cannot replace a newer selection or redraw its old panel',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const a='a'.repeat(64),b='b'.repeat(64),bundles=[a,b].map(digest=>({digest,profileId:'fixture',files:1,bytes:12,registeredAt:'2026-01-01T00:00:00Z'}));
+  const pending=[deferred(),deferred(),deferred(),deferred()];let reads=0,selectionBody,choice;
+  const elements=[];
+  const node=(tag,text)=>({tag,textContent:text||'',children:[],dataset:{},isConnected:true,classList:{add(){}},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},scrollIntoView(){},focus(){}});
+  const state={config:{projects:[]},section:'overview',overview:{},storages:[],revision:8,dirty:true,busy:false,sessionEpoch:0,runtime:{selection:{digest:a,generation:1},bundles}};
+  const content=node('main');
+  const context={state,content,node,window:{},document:{querySelectorAll:()=>[]},saveStatus:null,runtimeRequestSequence:0,
+    api:async(path,method,body)=>{if(path==='/overview')return {published:1,resources:0,defaultStorage:'local',masterKeyConfigured:true,audit:[]};if(path==='/runtime')return pending[reads++].promise;if(path==='/runtime/selection'){selectionBody=body;return {digest:body.digest,generation:body.generation+1};}throw Error(path);},
+    heading(){},panel:(parent,title)=>{const p=node('section');p.title=title;parent.append(p);elements.push(p);return p;},
+    field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},disabled:false,focus(){}};},empty(){},warning(){},notify(){},run:async action=>{await action();}};
+  const helpers=source.slice(source.indexOf('  function updateStatus()'),source.indexOf('  window.addEventListener'));
+  const overview=source.slice(source.indexOf('  async function overviewView()'),source.indexOf('  function siteView('));
+  vm.runInNewContext(helpers+overview+'\nthis.actions={overviewView,refreshRuntime};',context);
+  const oldView=context.actions.overviewView();await tick();
+  state.section='site';state.section='overview';
+  const newView=context.actions.overviewView();await tick();
+  pending[1].resolve({selection:{digest:a,generation:1},bundles});await newView;
+  const oldPanel=elements[0],newPanel=elements.find(p=>p!==oldPanel&&p.title==='运行包');
+  const oldChildren=oldPanel.children;
+  choice(b);await tick();
+  pending[2].resolve({selection:{digest:b,generation:2},bundles});await tick();
+  assert.equal(state.runtime.selection.generation,2);
+  pending[0].resolve({selection:{digest:null,generation:0},bundles});await oldView;
+  assert.equal(state.runtime.selection.digest,b);
+  assert.equal(state.runtime.selection.generation,2);
+  assert.strictEqual(oldPanel.children,oldChildren);
+  assert.match(newPanel.children.map(x=>x.textContent).join(' '),/当前：bbbbbbbbbbbb/);
+  choice(a);await tick();
+  assert.equal(selectionBody.generation,2);
+  pending[3].resolve({selection:{digest:a,generation:3},bundles});await tick();
+});
+test('runtime GET begun before logout cannot enter the next session',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const pending=deferred(),old='a'.repeat(64),state={sessionEpoch:0,config:{},runtime:{selection:{digest:old,generation:4},bundles:[]}};
+  const helpers=source.slice(source.indexOf('  function validRevision('),source.indexOf('  window.addEventListener'));
+  const context={state,runtimeRequestSequence:0,api:async()=>pending.promise};
+  vm.runInNewContext(helpers+'\nthis.refresh=refreshRuntime;',context);
+  const request=context.refresh();state.sessionEpoch++;state.config=null;
+  pending.resolve({selection:{digest:null,generation:0},bundles:[]});await request;
+  assert.equal(state.runtime.selection.digest,old);
+  assert.equal(state.runtime.selection.generation,4);
+});
+test('failed or uncertain preview restores real busy controls while logout remains available',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  for(const outcome of ['reject','uncertain']){
+  const pending=deferred(),controls=[],notices=[];let logoutClicks=0;
+  const state={busy:false,dirty:false,revision:3,sessionEpoch:0,section:'site',runtime:{selection:{digest:'a'.repeat(64),generation:1}},config:{}};
+  const node=(tag,text)=>({tag,textContent:text||'',dataset:{},listeners:{},disabled:false,addEventListener(event,fn){this.listeners[event]=fn;},replaceChildren(){},append(){}});
+  const context={state,node,saveStatus:node('div'),document:{querySelectorAll:()=>controls},api:async()=>pending.promise,
+    notify:(message,error)=>notices.push({message,error}),panel:()=>node('section'),content:node('main'),window:{open(){}}};
+  const parts=[source.slice(source.indexOf('  function button('),source.indexOf('  function notify(')),source.slice(source.indexOf('  async function run('),source.indexOf('  async function api(')),source.slice(source.indexOf('  function updateStatus()'),source.indexOf('  window.addEventListener')),source.slice(source.indexOf('  async function save()'),source.indexOf('  async function render()'))];
+  vm.runInNewContext(parts.join('\n')+'\nthis.makeButton=button;this.actions={preview,publish};',context);
+  const preview=context.makeButton('预览',context.actions.preview,undefined,true),publish=context.makeButton('发布',context.actions.publish,undefined,true),logout=context.makeButton('退出',()=>{logoutClicks++;});
+  controls.push(preview,publish);
+  preview.listeners.click();await tick();
+  assert.equal(state.busy,true,JSON.stringify(notices));assert.equal(preview.disabled,true);assert.equal(publish.disabled,true);assert.equal(logout.disabled,false);
+  logout.listeners.click();await tick();assert.equal(logoutClicks,1);
+  if(outcome==='reject')pending.reject(new Error('network uncertain'));
+  else pending.resolve({url:'malformed-success'});
+  await tick();
+  assert.equal(state.busy,false);assert.equal(preview.disabled,false);assert.equal(publish.disabled,false);assert.equal(logout.disabled,false);
+  assert.equal(notices.at(-1).error,true);
+  assert.match(notices.at(-1).message,outcome==='reject'?/network uncertain/:/响应无效.*不要自动重试/);
+  }
+});
+test('publish rechecks selection and busy state after pending confirmation',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
+  const actions=source.slice(source.indexOf('  async function save()'),source.indexOf('  async function render()'));
+  for(const change of ['selection','busy']){
+    const pending=deferred(),state={busy:false,dirty:false,revision:3,sessionEpoch:0,runtime:{selection:{digest:'a'.repeat(64),generation:1}},config:{}};
+    let posts=0;
+    const context={state,confirmAction:()=>pending.promise,api:async()=>{posts++;},updateStatus(){}};
+    vm.runInNewContext(helpers+actions+'\nthis.publishAction=publish;',context);
+    const request=context.publishAction();await tick();
+    if(change==='selection')state.runtime.selection={digest:'b'.repeat(64),generation:2};else state.busy=true;
+    pending.resolve(true);
+    await assert.rejects(request,/运行包选择已变化|正在处理/);
+    assert.equal(posts,0);
+  }
 });

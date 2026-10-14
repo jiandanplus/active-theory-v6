@@ -91,7 +91,7 @@ function startAdmin() {
     emailLink: "联系邮箱",
     labUrl: "实验室链接",
   };
-  let content, saveStatus, noticeTimer;
+  let content, saveStatus, noticeTimer, runtimeRequestSequence = 0;
   function node(tag, text, cls) {
     const el = document.createElement(tag);
     if (text !== undefined) el.textContent = text;
@@ -216,10 +216,12 @@ function startAdmin() {
   function validRuntime(value){return value&&value.selection&&validRevision(value.selection.generation)&&
     (value.selection.digest===null||/^[a-f0-9]{64}$/.test(value.selection.digest))&&Array.isArray(value.bundles);}
   async function refreshRuntime(){
+    const sequence=++runtimeRequestSequence,epoch=state.sessionEpoch;
     const result=await api('/runtime');
+    if(sequence!==runtimeRequestSequence||epoch!==state.sessionEpoch)return false;
     if(!validRuntime(result))throw new Error('运行包状态响应无效');
     state.runtime=result;
-    return result;
+    return true;
   }
   window.addEventListener("beforeunload", (event) => {
     if (state.dirty) {
@@ -310,6 +312,7 @@ function startAdmin() {
     parent.append(row);
   }
   async function load() {
+    runtimeRequestSequence++;
     const [cfg, res, stores, overview] = await Promise.all([
       api("/config"),
       api("/resources"),
@@ -547,7 +550,7 @@ function startAdmin() {
     state.overview = o;
     heading("网站总览", "从内容到发布，在这里管理每一个细节。");
     const runtimePanel=panel(content,'运行包');
-    await refreshRuntime();
+    if(!await refreshRuntime()||state.section!=='overview'||!runtimePanel.isConnected)return;
     showRuntimePanel(runtimePanel);
     const metrics = node("div", undefined, "metrics");
     for (const [label, value, note] of [
@@ -624,6 +627,7 @@ function startAdmin() {
       run(async()=>{
         if(state.busy)throw new Error('正在处理，请稍后');
         const epoch=state.sessionEpoch;
+        let refreshed=false;
         try {
           await building(async()=>{
             let result;
@@ -632,13 +636,13 @@ function startAdmin() {
             if(epoch!==state.sessionEpoch)return;
             if(result?.digest!==value||!validRevision(result.generation))
               throw new Error('选择响应无效，结果可能已生效；请刷新运行包状态核对，不要自动重试');
-            await refreshRuntime();
+            refreshed=await refreshRuntime();
           });
         } catch(error) {
-          if(epoch===state.sessionEpoch)showRuntimePanel(p,true);
+          if(epoch===state.sessionEpoch&&p.isConnected)showRuntimePanel(p,true);
           throw error;
         }
-        if(epoch!==state.sessionEpoch)return;
+        if(epoch!==state.sessionEpoch||!refreshed||!p.isConnected)return;
         showRuntimePanel(p,true);
         notify('运行包选择已更新，仅影响之后的预览与发布。');
       });
