@@ -61,6 +61,11 @@ function applyAppPatch(id,source,config) {
 }
 function patchAppSource(source,config,contract) {
   if(!config || !config.site || !Array.isArray(config.songs))throw incompatible('app.config');
+  for(const name of ['Hydra','Assets'])classBody(source,name,code=>code);
+  const starts=[...source.matchAll(/\bclass GLUIText\s*\{/g)];
+  if(starts.length!==1)throw incompatible('gluitext.class');
+  const end=source.indexOf('Class((function GLUIStage(',starts[0].index);
+  if(end<0||(source.slice(starts[0].index,end).match(/async setText\(text, options\)/g)||[]).length!==1)throw incompatible('gluitext.class');
   const report=[];
   for(const rule of appRules(config)){const result=applyRule(source,rule);source=result.source;report.push(result.report);}
   classBody(source,'ViewController',code=>{if(/document\.title\s*=/.test(code))throw incompatible('view.identity');return code;});
@@ -128,4 +133,8 @@ function patchUIL(snapshot) {
   return {data,report};
 }
 function buildUIL(snapshot) { return patchUIL(snapshot).data; }
-module.exports={applyAppPatch,patchAppSource,patchShaders,patchUIL,buildUIL};
+function patchContracts() {
+  return [...appRules({site:{},songs:[]}).map(({id,count})=>({id,expected:count})),
+    ...[['shader.logo-time',6],['shader.logo-size-large',2],['shader.logo-size-small',1],['shader.logo-emission',1],['shader.logo-color',1]].map(([id,expected])=>({id,expected}))];
+}
+module.exports={applyAppPatch,patchAppSource,patchShaders,patchUIL,buildUIL,patchContracts};

@@ -128,6 +128,11 @@ test('unsupported CSS maps relative font and background only through frozen refe
   }
   for(const source of [html,`<style>body{background:url('./assets/missing.png')}</style>`,`<style>body{background:url('./assets/../secret.png')}</style>`])
     assert.throws(()=>renderUnsupportedHTML({html:source,snapshot,target:{id:'42'},references:[]}),error=>error.status===422);
+  const traversalSnapshot={...snapshot,legacyMap:{...snapshot.legacyMap,'assets/../secret.png':'bg'}};
+  assert.throws(()=>renderUnsupportedHTML({
+    html:`<style>body{background:url('./assets/../secret.png')}</style>`,
+    snapshot:traversalSnapshot,target:{id:'42'},references,
+  }),error=>error.status===422);
   const external=`<style>body{background:url('https://external.test/assets/image.png')}</style>`;
   assert.equal(renderUnsupportedHTML({html:external,snapshot,target:{id:'42'},references:[]}).source,external);
 });

@@ -4,6 +4,7 @@ const {fail}=require('../security');
 const {pageMetadata}=require('../../shared/site-identity');
 const {renderPageMetadata}=require('../page-metadata');
 const {exactReplace}=require('./patches');
+const {programBridgeSource}=require('./program-paths');
 const quote=value=>JSON.stringify(value??'');
 function identityBridgeSource(config,origin,preview) {
   return `const identityConfig=${quote(config)},identityOrigin=${quote(origin)};
@@ -32,7 +33,7 @@ function bridgeSource(
         mapResourceURL(snapshot, version, alias).split(/[?#]/)[0],
       ]),
   );
-  return `(()=>{const base=${quote(`/api/site/${version}`)}, mappings=${quote(mappings)};
+  return (Object.keys(programs).length?programBridgeSource(programs)+'\n':'')+`(()=>{const base=${quote(`/api/site/${version}`)}, mappings=${quote(mappings)};
     function map(value){try{if(typeof value!=='string')return value;const u=new URL(value.replace(/^~/,''),location.origin+'/');if(u.pathname.includes('/api/site/'))return value;
       let key=/^https?:\\/\\//i.test(value)&&Object.hasOwn(mappings,value)?value:u.origin===location.origin?decodeURIComponent(u.pathname).replace(/^\\//,''):value;
       if(Object.hasOwn(mappings,key))return mappings[key]+(/\\.ktx2?$/i.test(mappings[key])?u.search:u.search.replace(/-compressedKtx2?/g,''))+u.hash;
@@ -82,6 +83,11 @@ function renderHTML({html,snapshot,target,origin,programs={},pathname='/'}) {
     {id:'html.app-startup',find:'s = "assets/js/app." + window._CACHE_ + ".js"',replace:`s = "/api/site/${id}/app.js"`,count:1},
     {id:'html.unsupported-startup',find:'window._UNSUPPORTED_PAGE_ = "unsupported.html"',replace:`window._UNSUPPORTED_PAGE_ = "/api/site/${id}/unsupported.html"`,count:1},
   ]){const result=exactReplace(html,rule);html=result.source;report.push(result.report);}
+  if(Object.keys(programs).length){
+    const result=exactReplace(html,{id:'html.capability-guard',find:'try { eval("let obj = {}; obj?.prop") }',
+      replace:'if (typeof window.WebAssembly !== "object" || typeof window.Worker !== "function" || !(function(){try { var c = document.createElement("canvas"); return c.getContext("webgl2") || c.getContext("webgl") || c.getContext("experimental-webgl"); } catch(e) { return false; }})()) { window.location.replace(window._UNSUPPORTED_PAGE_); return; } try { eval("let obj = {}; obj?.prop") }',count:1});
+    html=result.source;report.push(result.report);
+  }
   const identity=exactReplace(html,{id:'html.identity-bridge',find:/<head\b[^>]*>/i,replace:head=>head+`<script src="/api/site/${id}/identity.js"></script><script src="/api/site/${id}/bridge.js"></script>`,count:1});
   html=identity.source;report.push(identity.report);
   html=renderPageMetadata(html,pageMetadata(snapshot.config,origin,pathname),{preview:target.type==='preview'});
