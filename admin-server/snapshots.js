@@ -14,13 +14,13 @@ const SITE_KEYS = [
 ];
 // Deleted means SceneLayout skips construction; invisible layers still load.
 // Explicit dormant layouts come from the checked-in runtime scene manifest.
-function inactiveUIL(template, key) {
+function inactiveUIL(template, key, policy = {inactiveLayouts: require('./engine-assets.json').inactiveLayouts || []}) {
   const match = /(?:Config|Element)_(\d+)_([A-Za-z][A-Za-z0-9]*)/.exec(key);
   if (!match) return false;
   const [, index, scene] = match;
   return (
     template.baseUIL?.[`sl_${scene}_${index}_deleted`] === true ||
-    require("./engine-assets.json").inactiveLayouts?.includes(scene) === true
+    policy.inactiveLayouts.includes(scene)
   );
 }
 function canonicalResourceURL(value) {
@@ -108,7 +108,7 @@ function composeSnapshot({ config, template, assets = {}, legacyMap = {} }) {
     legacyMap,
   });
 }
-function collectReferences(snapshot) {
+function collectReferences(snapshot, policy) {
   const result = new Map();
   const assets = snapshot.assets || {};
   const aliases = new Map(
@@ -171,12 +171,12 @@ function collectReferences(snapshot) {
   };
   const template = structuredClone(snapshot.template);
   for (const key of Object.keys(template.baseUIL || {}))
-    if (inactiveUIL(template, key)) delete template.baseUIL[key];
+    if (inactiveUIL(template, key, policy)) delete template.baseUIL[key];
   for (const scene of snapshot.config.scenes || [])
     for (const field of scene.fields || [])
       if (
         !field.key.startsWith("__") &&
-        !inactiveUIL(snapshot.template, field.key)
+        !inactiveUIL(snapshot.template, field.key, policy)
       ) {
         if (["resource", "geometry"].includes(field.type)) {
           if (template.baseUIL[field.key]?.src !== field.value)
@@ -195,7 +195,7 @@ function collectReferences(snapshot) {
     for (const [j, field] of scene.fields.entries())
       if (
         ["resource", "geometry"].includes(field.type) &&
-        !inactiveUIL(snapshot.template, field.key)
+        !inactiveUIL(snapshot.template, field.key, policy)
       )
         resolve(field.value, `config.scenes.${i}.fields.${j}.value`);
   for (const [i, song] of snapshot.config.songs.entries())
@@ -211,10 +211,7 @@ function collectReferences(snapshot) {
   delete template.readiness;
   delete template.fontCoverage;
   walk(template, "template");
-  return [...result.values()].sort(
-    (a, b) =>
-      a.resourceId.localeCompare(b.resourceId) || a.slot.localeCompare(b.slot),
-  );
+  return require('./delivery/contracts').normalizeReferences([...result.values()]);
 }
 function publicSnapshot(snapshot, versionId) {
   const { config } = snapshot;
@@ -244,8 +241,7 @@ function publicSnapshot(snapshot, versionId) {
       ),
     })),
     scenes: config.scenes.map((s) => ({
-      id: s.id,
-      label: s.label,
+      ...pick(s, ['id', 'label']),
       fields: s.fields.map((f) => pick(f, ["key", "label", "type", "value"])),
     })),
     songs: config.songs.map((s) => pick(s, ["title", "src"])),

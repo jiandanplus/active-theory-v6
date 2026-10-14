@@ -51,7 +51,10 @@ function bridgeSource(
   })();`;
 }
 function versionedUIL(snapshot, id) {
-  const data = buildUIL(snapshot);
+  return mapUIL(snapshot, id, buildUIL(snapshot));
+}
+function mapUIL(snapshot, id, data) {
+  data = structuredClone(data);
   for (const [key, value] of Object.entries(data)) {
     if (!value || typeof value !== "object" || typeof value.src !== "string")
       continue;
@@ -75,8 +78,9 @@ function versionedUIL(snapshot, id) {
   }
   return data;
 }
-function renderHTML({html,snapshot,target,origin,programs={},pathname='/'}) {
+function renderHTML({html,snapshot,target,origin,programs={},pathname='/',inputPath,references}) {
   const id=target.id,report=[];
+  if(inputPath)html=require('../delivery/projection').runtimeMedia(html,{path:inputPath,role:'html'},snapshot,target,references);
   html=html.replace(/(<link\b[^>]*\bhref=["'])([^"']+)(["'][^>]*>)/gi,(all,start,url,end)=>/\brel=["'][^"']*(?:icon|manifest)/i.test(all)?start+mapResourceURL(snapshot,id,url)+end:all);
   html=html.replace(/url\(\s*(["']?)([^"')]+)\1\s*\)/g,(all,q,url)=>/\.(?:woff2?|ttf|otf)(?:[?#]|$)/i.test(url)?`url(${q}${mapResourceURL(snapshot,id,url)}${q})`:all);
   for(const rule of [
@@ -93,7 +97,8 @@ function renderHTML({html,snapshot,target,origin,programs={},pathname='/'}) {
   html=renderPageMetadata(html,pageMetadata(snapshot.config,origin,pathname),{preview:target.type==='preview'});
   return {source:html,report};
 }
-function renderUnsupportedHTML({html,snapshot,target,references=[]}) {
+function renderUnsupportedHTML({html,snapshot,target,references=[],inputPath}) {
+  if(inputPath)html=require('../delivery/projection').runtimeMedia(html,{path:inputPath,role:'html'},snapshot,target,references);
   const allowed=new Set(references.map(reference=>reference.resourceId));
   // Only CSS media URLs are rewritten: navigation and program links are not
   // resource grants. Normalize the legacy document's single ./ prefix only.
@@ -111,4 +116,4 @@ function renderUnsupportedHTML({html,snapshot,target,references=[]}) {
   });
   return {source,report:[]};
 }
-module.exports={bridgeSource,identityBridgeSource,versionedUIL,renderHTML,renderUnsupportedHTML};
+module.exports={bridgeSource,identityBridgeSource,versionedUIL,mapUIL,renderHTML,renderUnsupportedHTML};

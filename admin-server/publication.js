@@ -20,20 +20,20 @@ function resourceId(snapshot, url) {
 }
 
 // Database-only checks are repeated under the site lock after file validation.
-async function checkPublicationState(store, snapshot) {
+async function checkPublicationState(store, snapshot, {references, geometryIds, policy} = {}) {
   const resources = resourceRepository(store),
     storages = storageRepository(store);
   const geometry = new Set(
-    snapshot.config.scenes
+    geometryIds ?? snapshot.config.scenes
       .flatMap((s) => s.fields)
       .filter(
-        (f) => f.type === "geometry" && !inactiveUIL(snapshot.template, f.key),
+        (f) => f.type === "geometry" && !inactiveUIL(snapshot.template, f.key, policy),
       )
       .map((f) => resourceId(snapshot, f.value)),
   );
   const rows = [];
   for (const id of [
-    ...new Set(collectReferences(snapshot).map((r) => r.resourceId)),
+    ...new Set((references ?? collectReferences(snapshot, policy)).map((r) => r.resourceId)),
   ].sort()) {
     const row = await resources.get(id);
     if (
@@ -61,8 +61,8 @@ async function checkPublicationState(store, snapshot) {
   return rows;
 }
 
-async function validatePublication(store, options = {}, snapshot) {
-  const rows = await checkPublicationState(store, snapshot),
+async function validatePublication(store, options = {}, snapshot, context) {
+  const rows = await checkPublicationState(store, snapshot, context),
     warnings = new Set();
   const media = [snapshot.config.site?.socialImage].filter(Boolean);
   for (const p of snapshot.config.projects)
@@ -73,7 +73,7 @@ async function validatePublication(store, options = {}, snapshot) {
     for (const field of scene.fields)
       if (
         ["geometry", "resource"].includes(field.type) &&
-        !inactiveUIL(snapshot.template, field.key)
+        !inactiveUIL(snapshot.template, field.key, context?.policy)
       )
         media.push(field.value);
   media.push(...snapshot.config.songs.map((s) => s.src));
@@ -123,7 +123,7 @@ async function validatePublication(store, options = {}, snapshot) {
       if (
         field.type !== "text" ||
         field.value === uil[field.key] ||
-        inactiveUIL(snapshot.template, field.key)
+        inactiveUIL(snapshot.template, field.key, context?.policy)
       )
         continue;
       const name = uil[field.key.replace(/_text$/, "_fontStyle")]?.match?.(
