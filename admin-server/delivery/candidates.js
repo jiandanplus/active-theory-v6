@@ -5,7 +5,7 @@ const {runtimeRepository}=require('../repositories/runtime');
 const {authRepository}=require('../repositories/auth');
 const {validatePublication}=require('../publication');
 const {canonicalJSON,digestJSON,assertRuntimeManifest,assertArtifactManifest,normalizeReferences}=require('./contracts');
-const {projectSnapshot}=require('./projection');
+const {projectSnapshot,projectDocuments}=require('./projection');
 const {captureAdapterIdentity,projectionDigest}=require('./identity');
 const {validateRuntime}=require('../engine/registry');
 
@@ -35,7 +35,11 @@ async function prepareDraftCandidate({store,options,registry,cas,revision,actor,
     return {source:draft.snapshot,draftRevision:draft.revision,template,selection,bundle};
   });
   const target={type:targetType,id:targetType==='version'?String(await contentRepository(store).reserveVersionId()):'preview-'+randomUUID()};
-  const {source,draftRevision,template,selection,bundle}=captured;
+  return prepareCapturedCandidate({store,options,registry,cas,captured,target});
+}
+// Both paths supply an owned consistent DB capture; all file I/O stays outside it.
+async function prepareCapturedCandidate({store,options,registry,cas,captured,target,referenceCeiling}){
+  const {source,template,selection,bundle}=captured;
   assertRuntimeManifest(bundle.manifest);
   if(digestJSON(bundle.manifest)!==selection.digest||bundle.profileId!==bundle.manifest.profileId)throw fail(422,'运行包登记校验失败');
   const selectedProfile=registry.get(bundle.profileId);
@@ -47,16 +51,27 @@ async function prepareDraftCandidate({store,options,registry,cas,revision,actor,
   for(const entry of bundle.manifest.files)runtimeFiles.set(entry.key,await cas.read(entry));
   validateRuntime(bundle.manifest,runtimeFiles,profile);
   profile.validateSnapshot(source);
-  require('../config').validateConfig(source.config,template.schema);
+  if(template)require('../config').validateConfig(source.config,template.schema);
   const projected=projectSnapshot(source,target,profile,{runtimeFiles});
+  if(referenceCeiling!==undefined){
+    const references=normalizeReferences(referenceCeiling),allowed=new Set(references.map(ref=>ref.resourceId));
+    const documented=projectDocuments(projected.snapshot,references,profile.policy);
+    if([...projected.references,...documented.references].some(ref=>!allowed.has(ref.resourceId)))
+      throw fail(422,'旧版交付需要历史授权之外的资源，请恢复后重新发布');
+    projected.snapshot=documented.snapshot;
+    projected.references=references;
+  }
   const context={references:projected.references,geometryIds:projected.geometryIds,policy:profile.policy};
   const warnings=await validatePublication(store,options,projected.snapshot,context);
   const adapter=await captureAdapterIdentity();
-  return freeze({target,source,draftRevision,selection,bundle,profile,origin:options.origin,
+  const candidate={target,source,selection,bundle,profile,origin:options.origin,
     references:projected.references,geometryIds:projected.geometryIds,
     projectionDigest:projectionDigest(projected.snapshot,profile),adapterDigest:adapter.digest,warnings,
     // Retain the captured projection for final fixed-reference checks, never recompose.
-    projectedSnapshot:projected.snapshot});
+    projectedSnapshot:projected.snapshot};
+  if(captured.draftRevision!==undefined)candidate.draftRevision=captured.draftRevision;
+  if(referenceCeiling!==undefined)candidate.referenceCeiling=projected.references;
+  return freeze(candidate);
 }
 function assertArtifactMatchesCandidate(artifact,candidate,kind){
   assertArtifactManifest(artifact.manifest);
@@ -78,6 +93,10 @@ async function recheckCandidate(tx,candidate,actor,options){
   if(!current||current.revision!==candidate.draftRevision||digestJSON(current.snapshot)!==digestJSON(candidate.source))throw fail(409,'配置版本冲突，请刷新后重新编辑');
   const selection=await runtimeRepository(tx).getSelection();
   if(canonicalJSON(selection)!==canonicalJSON(candidate.selection))throw fail(409,'运行包选择已变化，请刷新');
+  await recheckCandidateResources(tx,candidate,actor,options);
+}
+// Caller has locked site and checked its own source/binding and global selection.
+async function recheckCandidateResources(tx,candidate,actor,options){
   const ids=[...new Set(candidate.references.map(ref=>ref.resourceId))].sort();
   await tx.query('SELECT id FROM personal_site.resources WHERE id=ANY($1::text[]) ORDER BY id FOR UPDATE',[ids]);
   await validatePublication(tx,options,candidate.projectedSnapshot,{
@@ -86,4 +105,4 @@ async function recheckCandidate(tx,candidate,actor,options){
   await authRepository(tx).lockValidSession(actor,Date.now());
   if(candidate.origin!==options.origin)throw fail(422,'交付来源不一致');
 }
-module.exports={prepareDraftCandidate,assertArtifactMatchesCandidate,recheckCandidate,assertActor};
+module.exports={prepareDraftCandidate,prepareCapturedCandidate,assertArtifactMatchesCandidate,recheckCandidate,recheckCandidateResources,assertActor};

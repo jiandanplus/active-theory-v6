@@ -14,7 +14,8 @@ function createDeliveryService({store,options={},registry=require('../engine/reg
   return Object.freeze({
     publish:({revision,actor,withWarnings=false})=>require('./publish').publish({...dependencies,revision,actor,withWarnings}),
     preview:({revision,actor})=>require('./preview').preview({...dependencies,revision,actor}),
-    legacy:unavailable,read:unavailable,cas,
+    legacy:({versionId,expectedGeneration,actor})=>require('./legacy').legacy({...dependencies,versionId,expectedGeneration,actor}),
+    read:unavailable,cas,
     register:input=>{assertActor(input.actor);return registerRuntime({...input,store,cas,registry,actor:input.actor.username});},
     select:input=>{assertActor(input.actor);return selectRuntime({...input,store,cas,registry,actor:input.actor.username});},
   });
