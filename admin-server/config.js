@@ -277,20 +277,10 @@ async function publish(
   revision,
   options = {},
   actor = null,
-  { withWarnings = false } = {},
+  { withWarnings = false, deliveryService } = {},
 ) {
-  const { draft, warnings } = await validatedDraft(store, revision, options);
-  const version = await store.transaction(async (tx) => {
-    const repo = contentRepository(tx),
-      current = await repo.getDraft({ lock: true });
-    assertRevision(current, revision);
-    await require("./publication").checkPublicationState(tx, draft.snapshot);
-    const version = await repo.insertVersion(draft.snapshot);
-    await repo.setPublished(version.id);
-    await auditRepository(tx).append("config.publish", actor);
-    return version.id;
-  });
-  return withWarnings ? { version, warnings } : version;
+  const service = deliveryService || require('./delivery/service').createDeliveryService({store,options});
+  return service.publish({revision,actor,withWarnings});
 }
 async function restore(store, id, revision, actor = null) {
   if (!Number.isSafeInteger(id) || id < 1) throw fail(404, "版本不存在");
@@ -298,7 +288,10 @@ async function restore(store, id, revision, actor = null) {
   if (!row) throw fail(404, "版本不存在");
   return saveDraft(store, normalizeConfig(row.snapshot.config), revision, actor);
 }
-async function createPreview(store, revision, options, owner) {
+async function createPreview(store, revision, options, actor, {deliveryService} = {}) {
+  // Task 10 replaces this staged body with service.preview; no fallback routing.
+  require('./delivery/candidates').assertActor(actor);
+  const owner = actor.username;
   const { draft } = await validatedDraft(store, revision, options);
   return store.transaction(async (tx) => {
     const repo = contentRepository(tx),

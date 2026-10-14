@@ -87,7 +87,8 @@ test("requires the CMS fields consumed by the rendering engine", () => {
 
 test("configuration versions save atomically, conflict and restore only to draft", async (t) => {
   const { saveDraft, publish, restore } = require("../admin-server/config");
-  const { store, root } = await require("./helpers/http").httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
+  const { store, root } = f;
   const repo =
     require("../admin-server/repositories/content").contentRepository(store);
   const draft = await repo.getDraft();
@@ -102,7 +103,7 @@ test("configuration versions save atomically, conflict and restore only to draft
   const v2 = await publish(store, next, {
     root,
     dataDir: path.join(root, "data"),
-  });
+  }, f.actor, {deliveryService:f.service});
   assert.notEqual(v1, v2);
   assert.equal(
     (await repo.getVersion(v1)).snapshot.config.site.title,

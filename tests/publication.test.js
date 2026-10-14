@@ -4,7 +4,7 @@ const { httpFixture } = require("./helpers/http");
 const { contentRepository } = require("../admin-server/repositories/content");
 const { validatePublication } = require("../admin-server/publication");
 test('site image publication grants survive clear and restore without rewriting history', async t => {
-  const f = await httpFixture(t), repo = contentRepository(f.store);
+  const f = await require('./helpers/delivery').deliveryFixture(t), repo = contentRepository(f.store);
   const {saveDraft,publish,restore} = require('../admin-server/config');
   await f.store.query("UPDATE personal_site.resources SET details=$1 WHERE id='unused'",[{path:'assets/images/image.png'}]);
   const history = (await f.store.query('SELECT snapshot::text AS snapshot FROM personal_site.versions WHERE id=42')).rows;
@@ -14,7 +14,7 @@ test('site image publication grants survive clear and restore without rewriting 
   draft.config.site.language='zh-CN';
   const revision=await saveDraft(f.store,draft.config,draft.revision);
   assert.equal((await f.request('/api/site/42/resources/unused/unused.png')).status,404);
-  const version=await publish(f.store,revision,{root:f.root,dataDir:f.root+'/data'});
+  const version=await publish(f.store,revision,{root:f.root,dataDir:f.root+'/data'},f.actor,{deliveryService:f.service});
   const config=await (await f.request(`/api/site/${version}/config`)).json();
   assert.match(config.site.socialImage,new RegExp(`^/api/site/${version}/resources/unused/`));
   assert.equal(config.site.description,'中文描述');
@@ -29,12 +29,12 @@ test('site image publication grants survive clear and restore without rewriting 
 });
 for (const patch of [{status:'disabled'},{status:'missing'},{status:'failed'},{trashed:true},{kind:'audio'}])
   test(`site image publication rejects ${JSON.stringify(patch)}`,async t=>{
-    const f=await httpFixture(t), repo=contentRepository(f.store);
+    const f=await require('./helpers/delivery').deliveryFixture(t), repo=contentRepository(f.store);
     const {saveDraft,publish}=require('../admin-server/config');
     const draft=await repo.getDraft(); draft.config.site.socialImage='/media/unused';
     const revision=await saveDraft(f.store,draft.config,draft.revision);
     await f.store.query('UPDATE personal_site.resources SET status=$1,trashed=$2,kind=$3 WHERE id=$4',[patch.status||'ready',patch.trashed||false,patch.kind||'image','unused']);
-    await assert.rejects(publish(f.store,revision,{root:f.root,dataDir:f.root+'/data'}),{status:422});
+    await assert.rejects(publish(f.store,revision,{root:f.root,dataDir:f.root+'/data'},f.actor,{deliveryService:f.service}),{status:422});
   });
 test('site image rejects known audio identities when saving',async t=>{
   const f=await httpFixture(t), draft=await contentRepository(f.store).getDraft();
@@ -140,7 +140,7 @@ test("preview is owned, expires after thirty minutes, prunes references and keep
   );
 });
 test("publication rechecks resource/storage state inside transaction and awaits audit rollback", async (t) => {
-  const f = await httpFixture(t),
+  const f = await require('./helpers/delivery').deliveryFixture(t),
     { publish } = require("../admin-server/config");
   await f.store.query(
     "UPDATE personal_site.resources SET storage_id='local' WHERE id='image'",
@@ -154,7 +154,8 @@ test("publication rechecks resource/storage state inside transaction and awaits 
       return f.store.transaction(fn);
     },
   };
-  await assert.rejects(publish(raced, 3, { root: f.root }), /存储/);
+  const service=require('../admin-server/delivery/service').createDeliveryService({store:raced,options:{root:f.root,dataDir:f.root+'/data'},registry:f.runtime.registry});
+  await assert.rejects(publish(raced, 3, { root: f.root }, f.actor, {deliveryService:service}), /存储/);
   assert.equal((await contentRepository(f.store).getDraft()).published, 42);
   await f.store.query("UPDATE personal_site.storages SET available=true");
   await f.store.query(
@@ -163,7 +164,7 @@ test("publication rechecks resource/storage state inside transaction and awaits 
   await f.store.query(
     "CREATE TRIGGER reject_audit BEFORE INSERT ON personal_site.audit_events FOR EACH ROW EXECUTE FUNCTION personal_site.fail_audit()",
   );
-  await assert.rejects(publish(f.store, 3, { root: f.root }), /audit rejected/);
+  await assert.rejects(publish(f.store, 3, { root: f.root }, f.actor, {deliveryService:f.service}), /audit rejected/);
   assert.equal((await contentRepository(f.store).getDraft()).published, 42);
   assert.equal((await contentRepository(f.store).listVersions()).length, 1);
   assert.equal(
@@ -176,7 +177,7 @@ test("publication rechecks resource/storage state inside transaction and awaits 
   );
 });
 test("concurrent save/publication cannot publish a mixed revision", async (t) => {
-  const f = await httpFixture(t),
+  const f = await require('./helpers/delivery').deliveryFixture(t),
     { saveDraft, publish } = require("../admin-server/config"),
     repo = contentRepository(f.store);
   const original = (await repo.getDraft()).config,
@@ -184,7 +185,7 @@ test("concurrent save/publication cannot publish a mixed revision", async (t) =>
   changed.site.title = "Changed";
   changed.projects[0].name = "Changed project";
   const outcomes = await Promise.allSettled([
-    publish(f.store, 3, { root: f.root }),
+    publish(f.store, 3, { root: f.root }, f.actor, {deliveryService:f.service}),
     saveDraft(f.store, changed, 3),
   ]);
   assert.equal(outcomes[1].status, "fulfilled");

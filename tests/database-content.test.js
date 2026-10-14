@@ -128,7 +128,7 @@ test("version snapshots retain resource identity after a new published snapshot"
   assert.match(next.projects[0].video.url, /\/43\/resources\/unused\//);
 });
 test("saving a new external song freezes only the selected media identity before publication", async (t) => {
-  const f = await httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
   const { saveDraft, publish } = require("../admin-server/config");
   const draft = await contentRepository(f.store).getDraft();
   draft.config.songs[0].src =
@@ -137,7 +137,7 @@ test("saving a new external song freezes only the selected media identity before
   const version = await publish(f.store, revision, {
     root: f.root,
     dataDir: path.join(f.root, "data"),
-  });
+  }, f.actor, {deliveryService:f.service});
   const config = await (await f.request(`/api/site/${version}/config`)).json();
   assert.match(
     config.songs[0].src,
@@ -157,7 +157,7 @@ test("saving a new external song freezes only the selected media identity before
   assert.equal(redirect.headers.get("location"), draft.config.songs[0].src);
 });
 test("external query revisions and simultaneous signed URLs retain exact published identities", async (t) => {
-  const f = await httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
   const options = { root: f.root, dataDir: path.join(f.root, "data") };
   const { saveDraft, publish } = require("../admin-server/config");
   const urls = [
@@ -168,7 +168,7 @@ test("external query revisions and simultaneous signed URLs retain exact publish
     const draft = await contentRepository(f.store).getDraft();
     draft.config.songs = sources.map((src, i) => ({ title: `Song ${i}`, src }));
     const revision = await saveDraft(f.store, draft.config, draft.revision);
-    const version = await publish(f.store, revision, options);
+    const version = await publish(f.store, revision, options, f.actor, {deliveryService:f.service});
     return {
       version,
       config: await (await f.request(`/api/site/${version}/config`)).json(),
@@ -216,7 +216,7 @@ test("external query revisions and simultaneous signed URLs retain exact publish
   assert.equal(original.headers.get("location"), urls[0]);
 });
 test("publishing a canonical local alias with query uses the registered resource", async (t) => {
-  const f = await httpFixture(t);
+  const f = await require('./helpers/delivery').deliveryFixture(t);
   const { saveDraft, publish } = require("../admin-server/config");
   const draft = await contentRepository(f.store).getDraft();
   draft.config.scenes[0].fields[0].value = "/assets/font.png?cache=2";
@@ -224,7 +224,7 @@ test("publishing a canonical local alias with query uses the registered resource
   const version = await publish(f.store, revision, {
     root: f.root,
     dataDir: path.join(f.root, "data"),
-  });
+  }, f.actor, {deliveryService:f.service});
   const config = await (await f.request(`/api/site/${version}/config`)).json();
   assert.equal(
     config.scenes[0].fields[0].value,

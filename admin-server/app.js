@@ -14,7 +14,7 @@ const { mountFrontend } = require("./frontend");
 const { mountResources } = require("./resources");
 const { mountModels } = require("./models");
 
-function createApp(options = {}) {
+function createApp(options = {}, {deliveryService} = {}) {
   options = {
     root: path.resolve(__dirname, ".."),
     production: false,
@@ -61,6 +61,8 @@ function createApp(options = {}) {
         ssl: options.databaseSSL,
       });
   app.locals.store = store;
+  deliveryService ||= require('./delivery/service').createDeliveryService({store,options});
+  app.locals.deliveryService = deliveryService;
   app.disable("x-powered-by");
   if (options.trustProxy) app.set("trust proxy", options.trustProxy);
   app.use((req, res, next) => {
@@ -155,8 +157,8 @@ function createApp(options = {}) {
           store,
           req.body.revision,
           options,
-          req.adminSession.username,
-          { withWarnings: true },
+          {id:req.adminSession.id, username:req.adminSession.username},
+          { withWarnings: true, deliveryService },
         ),
       );
     }),
@@ -165,7 +167,8 @@ function createApp(options = {}) {
     "/preview",
     route(async (req, res) =>
       res.json({
-        url: `/?preview=${await createPreview(store, req.body.revision, options, req.adminSession.username)}`,
+        url: `/?preview=${await createPreview(store, req.body.revision, options,
+          {id:req.adminSession.id,username:req.adminSession.username}, {deliveryService})}`,
       }),
     ),
   );

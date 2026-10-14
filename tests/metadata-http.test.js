@@ -39,7 +39,8 @@ test('preview dependencies and failures remain authenticated and private',async 
   fs.writeFileSync(path.join(f.root,'unsupported.html'),'<head><title>Unsupported fixture</title></head>');
   await f.store.query("UPDATE personal_site.resources SET details=details || $1::jsonb WHERE id='image'",[JSON.stringify({path:'assets/images/image.png'})]);
   const draft=await require('../admin-server/repositories/content').contentRepository(f.store).getDraft();
-  const id=await require('../admin-server/config').createPreview(f.store,draft.revision,{root:f.root,dataDir:f.root+'/data'},'owner');
+  const actor=(await f.store.query('SELECT id,username FROM personal_site.sessions')).rows[0];
+  const id=await require('../admin-server/config').createPreview(f.store,draft.revision,{root:f.root,dataDir:f.root+'/data'},actor,{deliveryService:f.app.locals.deliveryService});
   for(const endpoint of [`/?preview=${id}`,`/api/site/${id}/config`,`/api/site/${id}/bridge.js`,`/api/site/${id}/app.js`,`/api/site/${id}/compiled.vs`,`/api/site/${id}/unsupported.html`,`/api/site/${id}/resources/image/image.png`,`/assets/js/app.fixture.js?preview=${id}`,'/admin/','/api/setup/status']) {
     const response=await f.request(endpoint,{headers});
     assert.equal(response.status,/\/api\/site\/[^/]+\/(?:app\.js|compiled\.vs)$/.test(endpoint)?422:200,endpoint);

@@ -5,7 +5,9 @@ const { createApp } = require("../admin-server/app");
 const { glb } = require("./fixtures/model");
 test("HTTP workflow keeps drafts private and publishes uploaded converted models through engine aliases", async (t) => {
   const { httpFixture } = require("./helpers/http");
-  const f = await httpFixture(t, { installed: false });
+  const runtime=require('./helpers/runtime').testRuntime(t);
+  const serviceFactory=({store,options})=>require('../admin-server/delivery/service').createDeliveryService({store,options,registry:runtime.registry});
+  const f = await httpFixture(t, { installed: false, serviceFactory });
   const bundle = structuredClone(f.bundle);
   bundle.admin = null;
   bundle.schema.scenes[0].fields[0].type = "geometry";
@@ -25,6 +27,10 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
   const root = f.root,
     base = f.base,
     headers = await f.login();
+  const actor=(await f.store.query('SELECT id,username FROM personal_site.sessions')).rows[0];
+  const service=f.app.locals.deliveryService;
+  const registered=await service.register({root:runtime.root,manifest:runtime.manifest,actor});
+  await service.select({digest:registered.digest,expectedGeneration:0,actor});
   const api = async (url, body, method = "POST") => {
     const response = await fetch(base + "/api/admin" + url, {
       method,
@@ -51,7 +57,7 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
     dataDir: path.join(root, "data"),
     origin: "http://localhost:3000",
     store: f.store,
-  });
+  }, {deliveryService:service});
   const secondServer = secondApp.listen(0, "127.0.0.1");
   await new Promise((resolve) => secondServer.once("listening", resolve));
   t.after(() => new Promise((resolve) => secondServer.close(resolve)));

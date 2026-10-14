@@ -1,5 +1,3 @@
-const fs=require('node:fs/promises');
-const path=require('node:path');
 const {fail}=require('../security');
 const {canonicalJSON,digestJSON,sha256,assertRuntimeManifest,assertArtifactManifest,logicalKey,normalizeReferences}=require('./contracts');
 const registry=require('../engine/registry');
@@ -9,15 +7,7 @@ const {mapResourceTree}=require('../snapshots');
 const {pageMetadata}=require('../../shared/site-identity');
 const {renderPageMetadata}=require('../page-metadata');
 const {projectSnapshot,projectDocuments,runtimeMedia}=require('./projection');
-// Explicit, reviewed trusted-source closure. Never scan candidate roots or use mtimes.
-const ADAPTER_SOURCES=Object.freeze([
-  'admin-server/delivery/builder.js','admin-server/delivery/cas.js','admin-server/delivery/contracts.js',
-  'admin-server/delivery/projection.js','admin-server/delivery/registration.js',
-  'admin-server/engine/legacy-adapter.js','admin-server/engine/patches.js',
-  'admin-server/engine/profiles/legacy-six-scenes-v1.js','admin-server/engine/program-paths.js',
-  'admin-server/engine/registry.js','admin-server/engine/render.js','admin-server/page-metadata.js',
-  'admin-server/snapshots.js','shared/page-metadata-dom.js','shared/site-identity.js',
-].sort());
+const {ADAPTER_SOURCES,captureAdapterIdentity,projectionDigest}=require('./identity');
 const MIME={html:'text/html',program:'text/javascript',stylesheet:'text/css',wasm:'application/wasm',shader:'text/plain',data:'application/json','resource-document':'application/manifest+json'};
 const bad=()=>fail(422,'交付构建验证失败');
 function safeData(value){
@@ -45,8 +35,10 @@ function validateHTML(html,target,programs,unsupported){
 }
 async function buildArtifact({cas,bundle,source,target,origin,selection,profile,kind='pinned',referenceCeiling}){
   // Own all untrusted mutable data across CAS awaits; profile is trusted server code.
-  bundle=JSON.parse(canonicalJSON(bundle));source=JSON.parse(canonicalJSON(source));
-  target=JSON.parse(canonicalJSON(target));selection=JSON.parse(canonicalJSON(selection));
+  bundle=JSON.parse(canonicalJSON(bundle));
+  source=JSON.parse(canonicalJSON(source));
+  target=JSON.parse(canonicalJSON(target));
+  selection=JSON.parse(canonicalJSON(selection));
   if(referenceCeiling!==undefined)referenceCeiling=normalizeReferences(referenceCeiling);
   const runtime=bundle.manifest;
   assertRuntimeManifest(runtime);
@@ -87,15 +79,16 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
   const rewritten=profile.transformPrograms(files,programs);
   if(!(rewritten.files instanceof Map)||rewritten.files.size!==files.size||[...files.keys()].some(key=>!Buffer.isBuffer(rewritten.files.get(key))))throw bad();
   report('programs',rewritten.report);
-  const app=profile.transformApp(rewritten.files.get('app').toString(),config);report('app',app.report);
-  const shaders=profile.transformShaders(files.get('compiled-shaders').toString(),config);report('shaders',shaders.report);
-  const uil=profile.transformUIL(snapshot);report('uil',uil.report);
+  const app=profile.transformApp(rewritten.files.get('app').toString(),config);
+  report('app',app.report);
+  const shaders=profile.transformShaders(files.get('compiled-shaders').toString(),config);
+  report('shaders',shaders.report);
+  const uil=profile.transformUIL(snapshot);
+  report('uil',uil.report);
   const endpoints={config:json('config','data',config),'uil.json':json('uil','data',mapUIL(snapshot,target.id,uil.data)),
     'projects.json':json('projects','data',config.projects),'metadata.json':json('metadata','data',mapResourceTree(snapshot,target.id,snapshot.template.metadata||{})),
     'contact.json':json('contact','data',mapResourceTree(snapshot,target.id,snapshot.template.contact||{}))};
-  const trustedSources=new Map();
-  for(const name of ADAPTER_SOURCES)trustedSources.set(name,await fs.readFile(path.join(__dirname,'../..',name)));
-  const adapterDigest=digestJSON(ADAPTER_SOURCES.map(name=>({path:name,sha256:sha256(trustedSources.get(name))})));
+  const {sources:trustedSources,digest:adapterDigest}=await captureAdapterIdentity();
   endpoints['identity.js']=add('identity','program',Buffer.concat(['shared/site-identity.js','shared/page-metadata-dom.js'].flatMap(name=>[trustedSources.get(name),Buffer.from('\n')])));
   endpoints['bridge.js']=add('bridge','program',bridgeSource(target.id,config,snapshot,origin,references,programs));
   endpoints['app.js']=add('app','program',app.source);
@@ -125,12 +118,15 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
     documents[asset.resourceId]=json('document-'+Object.keys(documents).length,'resource-document',mapResourceTree(snapshot,target.id,asset.document));
   }
   const manifest={manifestVersion:1,kind,target,runtimeDigest:bundle.digest,profileId:profile.id,templateId:profile.templateId,
-    selectionGeneration:selection.generation,sourceSnapshotDigest:digestJSON(source),projectionDigest:digestJSON({policy:profile.policy,snapshot}),
+    selectionGeneration:selection.generation,sourceSnapshotDigest:digestJSON(source),projectionDigest:projectionDigest(snapshot,profile),
     referencesDigest:digestJSON(references),adapterDigest,origin,files:[...outputs.values()].map(o=>o.entry).sort((a,b)=>a.key<b.key?-1:1),
     routes,endpoints,runtime:runtimeMap,documents,references,patchReport};
   // Structural validation includes actual-buffer quotas. No writes before all outputs succeed.
   assertArtifactManifest(manifest);
-  for(const entry of manifest.files){const stored=await cas.put(outputs.get(entry.key).bytes);if(stored.sha256!==entry.sha256||stored.size!==entry.size)throw bad();}
+  for(const entry of manifest.files){
+    const stored=await cas.put(outputs.get(entry.key).bytes);
+    if(stored.sha256!==entry.sha256||stored.size!==entry.size)throw bad();
+  }
   return {digest:digestJSON(manifest),manifest,references};
 }
 module.exports={buildArtifact,ADAPTER_SOURCES};

@@ -7,7 +7,7 @@ const {
 } = require("../../admin-server/repositories/content");
 const { createAccount } = require("../../admin-server/security");
 const password = "a-valid-long-password-2026";
-async function httpFixture(t, { store, options = {}, installed = true } = {}) {
+async function httpFixture(t, { store, options = {}, installed = true, serviceFactory } = {}) {
   if (!store) ({ store } = await postgresFixture(t));
   // The PostgreSQL fixture owns final disposal. Keep its original cleanup hook
   // capable of closing every replacement pool before it drops this database.
@@ -25,6 +25,8 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
     };
   }
   const content = contentFixture(t);
+  content.root = require('node:fs').realpathSync(content.root);
+  require('node:fs').mkdirSync(content.root + '/data', {recursive:true});
   if (installed) {
     const bundle = structuredClone(content.bundle);
     bundle.admin = null;
@@ -38,14 +40,16 @@ async function httpFixture(t, { store, options = {}, installed = true } = {}) {
   }
   let app, server, base;
   async function start() {
-    app = createApp({
+    const resolvedOptions = {
       root: content.root,
       dataDir: content.root + "/data",
       origin: "http://localhost:3000",
       setupToken: "ab".repeat(32),
       ...options,
       store,
-    });
+    };
+    const deliveryService = serviceFactory?.({store, options:resolvedOptions});
+    app = createApp(resolvedOptions, {deliveryService});
     server = app.listen(0, "127.0.0.1");
     await new Promise((resolve) => server.once("listening", resolve));
     base = `http://127.0.0.1:${server.address().port}`;
