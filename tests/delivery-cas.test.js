@@ -249,3 +249,15 @@ test('directory masquerading as CAS object and staging symlinks fail closed', as
   await assert.rejects(cas.put(Buffer.from('new')));
   assert.deepEqual(await fs.readdir(path.join(dir, 'saved')), []);
 });
+
+test('read-only inventory verifies root and ancestors without preparing directories',async t=>{
+  const dir=await fixture(t);
+  assert.deepEqual(await createCAS(dir).inspect({readOnly:true}),{objects:[],bytes:0});
+  assert.deepEqual(await fs.readdir(dir),[]);
+  await assert.rejects(createCAS(path.join(dir,'absent')).inspect({readOnly:true}));
+  assert.deepEqual(await fs.readdir(dir),[]);
+  await fs.mkdir(path.join(dir,'real'));
+  await fs.symlink(path.join(dir,'real'),path.join(dir,'delivery'));
+  await assert.rejects(createCAS(dir).inspect({readOnly:true}));
+  assert.deepEqual(await fs.readdir(path.join(dir,'real')),[]);
+});

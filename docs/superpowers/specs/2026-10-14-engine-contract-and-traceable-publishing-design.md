@@ -2,7 +2,7 @@
 
 日期：2026-10-14（Asia/Shanghai）。
 
-状态：用户于 2026-10-14 确认本书面规格，采用“引擎适配层 + 固定运行包 + 校验后发布”方向及范围；[详细实施计划](../plans/2026-10-14-engine-contract-and-traceable-publishing.md)已编写，待选择执行方式。尚未实施或验收阶段 B 功能。阶段 A 已合并，设计基线为 `fb5117b`，分支 `feat/authenticated-resource-admin`。
+状态：用户于 2026-10-14 确认本书面规格并选择子代理逐项实施。阶段 B 的 Task 1–14 已在隔离 `feat/engine-delivery` 工作区实现并执行本轮验证，仍待独立任务/整分支审查及主代理最终全套；不是最终 Approved。实际结果与限制以[交付验证记录](../../verification/engine-delivery.md)为准：服务器错误后焦点恢复存在快照疑点待真实 DOM 复现，原六场景视觉对照受已授权输入缺失/格式错误阻塞。生产、真实业务数据、集成/推送仍未执行；阶段 C/D 未实施。阶段 A 已合并，原设计基线为 `fb5117b`。
 
 总体设计：[个人主页架构改造](2026-10-13-architecture-modernization-design.md)。前置成果：[阶段 A 验证与合并记录](../../verification/site-identity-upgrade.md)。
 

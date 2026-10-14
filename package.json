@@ -13,6 +13,7 @@
     "test:postgres": "node scripts/test-postgres.js",
     "db:migrate": "node scripts/db-migrate.js",
     "runtime:register": "node scripts/runtime-bundle.js",
+    "delivery:audit": "node scripts/delivery-audit.js",
     "import:check": "node scripts/import-site.js --check",
     "admin:init": "node scripts/admin-account.js",
     "admin:reset": "node scripts/admin-account.js --reset",

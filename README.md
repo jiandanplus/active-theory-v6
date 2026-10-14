@@ -37,7 +37,7 @@ cd active-theory-v6
 npm ci
 ```
 
-已有检出目录先检查 `git status`，保留本地修改，不要重克隆覆盖。完整 3D 运行包放在 `assets/`；只有空白后台需求时可暂不提供，后续资源完整性仍须单独验收。
+已有检出目录先检查 `git status`，保留本地修改，不要重克隆覆盖。阶段 B 在隔离的 `feat/engine-delivery` 工作区实施，尚不代表上述远程分支已经包含本轮变更；集成、推送和部署需另行确认。程序输入在服务器通过明确清单登记，媒体仍通过资源库管理，不能仅把新 app 文件放进 `assets/` 就切换发布。
 
 ### 2. 配置数据库和本地环境
 
@@ -80,6 +80,16 @@ npm run dev
 
 安装完成后移除环境中的 `SETUP_TOKEN` 并重启自己的应用，再手动登录。修改内容后先保存草稿、预览，再发布；没有发布版本时访客不会看到草稿。已安装实例即使重新设置安装令牌，也不能再次初始化。
 
+### 运行包与内容发布
+
+运行包是经授权的前台程序输入，不等同于图片、视频和模型资源库。新安装可以先创建管理员并配置内容；发布和预览前必须在服务器登记完整运行包，再在后台明确选择。
+
+```sh
+npm run runtime:register -- --root /srv/authorized-runtime --manifest /srv/runtime-manifest.json --profile legacy-six-scenes-v1
+```
+
+这些是部署示例路径，不是可直接操作的现有目标。清单逐项列出相对路径、角色、大小和 SHA-256；程序不会自动扫描最新 app、下载远程脚本或执行包内安装程序。登记不会切换选择或公开版本。发布先完整构建/校验，再一次性切换；失败保留现有发布，版本号空洞正常。切换运行包只影响之后的预览/发布，历史程序不被替换。完整清单、容器挂载与排错见[运行包运维](docs/ENGINE-RUNTIME.md)。
+
 网站设置、资源上传、字体限制和模型转换详见[后台使用说明](docs/ADMIN.md)。`admin:init` 仅给出网页安装指引，忘记密码使用受控的 `npm run admin:reset`，不要删库重建。
 
 ## 公网部署
@@ -94,7 +104,7 @@ npm run dev
 
 应用 Compose 端口默认只绑定 `127.0.0.1:3000`。生产 `SITE_ORIGIN` 必须为 HTTPS，`TRUST_PROXY` 只填写实际信任的代理地址／网段。代理要允许上传体积并为模型转换留足超时。**不要把测试数据库配置或开发 HTTP 服务直接暴露公网。**
 
-备份必须包括 PostgreSQL、本地 uploads、授权资源包以及独立保管的主密钥；S3 对象另行备份。不要对真实部署执行 `docker compose down -v`。旧站迁移必须先停止旧写入、备份，再在新目录准备 uploads 并预检，不能只复制 SQLite 元数据。
+备份必须包括同一维护窗口内的 PostgreSQL、私有 `data/delivery`、本地 uploads、授权 bundled 媒体及独立保管的主密钥；S3 对象另行备份。`data/delivery` 必须持久化，绝不能由静态服务器/CDN 直接公开。不要对真实部署执行 `docker compose down -v`。对象缺失/损坏时从匹配备份恢复，不能拿当前 assets 替代。
 
 ## 配置对象存储
 
@@ -110,7 +120,9 @@ npm run dev
 | `npm run admin:key` | 本机生成 S3 凭证加密主密钥，不要公开输出 |
 | `npm run admin:reset` | 已安装实例的管理员恢复，使旧会话失效 |
 | `npm run import:check -- …` | 只读导入预检；旧站需明确 `--root`、`--legacy`、`--data-dir` |
-| `npm run db:migrate` | 维护窗口内显式升级已安装结构 1→2；结构 2 验证式 no-op，不创建管理员 |
+| `npm run db:migrate` | 维护窗口内显式升级已安装结构 1/2→3；结构 3 验证式 no-op，不创建管理员 |
+| `npm run runtime:register -- …` | 服务器按明确清单登记完整授权运行包，不自动选择 |
+| `npm run delivery:audit` | 只读统计/完整性诊断，不迁移、构建、删除或自动修复 |
 | `npm test` / `npm run test:postgres` | 相同的隔离 PostgreSQL 测试入口 |
 
 启动专用测试数据库后运行，不要把生产连接串当测试连接：
@@ -126,7 +138,7 @@ docker compose -p site-pg-test -f compose.test.yaml down
 
 测试默认使用回环端口 55432 和 UUID 临时数据库，不回退生产 `DATABASE_URL`。如显式指定 `TEST_DATABASE_URL`，需确认专用目标后设置 `TEST_DATABASE_CONFIRMED=yes`。有授权运行包时执行对应引擎测试；缺包时七项引擎集成检查明确跳过，不代表完整 3D 已验收。
 
-2026-10-13 的 199 项结果属于此前 PostgreSQL 安装阶段，见[历史验证记录](docs/verification/postgresql-installation.md)，不能证明本次新代码。2026-10-14 第一阶段安全升级与站点身份的重新验证范围、实际结果和未验证项见[本次验证记录](docs/verification/site-identity-upgrade.md)。后续 B/C/D 阶段尚未实施；测试不代表目标服务器、真实 S3 / CDN / CORS 已验收，真实站点升级和推送部署仍需另行授权。
+2026-10-13 的 199 项结果属于此前 PostgreSQL 安装阶段，见[历史验证记录](docs/verification/postgresql-installation.md)。阶段 A 见[身份升级验证](docs/verification/site-identity-upgrade.md)，阶段 B 的实际执行范围、门禁和限制见[运行包交付验证](docs/verification/engine-delivery.md)。C/D 尚未实施；自动测试及合成协议夹具不代表原六场景视觉、真实 S3/CDN/CORS 或生产服务已验收。
 
 ## 常见问题
 
@@ -148,6 +160,7 @@ docker compose -p site-pg-test -f compose.test.yaml down
 ## 文档导航
 
 - [后台与资源管理](docs/ADMIN.md)
+- [运行包登记、交付与诊断](docs/ENGINE-RUNTIME.md)
 - [部署、备份、升级与旧站迁移](docs/POSTGRESQL-MIGRATION.md)
 - [实际验证与已知边界](docs/verification/postgresql-installation.md)
 - [结构 2 与站点身份验证](docs/verification/site-identity-upgrade.md)

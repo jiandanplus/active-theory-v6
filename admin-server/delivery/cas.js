@@ -94,7 +94,9 @@ function createCAS(dataDir) {
     // Hard-link publication/temporary unlink can legitimately change ctime.
     // CAS integrity instead rests on the digest of this exact returned buffer.
     const bytes = await readFile(root, path.join('delivery/objects', entry.sha256), entry.size, false);
-    if (bytes.length !== entry.size || sha256(bytes) !== entry.sha256) throw unsafe();
+    if (bytes.length !== entry.size || sha256(bytes) !== entry.sha256) {
+      throw Object.assign(unsafe(), { code: 'DELIVERY_INTEGRITY' });
+    }
     return bytes;
   }
   async function put(input) {
@@ -132,8 +134,22 @@ function createCAS(dataDir) {
       await fs.rmdir(tmp);
     }
   }
-  async function inspect() {
-    await prepare();
+  async function inspect({ readOnly = false } = {}) {
+    if (!readOnly) await prepare();
+    else {
+      // A fresh installation may have neither directory. Verify existing
+      // ancestors first, without mkdir or normalization of symlink input.
+      let parents = await directories(root);
+      for (const directory of [path.join(root, 'delivery'), objects]) {
+        try { await fs.lstat(directory); }
+        catch (error) {
+          if (error.code !== 'ENOENT') throw error;
+          await unchangedDirectories(parents);
+          return { objects: [], bytes: 0 };
+        }
+        parents = await directories(directory);
+      }
+    }
     const parents = await directories(objects);
     const entries = [];
     for (const name of (await fs.readdir(objects)).sort()) {
@@ -145,7 +161,9 @@ function createCAS(dataDir) {
     await unchangedDirectories(parents);
     // Metadata inventory only: callers MUST use read with declared identity
     // before treating an object as verified. Corrupt/orphan bytes stay intact.
-    return { objects: entries, bytes: entries.reduce((sum, entry) => sum + entry.size, 0) };
+    const bytes = entries.reduce((sum, entry) => sum + entry.size, 0);
+    if (!sizeValid(bytes)) throw unsafe();
+    return { objects: entries, bytes };
   }
   return { put, read, inspect };
 }

@@ -64,12 +64,18 @@ test('deployment includes non-superuser init, PG18 parent volume and all install
   assert.match(docker, /COPY admin-server/);
   assert.match(docker, /COPY admin-ui/);
   assert.match(docker, /COPY shared/);
+  assert.match(docker, /COPY scripts/);
+  assert.doesNotMatch(docker, /COPY assets|COPY .*authorized-runtime/);
+  for(const file of ['admin-server/migrations/003-engine-delivery.sql','admin-server/delivery/cas.js',
+    'admin-server/delivery/builder.js','admin-server/engine/profiles/legacy-six-scenes-v1.js',
+    'scripts/runtime-bundle.js','scripts/delivery-audit.js']) assert.ok(readFileSync(file).length>0,file);
   const external = readFileSync('compose.external.yaml','utf8');
   assert.doesNotMatch(external, /POSTGRES_PASSWORD|depends_on|\n  db:/);
   const scripts = JSON.parse(readFileSync('package.json')).scripts;
   assert.equal(scripts['db:migrate'], 'node scripts/db-migrate.js');
   assert.equal(scripts['import:check'], 'node scripts/import-site.js --check');
   assert.equal(scripts['test:postgres'], 'node scripts/test-postgres.js');
+  assert.equal(scripts['delivery:audit'], 'node scripts/delivery-audit.js');
 });
 
 test('same-app model conversion rejects concurrent request and releases slot after failure', async t => {

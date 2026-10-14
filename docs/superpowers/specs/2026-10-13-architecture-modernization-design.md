@@ -2,7 +2,7 @@
 
 日期：2026-10-13
 
-状态：用户于 2026-10-14 明确确认本书面设计；第一阶段 A 代码、隔离验收和整分支最终独立审查均已完成，并按用户选择本地合并回 `feat/authenticated-resource-admin`。合并后 242 项测试全部通过，专用测试服务已清理、临时工作区已可恢复归档（[验证记录](../../verification/site-identity-upgrade.md)）。阶段 B 详细书面规格已确认，实施计划已编写、待选择执行方式；B/C/D 代码尚未实施。真实升级、推送和部署另需授权。
+状态：用户于 2026-10-14 明确确认本书面设计；第一阶段 A 代码、隔离验收和整分支最终独立审查均已完成，并按用户选择本地合并回 `feat/authenticated-resource-admin`。合并后 242 项测试全部通过，专用测试服务已清理、临时工作区已可恢复归档（[验证记录](../../verification/site-identity-upgrade.md)）。阶段 B 已按批准的子代理方式在隔离工作区实现 Task 1–14 并执行本轮验证，仍有焦点恢复疑点、原视觉阻塞及最终独立门禁，不能称最终 Approved；见[阶段 B 实际证据与限制](../../verification/engine-delivery.md)。C/D 尚未实施；真实升级、集成、推送和部署另需授权。
 
 基线：`a7d75a6`，分支 `feat/authenticated-resource-admin`。
 

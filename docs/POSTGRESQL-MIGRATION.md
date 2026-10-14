@@ -94,9 +94,17 @@ docker compose --env-file .env.external -p personal-site -f compose.external.yam
 
 ## 显式升级
 
-`npm run db:migrate` 已实际支持数据库结构 1→2。它仅接受已安装实例，使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹与迁移 checksum，再调用顺序迁移；结构 2 重复运行是验证式 no-op。不能修改已发布 001 来让 checksum“通过”。2026-10-14 的隔离升级、回滚与历史保持测试见 [站点身份验证记录](verification/site-identity-upgrade.md)，不代表真实站点已升级。
+`npm run db:migrate` 支持已安装数据库结构 1/2→3。它使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹和迁移 checksum，再顺序迁移；结构 3 重复运行是验证式 no-op。001/002 均不可修改。历史阶段 A 的 1→2 证据见[站点身份验证](verification/site-identity-upgrade.md)，本轮见[阶段 B 验证](verification/engine-delivery.md)，均不代表真实站点已升级。
 
-### 从数据库结构 1 升级到 2
+### 从结构 1/2 升级到 3
+
+在维护窗口停止应用写入和新构建，等待在途操作结束；先完成并验证 PostgreSQL、私有 `data/delivery`、uploads、授权 bundled 媒体和独立主密钥的一致备份。执行显式 `npm run db:migrate`，不重新初始化账号。
+
+迁移保留历史内容和公开指针，将旧版本标记为 legacy。未生成兼容交付前网页返回维护 503；之后登记/选择包，在后台为当前旧版本执行“生成兼容交付”，或恢复为草稿后新发布。完成前台验证再恢复流量。数据库迁移成功不等于 3D 网站已经恢复可用。
+
+兼容交付只生成一次，不代表当年原样重放。需改变包、内容或 SITE_ORIGIN 时发布新版本，不原地覆盖旧交付。schema 3 不承诺旧程序直接回滚；回退应恢复已验证的整套备份。迁移命令仍使用下方 stop → run db:migrate → up 流程，但必须等交付和浏览器门禁通过才恢复公开流量。
+
+### 历史迁移 1→2 的行为（当前命令继续升级到 3）
 
 新安装直接创建当前结构。已有实例不会在启动、登录或访问时自动升级；新程序检测到结构 1 时进入维护状态，不重新开放安装。
 
@@ -123,8 +131,9 @@ umask 077
 mkdir -p backup-YYYYMMDD
 docker compose --env-file .env.deployment -p personal-site -f compose.yaml stop site
 docker compose --env-file .env.deployment -p personal-site -f compose.yaml exec -T db sh -c 'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > backup-YYYYMMDD/database.dump
-docker compose --env-file .env.deployment -p personal-site -f compose.yaml run --rm --no-deps -T site tar -C /app/data -czf - uploads > backup-YYYYMMDD/uploads.tar.gz
-# 单独备份授权 assets、运行版本/SQL/清单以及部署配置；独立加密保管 SITE_MASTER_KEY。
+docker compose --env-file .env.deployment -p personal-site -f compose.yaml run --rm --no-deps -T site tar -C /app/data -czf - . > backup-YYYYMMDD/private-data.tar.gz
+# 包含 delivery/objects、staging、uploads（若存在）；不能只备份 uploads。
+# 单独备份授权 bundled 媒体、原始运行包/清单、运行版本/SQL和部署配置；独立加密保管 SITE_MASTER_KEY。
 docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d site
 ```
 
@@ -137,7 +146,9 @@ docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d
 pg_restore -h RESTORE_HOST -U RESTORE_APP_ROLE -d NEW_ISOLATED_DATABASE --no-owner --no-acl --exit-on-error backup-YYYYMMDD/database.dump
 ```
 
-不要加 `--create`：它会以 dump 原数据库名恢复；也不要对原数据库加 `--clean`。解包 uploads 到新 site-data，保留运行用户所有权；挂载相同授权 bundled 资源并配置独立保管的原 master key。对 admins/resources/versions 等记录行数、检查安装状态/指纹、用原账号登录、读取上传字节并验证匿名发布页面，再由用户确认切换。参考 [PG18 dump/restore](https://www.postgresql.org/docs/18/backup-dump.html)、[pg_restore](https://www.postgresql.org/docs/18/app-pgrestore.html)。
+不要加 `--create`：它会以 dump 原数据库名恢复；也不要对原数据库加 `--clean`。解包完整 private-data 到新的空 site-data，保留运行用户所有权（CAS 目录 0700、对象 0600）；挂载同一备份的授权 bundled 媒体，配置独立保管的原 master key。核对 admins/resources/versions/runtime_bundles/delivery_artifacts/delivery_bindings 行数及对象摘要；运行 `npm run delivery:audit`，验证安装状态、账号、上传字节、历史、预览授权与匿名页面，再由用户确认切换。若恢复目标使用不同 SITE_ORIGIN，旧绑定应维护 503；先验证保留的程序字节与历史，再在新 Origin 明确新发布，不改写旧 manifest。参考 [PG18 dump/restore](https://www.postgresql.org/docs/18/backup-dump.html)、[pg_restore](https://www.postgresql.org/docs/18/app-pgrestore.html)。
+
+`data/delivery` 不能被静态服务器/CDN 直接公开。对象缺失/损坏应从匹配备份恢复，不能回退当前 assets。`delivery:audit` 仅为只读瞬时诊断，不删除对象，也不判定在线 GC 安全；所有已登记包和 artifact（包括无 binding、已过期预览留下的 artifact）都属于保留集合。第一版无自动垃圾回收，清理须另行确认停机维护。
 
 ## 旧站停机迁移门槛
 
