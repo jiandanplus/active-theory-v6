@@ -52,7 +52,7 @@
 | `admin-server/frontend.js`、`frontend-resources.js`、`resources.js`、`models.js`、`app.js` | 切断当前文件程序旁路，保留所有资源授权入口（12、13） |
 | `scripts/runtime-bundle.js`、`scripts/delivery-audit.js` | 明确的服务器端登记与只读占用诊断（6、14） |
 | `admin-ui/admin.js` | 运行包状态/选择、版本兼容动作、构建期间防重复（13） |
-| `tests/helpers/legacy-content-repository.js`、`v2.js`、`runtime.js`、`delivery.js` | 固定旧 schema 种子与纯测试 profile/交付夹具（4、3、9） |
+| `tests/helpers/legacy-seed.js`、`v2.js`、`runtime.js`、`delivery.js` | 固定旧 schema 种子与纯测试 profile/交付夹具（4、3、9） |
 | `tests/delivery-*.test.js`、`tests/runtime-*.test.js` | 各任务独立测试；已有测试迁移而非删除断言 |
 | `docs/ENGINE-RUNTIME.md`、`docs/verification/engine-delivery.md` | 操作说明与真实验收证据（14） |
 
@@ -324,11 +324,11 @@ function programMappings(manifest,target){
 
 ## Task 4：schema 3 与冻结的旧 schema 种子
 
-**Files:** Create `admin-server/migrations/003-engine-delivery.sql`, `tests/helpers/legacy-content-repository.js`, `tests/helpers/v2.js`, `tests/delivery-schema.test.js`；Modify `migration-registry.js`, `tests/helpers/v1.js`, `tests/schema-upgrade.test.js`, `tests/installation.test.js`, `tests/postgres.test.js`, `repositories/content.js` 的 importBundle。
+**Files:** Create `admin-server/migrations/003-engine-delivery.sql`, `tests/helpers/legacy-seed.js`, `tests/helpers/v2.js`, `tests/delivery-schema.test.js`；Modify `migration-registry.js`, `tests/helpers/v1.js`, `tests/schema-upgrade.test.js`, `tests/installation.test.js`, `tests/postgres.test.js`, `repositories/content.js` 的 importBundle。
 
 **Interfaces:** currentSchemaVersion=3；保留 migrations 每版本 `{version,file,sql,checksum,schemaSignature}`；历史种子只供测试，生产不探测旧schema后跳过新SQL。
 
-- [ ] **Step 1：先冻结旧 seed 再写迁移失败测试。** 从 `267efd2:admin-server/repositories/content.js` 搬移完整历史仓储到 tests/helpers/legacy-content-repository.js，用 `createRequire` 对齐其原依赖基址，命名导出 `legacyContentRepository`。v1Fixture 只调用此固定版本的 importBundle/putPreview；不得用当前生产仓储。v2Fixture 调用 v1Fixture，然后只执行不可变002、插入其checksum并更新installation=2。
+- [ ] **Step 1：先冻结旧 seed 再写迁移失败测试。** 新建 tests/helpers/legacy-seed.js，以固定 SQL 和明确的测试数据构造迁移测试所需的 schema 1 内容、历史、预览、账号、会话、存储和资源引用。只实现种子写入，不复制完整历史仓储，不调用当前生产仓储或随生产版本变化的快照/引用转换逻辑。可只读参考 `267efd2` 的表结构及旧种子行为，固定预期数据并断言种子完整性。v1Fixture 改用此专用种子，保留现有测试所依赖的返回数据与升级前语义；v2Fixture 调用 v1Fixture，然后只执行不可变002、插入其checksum并更新installation=2。用户于执行前检查后选择此方案，替代原来的整份历史仓储副本。
 
 ```js
 // tests/helpers/v2.js
@@ -1032,4 +1032,4 @@ npm run delivery:audit仅输出占用和完整性诊断，不删除对象。第�
 1. **子代理逐项实施（推荐）**：独立工作区中每个任务新实施者，完成规格符合性与代码质量两阶段审查后集成；主代理负责跨任务验证。
 2. **当前代理顺序实施**：使用executing-plans分批执行，同样保留红绿测试、检查点、独立审查和工作区隔离。
 
-状态：详细规格已由用户确认，实施计划已写出并完成主代理设计自审；尚未执行本计划、创建B实施工作区、迁移数据库或切换网站。待用户选择执行方式。
+状态：用户已选择方式1（子代理逐项实施），并批准 Task 4 改用专用旧版 SQL/测试数据种子。已创建独立 B 工作区，正在验证基线；任务完成情况以工作区执行账本和各项复核为准。真实业务库、当前网站、推送和部署仍不在本轮操作范围。
