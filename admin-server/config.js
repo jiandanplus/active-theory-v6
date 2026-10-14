@@ -289,41 +289,8 @@ async function restore(store, id, revision, actor = null) {
   return saveDraft(store, normalizeConfig(row.snapshot.config), revision, actor);
 }
 async function createPreview(store, revision, options, actor, {deliveryService} = {}) {
-  // Task 10 replaces this staged body with service.preview; no fallback routing.
-  require('./delivery/candidates').assertActor(actor);
-  const owner = actor.username;
-  const { draft } = await validatedDraft(store, revision, options);
-  return store.transaction(async (tx) => {
-    const repo = contentRepository(tx),
-      current = await repo.getDraft({ lock: true });
-    assertRevision(current, revision);
-    await require("./publication").checkPublicationState(tx, draft.snapshot);
-    const now = Date.now();
-    await repo.prunePreviews(new Date(now));
-    const id = "preview-" + require("node:crypto").randomUUID();
-    await repo.putPreview({
-      id,
-      owner,
-      expires: new Date(now + 30 * 60000),
-      snapshot: draft.snapshot,
-    });
-    const old = (
-      await tx.query(
-        "SELECT id FROM personal_site.previews WHERE owner=$1 ORDER BY expires DESC,id DESC OFFSET 5",
-        [owner],
-      )
-    ).rows.map((r) => r.id);
-    await tx.query(
-      "DELETE FROM personal_site.resource_references WHERE owner_type='preview' AND owner_id=ANY($1::text[])",
-      [old],
-    );
-    await tx.query(
-      "DELETE FROM personal_site.previews WHERE id=ANY($1::text[])",
-      [old],
-    );
-    await auditRepository(tx).append("config.preview", owner);
-    return id;
-  });
+  const service=deliveryService||require('./delivery/service').createDeliveryService({store,options});
+  return service.preview({revision,actor});
 }
 module.exports = {
   initialConfig,

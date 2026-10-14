@@ -13,7 +13,8 @@ function createDeliveryService({store,options={},registry=require('../engine/reg
   const unavailable=async()=>{throw fail(501,'交付操作尚未接入');};
   return Object.freeze({
     publish:({revision,actor,withWarnings=false})=>require('./publish').publish({...dependencies,revision,actor,withWarnings}),
-    preview:unavailable,legacy:unavailable,read:unavailable,cas,
+    preview:({revision,actor})=>require('./preview').preview({...dependencies,revision,actor}),
+    legacy:unavailable,read:unavailable,cas,
     register:input=>{assertActor(input.actor);return registerRuntime({...input,store,cas,registry,actor:input.actor.username});},
     select:input=>{assertActor(input.actor);return selectRuntime({...input,store,cas,registry,actor:input.actor.username});},
   });

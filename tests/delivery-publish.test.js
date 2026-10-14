@@ -170,3 +170,40 @@ test('failed build does not change published or create a version',async t=>{
   assert.equal((await repo.getDraft()).published,before.published);
   assert.deepEqual(await repo.listVersions(),versions);
 });
+test('session expiry arising during a real row-lock wait rejects publication using post-lock time',async t=>{
+  const f=await deliveryFixture(t),gate=barrier(),originalNow=Date.now;
+  const start=originalNow(),idleLimit=12*60*60*1000;
+  await f.store.query('UPDATE personal_site.sessions SET created=$1,touched=$2 WHERE id=$3',[
+    start,start-idleLimit+1000,f.actor.id,
+  ]);
+  const before=await state(f.store);
+  const holder=f.store.transaction(async tx=>{
+    await tx.query('SELECT id FROM personal_site.sessions WHERE id=$1 FOR UPDATE',[f.actor.id]);
+    gate.enter();await gate.released;
+  });
+  await gate.entered;
+  let now=start,publication;
+  try{
+    Date.now=()=>now;
+    publication=f.service.publish({revision:3,actor:f.actor});
+    // Observe the real SELECT waiting BEFORE advancing the controlled clock.
+    const deadline=originalNow()+2000;let waiting=false;
+    while(!waiting&&originalNow()<deadline){
+      const rows=await f.store.query(`SELECT pid FROM pg_stat_activity
+        WHERE datname=current_database() AND pid<>pg_backend_pid()
+        AND query LIKE '%FOR UPDATE OF s%' AND wait_event_type='Lock'`);
+      waiting=rows.rowCount>0;
+      if(!waiting)await new Promise(setImmediate);
+    }
+    assert.equal(waiting,true,'publication must actually wait for the session row');
+    const rejected=assert.rejects(publication,{status:401});
+    now=start+1001;
+    gate.release();await holder;await rejected;
+    assert.deepEqual(await state(f.store),before);
+  }finally{
+    gate.release();await holder;
+    // Always drain the in-flight operation before restoring the clock.
+    await publication?.catch(()=>{});
+    Date.now=originalNow;
+  }
+});

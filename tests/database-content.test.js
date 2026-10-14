@@ -236,11 +236,12 @@ test("expired preview and another owner cannot authorize resource bytes", async 
   await f.createAdmin();
   const headers = await f.login();
   await f.store.transaction((tx) =>
-    contentRepository(tx).putPreview({
+    contentRepository(tx).insertPreview({
       id: "preview-expired",
       owner: "owner",
       expires: new Date(Date.now() - 1000),
       snapshot: f.bundle.draft,
+      references: require('../admin-server/snapshots').collectReferences(f.bundle.draft),
     }),
   );
   assert.equal(
@@ -256,11 +257,12 @@ test("expired preview and another owner cannot authorize resource bytes", async 
     404,
   );
   await f.store.transaction((tx) =>
-    contentRepository(tx).putPreview({
+    contentRepository(tx).insertPreview({
       id: "preview-other",
       owner: "owner",
       expires: new Date(Date.now() + 60000),
       snapshot: f.bundle.draft,
+      references: require('../admin-server/snapshots').collectReferences(f.bundle.draft),
     }),
   );
   await assert.rejects(

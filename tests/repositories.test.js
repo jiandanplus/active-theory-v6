@@ -331,11 +331,12 @@ test("versions advance identity and previews clean references on expiry", async 
     const v = await repo.insertVersion(bundle.draft);
     assert.ok(v.id > 42);
     await repo.setPublished(v.id);
-    await repo.putPreview({
+    await repo.insertPreview({
       id: "preview",
       owner: "admin",
       expires: "2026-01-02T00:00:00Z",
       snapshot: bundle.draft,
+      references: collectReferences(bundle.draft),
     });
   });
   const repo = contentRepository(store);
@@ -383,11 +384,12 @@ test("publishing and trashing compete under the same site/resource locks", async
 test("resetting admin cleans preview reference owners before cascade", async (t) => {
   const { store, bundle } = await setup(t);
   await store.transaction((tx) =>
-    contentRepository(tx).putPreview({
+    contentRepository(tx).insertPreview({
       id: "old",
       owner: "admin",
       expires: "2099-01-01",
       snapshot: bundle.draft,
+      references: collectReferences(bundle.draft),
     }),
   );
   await store.transaction((tx) =>

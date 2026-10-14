@@ -332,11 +332,12 @@ test("unexpired preview blocks trash, expired preview is pruned and bundled reso
   const draft = await contentRepository(f.store).getDraft();
   draft.snapshot.config.projects[0].video.url = `/media/${resource.id}`;
   await f.store.transaction((tx) =>
-    contentRepository(tx).putPreview({
+    contentRepository(tx).insertPreview({
       id: "preview-media",
       owner: "admin",
       expires: new Date(Date.now() + 60000).toISOString(),
       snapshot: draft.snapshot,
+      references: require('../admin-server/snapshots').collectReferences(draft.snapshot),
     }),
   );
   const trash = (id) =>

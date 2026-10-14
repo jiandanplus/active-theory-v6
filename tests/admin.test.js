@@ -170,6 +170,28 @@ test("sessions are hashed, idle/absolute expiry and password change invalidate s
     0,
   );
 });
+test('pinned preview access rejects logged-out/reset sessions and reset cascades its binding',async t=>{
+  const f=await require('./helpers/delivery').deliveryFixture(t);
+  const response=await f.request('/api/admin/preview',{method:'POST',headers:f.headers,body:JSON.stringify({revision:3})});
+  assert.equal(response.status,200);
+  const url=(await response.json()).url,id=url.split('=')[1];
+  const {deliveryRepository}=require('../admin-server/repositories/deliveries');
+  const binding=await deliveryRepository(f.store).getBinding({type:'preview',id});
+  const artifact=await deliveryRepository(f.store).getArtifact(binding.artifactDigest);
+  assert.equal((await f.request(url,{headers:f.headers})).status,200);
+  assert.equal((await f.request('/api/admin/logout',{method:'POST',headers:f.headers})).status,200);
+  const denied=await f.request(url,{headers:f.headers});
+  assert.equal(denied.status,401);
+  assert.equal(denied.headers.get('cache-control'),'private, no-store');
+  const headers=await f.login();
+  await require('../admin-server/security').createAccount(f.store,'owner','a-valid-long-password-2026',{reset:true});
+  assert.equal((await f.request(url,{headers})).status,401);
+  assert.equal(await deliveryRepository(f.store).getBinding({type:'preview',id}),null);
+  assert.equal((await f.store.query("SELECT id FROM personal_site.previews WHERE id=$1",[id])).rowCount,0);
+  assert.equal((await f.store.query("SELECT * FROM personal_site.resource_references WHERE owner_type='preview' AND owner_id=$1",[id])).rowCount,0);
+  // Reset revokes authorization, not shared content-addressed bytes.
+  for(const file of artifact.manifest.files)assert.equal((await f.cas.read(file)).length,file.size);
+});
 test("login attempts persist across restart and database errors are maintenance errors", async (t) => {
   const f = await fixture(t);
   await f.createAdmin();

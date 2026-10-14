@@ -291,27 +291,6 @@ function contentRepository(db) {
       );
       if (!r.rowCount) throw fail(404, "网站不存在");
     },
-    async putPreview({ id, owner, expires, snapshot }) {
-      await db.query(
-        "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
-      );
-      const full = composeSnapshot(snapshot);
-      const row = preview(
-        (
-          await db.query(
-            "INSERT INTO personal_site.previews(id,owner,expires,snapshot) VALUES($1,$2,$3,$4) ON CONFLICT(id) DO UPDATE SET expires=EXCLUDED.expires,snapshot=EXCLUDED.snapshot WHERE personal_site.previews.owner=EXCLUDED.owner RETURNING *",
-            [id, owner, expires, full],
-          )
-        ).rows[0],
-      );
-      if (!row) throw fail(409, "预览属于其他管理员");
-      await resources.replaceReferences({
-        ownerType: "preview",
-        ownerId: id,
-        references: collectReferences(full),
-      });
-      return row;
-    },
     async getPreview(id, owner, now) {
       return preview(
         (

@@ -103,9 +103,8 @@ test("unregistered local media cannot bypass publication and external media is w
   );
 });
 test("preview is owned, expires after thirty minutes, prunes references and keeps five", async (t) => {
-  const f = await httpFixture(t);
-  await f.createAdmin();
-  const headers = await f.login();
+  const f = await require('./helpers/delivery').deliveryFixture(t);
+  const headers = f.headers;
   let url;
   for (let i = 0; i < 6; i++) {
     const response = await f.request("/api/admin/preview", {

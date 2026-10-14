@@ -33,7 +33,7 @@ test('server identity ignores hostile host/query and unknown projects are 404',a
   assert.doesNotMatch(await missing.text(),/bridge\.js|app\.js/);
 });
 test('preview dependencies and failures remain authenticated and private',async t=>{
-  const f=await httpFixture(t); await f.createAdmin(); const headers=await f.login();
+  const f=await require('./helpers/delivery').deliveryFixture(t); const headers=f.headers;
   fs.mkdirSync(path.join(f.root,'assets/shaders'),{recursive:true});
   fs.writeFileSync(path.join(f.root,'assets/shaders/compiled.vs'),'fixture shader');
   fs.writeFileSync(path.join(f.root,'unsupported.html'),'<head><title>Unsupported fixture</title></head>');
@@ -62,7 +62,8 @@ test('preview dependencies and failures remain authenticated and private',async 
   await assert.rejects(require('../admin-server/frontend-resources').resolveVersion(f.store,{version:id,admin:{username:'other'}}),error=>error.status===404);
   for(const [owner,expires] of [['owner',new Date(Date.now()-1000)]]) {
     const deniedId='preview-denied-'+owner;
-    await f.store.transaction(tx=>repo(tx).putPreview({id:deniedId,owner,expires,snapshot:f.bundle.draft}));
+    await f.store.transaction(tx=>repo(tx).insertPreview({id:deniedId,owner,expires,snapshot:f.bundle.draft,
+      references:require('../admin-server/snapshots').collectReferences(f.bundle.draft)}));
     const denied=await f.request(`/api/site/${deniedId}/identity.js`,{headers});
     assert.equal(denied.status,404);
     assert.equal(denied.headers.get('cache-control'),'private, no-store');
@@ -79,7 +80,8 @@ test('unsupported relative CSS media retain target authorization and live resour
   for(const [id,assetPath] of [['font','assets/fonts/fixture.woff2'],['image','assets/images/image.png']])
     await f.store.query('UPDATE personal_site.resources SET details=details || $1::jsonb WHERE id=$2',[JSON.stringify({path:assetPath}),id]);
   const id='preview-unsupported';
-  await require('../admin-server/repositories/content').contentRepository(f.store).putPreview({id,owner:'owner',expires:new Date(Date.now()+60000),snapshot});
+  await require('../admin-server/repositories/content').contentRepository(f.store).insertPreview({id,owner:'owner',expires:new Date(Date.now()+60000),snapshot,
+    references:require('../admin-server/snapshots').collectReferences(snapshot)});
   await f.store.query('UPDATE personal_site.versions SET snapshot=$1::jsonb WHERE id=42',[JSON.stringify(snapshot)]);
   for(const target of ['42',id]) {
     const response=await f.request(`/api/site/${target}/unsupported.html`,{headers});
