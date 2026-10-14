@@ -2,7 +2,7 @@
 
 日期：2026-10-14（Asia/Shanghai）。
 
-状态：用户已确认采用“引擎适配层 + 固定运行包 + 校验后发布”方向及范围。本文件是据此细化的书面规格，尚待用户审阅；不是已经实现或验收的功能。阶段 A 已合并，设计基线为 `fb5117b`，分支 `feat/authenticated-resource-admin`。
+状态：用户于 2026-10-14 确认本书面规格，采用“引擎适配层 + 固定运行包 + 校验后发布”方向及范围；[详细实施计划](../plans/2026-10-14-engine-contract-and-traceable-publishing.md)已编写，待选择执行方式。尚未实施或验收阶段 B 功能。阶段 A 已合并，设计基线为 `fb5117b`，分支 `feat/authenticated-resource-admin`。
 
 总体设计：[个人主页架构改造](2026-10-13-architecture-modernization-design.md)。前置成果：[阶段 A 验证与合并记录](../../verification/site-identity-upgrade.md)。
 
@@ -271,6 +271,7 @@ pinned 绑定必须关联完整 artifact。legacy 绑定初始可无 artifact，
 - [x] 明确程序与媒体分离、Worker 依赖、受限清单及生产检查不能跳过。
 - [x] 明确文件与数据库非共同事务、孤立对象无公开权限、不自动删除历史。
 - [x] 明确备份私有字节、旧站升级维护步骤及第一版不启用长期 immutable 缓存。
-- [ ] 用户审阅本书面规格；通过后使用 writing-plans 生成详细实施计划。
+- [x] 用户审阅并确认本书面规格（2026-10-14）；已使用 writing-plans 生成详细实施计划。
+- [ ] 选择执行方式后在独立工作区实施并验收阶段 B。
 
 本轮没有新的视觉方案选择，不需要视觉伴随工具。当前只产出设计文档，不运行真实迁移、构建登记或服务切换。
