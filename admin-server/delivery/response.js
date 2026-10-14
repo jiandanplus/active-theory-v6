@@ -5,7 +5,11 @@ function noStore(res,{error=false}={}) {
   res.set('Cache-Control',privateResponse?'private, no-store':'no-store');
   if(error)res.set('X-Robots-Tag','noindex, nofollow');
 }
-function sendDelivery(req,res,{entry,bytes,cacheKind}) {
+function privateDelivery(res) {
+  res.set('Cache-Control','private, no-store').set('X-Robots-Tag','noindex, nofollow');
+}
+function sendDelivery(req,res,{entry,bytes,cacheKind},resolved) {
+  if(resolved?.target?.type==='preview')privateDelivery(res);
   const privateResponse=String(res.get('Cache-Control')||'').startsWith('private');
   const revalidate=!privateResponse&&cacheKind==='pinned-program';
   noStore(res);
@@ -20,4 +24,4 @@ function sendDelivery(req,res,{entry,bytes,cacheKind}) {
   res.set('Content-Length',String(bytes.length));
   return req.method==='HEAD'?res.end():res.end(bytes);
 }
-module.exports={sendDelivery,noStore};
+module.exports={sendDelivery,noStore,privateDelivery};

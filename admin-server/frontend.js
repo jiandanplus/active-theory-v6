@@ -2,7 +2,7 @@ const {fail}=require('./security');
 const {route}=require('./http');
 const {resolveVersion,resolvePublishedResource,sendResource}=require('./frontend-resources');
 const {resolveDelivery,readDeliveryFile}=require('./delivery/reader');
-const {sendDelivery,noStore}=require('./delivery/response');
+const {sendDelivery,noStore,privateDelivery}=require('./delivery/response');
 const {resourceAsset}=require('./snapshots');
 
 function mountFrontend(app,store,options,{cas}) {
@@ -10,7 +10,7 @@ function mountFrontend(app,store,options,{cas}) {
   const deliver=(lookup,{page=false}={})=>route(async(req,res)=>{
     try {
       const resolved=await resolve(req);
-      sendDelivery(req,res,await readDeliveryFile(resolved,lookup(req),cas));
+      sendDelivery(req,res,await readDeliveryFile(resolved,lookup(req),cas),resolved);
     } catch(error) {
       if(!page||error.status!==503)throw error;
       noStore(res,{error:true});
@@ -20,10 +20,11 @@ function mountFrontend(app,store,options,{cas}) {
   });
   async function resource(req,res,next,version,id,{explicitTarget=true}={}) {
     const live=await resolvePublishedResource(store,{version,id,admin:req.adminSession});
+    if(live.deliveryTarget.type==='preview')privateDelivery(res);
     if(live.document) {
       if(!explicitTarget)throw fail(404,'资源文档需要明确版本');
       const resolved=await resolveDelivery({store,cas,options,version,admin:req.adminSession});
-      return sendDelivery(req,res,await readDeliveryFile(resolved,{resourceId:id},cas));
+      return sendDelivery(req,res,await readDeliveryFile(resolved,{resourceId:id},cas),resolved);
     }
     return sendResource(req,res,next,live,options);
   }

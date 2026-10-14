@@ -81,6 +81,38 @@ test('preview endpoint/runtime/page reads remain private and expiry never delete
   for(const route of routes) assert.equal((await f.request(route,{headers:{...f.headers,'If-None-Match':'*'}})).status,404,route);
   assert.equal((await f.store.query('SELECT id FROM personal_site.previews WHERE id=$1',[id])).rowCount,1);
 });
+test('encoded preview target keeps endpoint, runtime and ordinary media private for GET and HEAD',async t=>{
+  const f=await deliveryFixture(t);
+  await f.store.query("UPDATE personal_site.resources SET details=details || '{\"path\":\"assets/images/image.png\"}'::jsonb WHERE id='image'");
+  const id=await f.service.preview({revision:3,actor:f.actor});
+  const encoded=id.replace(/^preview-/,'%70review-');
+  const routes=[`/api/site/${encoded}/app.js`,`/api/site/${encoded}/config`,
+    `/api/site/${encoded}/runtime/worker`,`/api/site/${encoded}/resources/image/x.png`];
+  for(const route of routes)for(const method of ['GET','HEAD']) {
+    const response=await f.request(route,{method,headers:{...f.headers,'If-None-Match':'*'}});
+    assert.equal(response.status,200,`${method} ${route}`);
+    assert.equal(response.headers.get('cache-control'),'private, no-store',`${method} ${route}`);
+    assert.match(response.headers.get('x-robots-tag'),/noindex/,`${method} ${route}`);
+    assert.equal(response.headers.get('etag'),null,`${method} ${route}`);
+  }
+  for(const route of [...routes,`/api/site/${encoded}/runtime/missing`]) {
+    const denied=await f.request(route,{headers:{'If-None-Match':'*'}});
+    assert.equal(denied.status,401,route);
+    assert.equal(denied.headers.get('cache-control'),'private, no-store',route);
+    assert.match(denied.headers.get('x-robots-tag'),/noindex/,route);
+  }
+  const missing=await f.request(`/api/site/${encoded}/runtime/missing`,{headers:f.headers});
+  assert.equal(missing.status,404);
+  assert.equal(missing.headers.get('cache-control'),'private, no-store');
+  assert.match(missing.headers.get('x-robots-tag'),/noindex/);
+  await f.store.query('UPDATE personal_site.previews SET expires=$1 WHERE id=$2',[new Date(Date.now()-1000),id]);
+  for(const route of routes) {
+    const expired=await f.request(route,{headers:{...f.headers,'If-None-Match':'*'}});
+    assert.equal(expired.status,404,route);
+    assert.equal(expired.headers.get('cache-control'),'private, no-store',route);
+    assert.match(expired.headers.get('x-robots-tag'),/noindex/,route);
+  }
+});
 test('each mapped file fails closed on missing and same-size corrupted CAS bytes even with its exact ETag',async t=>{
   const f=await deliveryFixture(t,{publish:true});
   const {manifest}=await artifact(f);

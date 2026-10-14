@@ -38,8 +38,9 @@ async function resolvePublishedResource(store, { version, id, admin }) {
     return {
       ...resource,
       document: true,
+      deliveryTarget:target,
     };
-  return resource;
+  return {...resource,deliveryTarget:target};
 }
 async function assertLiveResource(store,resource) {
   if(!resource||resource.trashed||['missing','disabled','failed'].includes(resource.status))throw fail(404,'资源不存在');

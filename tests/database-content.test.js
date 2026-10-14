@@ -344,6 +344,7 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
   assert.doesNotMatch(html, /outside\.test/);
   const pinned=await service.publish({revision:3,actor});
   const preview=await service.preview({revision:3,actor});
+  const encodedPreview=preview.replace(/^preview-/,'%70review-');
   assert.equal((await f.request(`/media/${manifest.resourceId}`,{headers})).status,404);
   assert.equal((await f.request('/assets/meta/manifest.json',{headers})).status,404);
   fs.unlinkSync(path.join(f.root, "assets/meta/manifest.json"));
@@ -377,6 +378,14 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
     // Neither runtime selectors nor arbitrary endpoint names may expose documents.
     assert.equal((await f.request(`/api/site/${target}/runtime/${entry.key}`,{headers})).status,404);
     assert.equal((await f.request(`/api/site/${target}/${entry.key}`,{headers})).status,404);
+  }
+  for(const method of ['GET','HEAD']) {
+    const route=`/api/site/${encodedPreview}/resources/${manifest.resourceId}/decorative.json`;
+    const response=await f.request(route,{method,headers:{...headers,'If-None-Match':'*'}});
+    assert.equal(response.status,200,method);
+    assert.equal(response.headers.get('cache-control'),'private, no-store',method);
+    assert.match(response.headers.get('x-robots-tag'),/noindex/,method);
+    assert.equal(response.headers.get('etag'),null,method);
   }
   const ordinary=Object.values(catalog.assets).find(asset=>asset.url==='assets/fonts/font.json');
   assert(ordinary&&!ordinary.document,'font geometry JSON is ordinary media, not a derived document');

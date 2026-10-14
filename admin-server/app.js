@@ -80,8 +80,14 @@ function createApp(options = {}, {deliveryService} = {}) {
       );
     if (options.production)
       res.set("Strict-Transport-Security", "max-age=31536000");
+    const targetSegment=/^\/api\/site\/([^/]+)\//.exec(req.path)?.[1];
+    let privateTarget=false;
+    if(targetSegment) {
+      try { privateTarget=decodeURIComponent(targetSegment).startsWith('preview-'); }
+      catch { /* Invalid encoding remains a non-cacheable error. */ }
+    }
     const privateResponse = req.path.startsWith('/admin') || req.path.startsWith('/api/admin') ||
-      req.path.startsWith('/api/setup') || /^\/api\/site\/preview-[^/]+\//.test(req.path) || Object.hasOwn(req.query,'preview');
+      req.path.startsWith('/api/setup') || privateTarget || Object.hasOwn(req.query,'preview');
     if (privateResponse) res.set('Cache-Control','private, no-store').set('X-Robots-Tag','noindex, nofollow');
     next();
   });
