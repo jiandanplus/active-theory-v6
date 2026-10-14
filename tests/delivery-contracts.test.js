@@ -153,3 +153,9 @@ test('runtime rejects spoofed roles, duplicate identities, missing closure and q
   const boundary = runtime(); boundary.files = Array.from({ length: 4 }, (_, i) => ({ ...file(`f${i}`, 'html', 32 * 1024 * 1024), path: `f${i}` }));
   boundary.entryKey = 'f0'; boundary.dependencies = []; assert.doesNotThrow(() => c.assertRuntimeManifest(boundary));
 });
+test('runtime and artifact reject array-valued file roles', () => {
+  const runtimeValue = runtime(); runtimeValue.files[1].role = ['program'];
+  rejects(() => c.assertRuntimeManifest(runtimeValue));
+  const artifactValue = artifact(); artifactValue.files[1].role = ['program'];
+  rejects(() => c.assertArtifactManifest(artifactValue));
+});

@@ -64,7 +64,7 @@ function fileIndex(files, registration) {
   for (const f of files) {
     fields(f, registration ? ['key', 'role', 'mime', 'size', 'sha256', 'path'] : ['key', 'role', 'mime', 'size', 'sha256']);
     logicalKey(f.key);
-    if (!Object.hasOwn(ROLE_MIME, f.role) || f.mime !== ROLE_MIME[f.role] || !integer(f.size) || !digest(f.sha256)
+    if (typeof f.role !== 'string' || !Object.hasOwn(ROLE_MIME, f.role) || f.mime !== ROLE_MIME[f.role] || !integer(f.size) || !digest(f.sha256)
       || found.has(f.key) || (registration && f.size > 32 * 1024 * 1024)) throw bad();
     if (registration) { sourcePath(f.path); if (paths.has(f.path)) throw bad(); paths.add(f.path); }
     total += f.size;
