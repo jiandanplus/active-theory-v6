@@ -1,4 +1,5 @@
 const { toSafeInteger } = require("../postgres");
+const {normalizeReferences}=require('../delivery/contracts');
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const map = (r) =>
   r
@@ -175,6 +176,12 @@ function resourceRepository(db) {
           "INSERT INTO personal_site.resource_references(resource_id,owner_type,owner_id,slot) VALUES($1,$2,$3,$4) ON CONFLICT DO NOTHING",
           [r.resourceId, ownerType, ownerId, r.slot],
         );
+    },
+    // Owner-scoped frozen grants; references(id) below is the inverse lookup.
+    async referencesForOwner({ownerType,ownerId}) {
+      if(!['version','preview'].includes(ownerType))throw fail(400,'Invalid reference owner');
+      const rows=(await db.query('SELECT resource_id,slot FROM personal_site.resource_references WHERE owner_type=$1 AND owner_id=$2',[ownerType,String(ownerId)])).rows;
+      return normalizeReferences(rows.map(r=>({resourceId:r.resource_id,slot:r.slot})));
     },
     async references(id) {
       return (

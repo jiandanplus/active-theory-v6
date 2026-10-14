@@ -65,15 +65,25 @@ test('failure midway through 003 rolls back tables, records and legacy data',asy
 test('delivery constraints enforce targets, pinned artifacts, manifest versions and generations',async t=>{
   const {store}=await v2Fixture(t);
   await upgradeInstalled(store);
+  const checks=(await store.query("SELECT conname,pg_get_constraintdef(oid) AS definition FROM pg_constraint WHERE conrelid='personal_site.delivery_bindings'::regclass AND contype='c'")).rows;
+  const xor=checks.find(r=>r.definition.includes('version_id IS NULL')&&r.definition.includes('preview_id IS NULL'));
+  assert.equal(xor.conname,'delivery_bindings_check');
   for(const sql of [
     "INSERT INTO personal_site.delivery_bindings(mode) VALUES('legacy')",
     "INSERT INTO personal_site.delivery_bindings(version_id,preview_id,mode) VALUES(42,'preview-fixture-upgrade','legacy')",
+  ])await assert.rejects(store.query(sql),{code:'23514',constraint:xor.conname});
+  for(const sql of [
     "UPDATE personal_site.delivery_bindings SET mode='pinned' WHERE version_id=42",
     "UPDATE personal_site.delivery_bindings SET generation=-1 WHERE version_id=42",
     "UPDATE personal_site.runtime_selection SET generation=-1",
     "INSERT INTO personal_site.runtime_bundles(digest,profile_id,manifest) VALUES(repeat('a',64),'fixture','{}')",
     "INSERT INTO personal_site.runtime_bundles(digest,profile_id,manifest) VALUES('bad','fixture','{\"manifestVersion\":1}')",
   ]) await assert.rejects(store.query(sql));
+  await assert.rejects(store.query("INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES(42,'legacy')"),{code:'23505'});
+  await assert.rejects(store.query("INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES(999,'legacy')"),{code:'23503'});
+  await assert.rejects(store.query("INSERT INTO personal_site.delivery_bindings(preview_id,mode) VALUES('preview-fixture-upgrade','legacy')"),{code:'23505'});
+  await assert.rejects(store.query("UPDATE personal_site.delivery_bindings SET artifact_digest=repeat('a',64) WHERE version_id=42"),{code:'23503'});
+  await assert.rejects(store.query("INSERT INTO personal_site.delivery_artifacts(digest,runtime_digest,kind,manifest) VALUES(repeat('a',64),repeat('b',64),'pinned','{\"manifestVersion\":1}')"),{code:'23503'});
   await store.query("DELETE FROM personal_site.previews WHERE id='preview-fixture-upgrade'");
   assert.equal((await store.query('SELECT count(*)::int AS n FROM personal_site.delivery_bindings')).rows[0].n,2);
   await store.query("INSERT INTO personal_site.versions(id,snapshot) VALUES(44,'{}')");

@@ -722,6 +722,10 @@ test("read-only imported bundle persists twice-retained versions and credential 
     (await repo.listVersions()).map((v) => v.id),
     [42, 41],
   );
+  assert.deepEqual((await store.query('SELECT version_id,mode,artifact_digest,generation FROM personal_site.delivery_bindings ORDER BY version_id')).rows,[
+    {version_id:'41',mode:'legacy',artifact_digest:null,generation:0},
+    {version_id:'42',mode:'legacy',artifact_digest:null,generation:0},
+  ]);
   const rows = (
     await store.query(
       "SELECT credentials FROM personal_site.storages WHERE id=$1",

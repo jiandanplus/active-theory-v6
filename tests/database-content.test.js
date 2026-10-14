@@ -116,7 +116,7 @@ test("version snapshots retain resource identity after a new published snapshot"
   snapshot.config.projects[0].video.url = "/media/unused";
   await f.store.transaction(async (tx) => {
     const repo = contentRepository(tx);
-    await repo.insertVersion(snapshot, { id: 43 });
+    assert.equal((await repo.insertVersion(snapshot)).id,43);
     await repo.setPublished(43);
   });
   const old = await (await f.request("/api/site/42/config")).json();

@@ -266,11 +266,23 @@ function contentRepository(db) {
         ownerId: row.id,
         references: collectReferences(full),
       });
-      if (id !== undefined)
-        await db.query(
-          "SELECT pg_catalog.setval(pg_catalog.pg_get_serial_sequence('personal_site.versions','id'),GREATEST((SELECT MAX(id) FROM personal_site.versions),1),true)",
-        );
       return row;
+    },
+    async reserveVersionId() {
+      return toSafeInteger((await db.query("SELECT nextval(pg_get_serial_sequence('personal_site.versions','id')) AS id")).rows[0].id);
+    },
+    async insertReservedVersion({id,snapshot,references}) {
+      if (!Number.isSafeInteger(id) || id < 1) throw fail(400, '版本编号无效');
+      await db.query('SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE');
+      const r=await db.query('INSERT INTO personal_site.versions(id,snapshot) VALUES($1,$2) RETURNING *',[id,snapshot]);
+      await resources.replaceReferences({ownerType:'version',ownerId:id,references});
+      return version(r.rows[0]);
+    },
+    async insertPreview({id,owner,expires,snapshot,references}) {
+      await db.query('SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE');
+      const r=await db.query('INSERT INTO personal_site.previews(id,owner,expires,snapshot) VALUES($1,$2,$3,$4) RETURNING *',[id,owner,expires,snapshot]);
+      await resources.replaceReferences({ownerType:'preview',ownerId:id,references});
+      return preview(r.rows[0]);
     },
     async setPublished(id) {
       const r = await db.query(
