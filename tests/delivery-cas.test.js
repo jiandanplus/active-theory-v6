@@ -98,6 +98,44 @@ test('source rejects in-place mutation during descriptor read', async t => {
   });
   await assert.rejects(readSource(dir, 'file', 100));
 });
+test('source stops the bounded descriptor read when an append crosses maxBytes', async t => {
+  const dir=await fixture(t),file=path.join(dir,'file');
+  await fs.writeFile(file,'1234');
+  let reads=0,largestRead=0;
+  interceptOpen(t,async(handle,name)=>{
+    if(name!==file)return;
+    const read=handle.read.bind(handle);
+    handle.read=async(...args)=>{
+      reads++;largestRead=Math.max(largestRead,args[2]);
+      if(reads===1)await fs.appendFile(file,'567890');
+      return read(...args);
+    };
+    // A post-read identity/size check is not the protection exercised here.
+    const stat=handle.stat.bind(handle);
+    handle.stat=async(...args)=>{if(reads)throw Error('unexpected post-read stat');return stat(...args);};
+  });
+  await assert.rejects(readSource(dir,'file',4),{message:'Unsafe or changed delivery file'});
+  assert.equal(reads,1);assert.equal(largestRead,5);
+  assert.equal(await fs.readFile(file,'utf8'),'1234567890');
+});
+test('put cleanup refuses its replaced owned directory and preserves replacement contents',async t=>{
+  const dir=await fixture(t),cas=createCAS(dir);let replacement,saved;
+  const link=fs.link;
+  t.mock.method(fs,'link',async(source,destination)=>{
+    replacement=path.dirname(source);saved=replacement+'-saved';
+    await fs.rename(replacement,saved);
+    await fs.mkdir(replacement);
+    await fs.writeFile(path.join(replacement,'object'),'replacement object');
+    await fs.writeFile(path.join(replacement,'keep'),'replacement keep');
+    // Link the already-written owned bytes, not the replacement object.
+    return link(path.join(saved,'object'),destination);
+  });
+  await assert.rejects(cas.put(Buffer.from('original')),{message:'Unsafe or changed delivery file'});
+  assert.equal(await fs.readFile(path.join(replacement,'object'),'utf8'),'replacement object');
+  assert.equal(await fs.readFile(path.join(replacement,'keep'),'utf8'),'replacement keep');
+  assert.equal(await fs.readFile(path.join(saved,'object'),'utf8'),'original');
+  assert.equal((await cas.read({sha256:sha256('original'),size:8})).toString(),'original');
+});
 test('source rejects replacement after open without reading the replacement path', async t => {
   const dir = await fixture(t), file = path.join(dir, 'file');
   await fs.writeFile(file, 'original');

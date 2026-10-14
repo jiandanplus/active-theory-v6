@@ -6,7 +6,7 @@ const {exactReplace}=require('../../admin-server/engine/patches');
 const {fail}=require('../../admin-server/security');
 // Trusted test constructor only; no production profile ID or environment selector.
 function testRuntime(t) {
-  const root=fs.mkdtempSync(path.join(os.tmpdir(),'runtime-test-'));
+  const root=fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(),'runtime-test-')));
   t.after(()=>fs.rmSync(root,{recursive:true,force:true}));
   const entries=[['index','index.html','html','text/html','<html><head></head><body>TEST_RUNTIME</body></html>'],
     ['unsupported','unsupported.html','html','text/html','<html><head></head><body>Unsupported</body></html>'],
