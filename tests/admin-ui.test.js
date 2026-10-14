@@ -193,3 +193,105 @@ test('site identity interactions update the existing draft and dirty state', () 
   assert.deepEqual(state.config.site,{title:'Fixture',description:'New description',language:'zh-TW',socialImage:''});
   assert.equal(changes,4);
 });
+test('pending preview click blocks another preview and publish until completion',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  const vm=require('node:vm');
+  const start=source.indexOf('  async function save()');
+  const end=source.indexOf('  async function render()',start);
+  let release,posts=0,notices=[],opened=0;
+  const pending=new Promise(resolve=>{release=resolve;});
+  const state={config:{site:{title:'draft'}},dirty:false,busy:false,revision:3,section:'site',overview:{},sessionEpoch:0,runtime:{selection:{digest:'a'.repeat(64),generation:1}}};
+  const el=(tag,text)=>({tag,text,children:[],listeners:{},append(...items){this.children.push(...items);},addEventListener(event,fn){this.listeners[event]=fn;},scrollIntoView(){}});
+  const context={state,api:async(path)=>{if(path==='/preview'){posts++;return pending;}if(path==='/publish'){posts++;return {version:5};}},
+    notify:(message,error)=>notices.push({message,error}),updateStatus(){},confirmAction:async()=>true,
+    node:el,panel:()=>el('section'),content:el('main'),window:{open(){opened++;}},render:async()=>{}};
+  const helperStart=source.indexOf('  async function building(');
+  const helperEnd=source.indexOf('  window.addEventListener',helperStart);
+  vm.runInNewContext(source.slice(helperStart,helperEnd)+source.slice(start,end)+'\nthis.actions={save,preview,publish};',context);
+  const buttonSource=source.slice(source.indexOf('  function button('),source.indexOf('  function notify('));
+  context.run=async action=>{try{await action();}catch(e){context.notify(e.message,true);}};
+  vm.runInNewContext(buttonSource+'\nthis.makeButton=button;',context);
+  const preview=context.makeButton('预览',context.actions.preview),publish=context.makeButton('发布',context.actions.publish);
+  preview.listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  preview.listeners.click();publish.listeners.click();
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(posts,1);
+  release({url:'/?preview=preview-abc'});
+  await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(state.busy,false);
+  assert.equal(opened,0);
+  assert.match(notices.at(-1).message,/响应无效/);
+});
+test('runtime choice serializes pending selection and leaves unsaved draft untouched',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const a='a'.repeat(64),b='b'.repeat(64),bundle=digest=>({digest,profileId:'fixture',bytes:12});
+  const state={config:{site:{title:'unsaved'}},revision:7,dirty:true,busy:false,sessionEpoch:0,
+    runtime:{selection:{digest:a,generation:1},bundles:[bundle(a),bundle(b)]}};
+  let release,posts=0,choice,notices=[];
+  const pending=new Promise(resolve=>release=resolve);
+  const p={replaceChildren(){},append(){}};
+  const context={state,api:async path=>{if(path==='/runtime/selection'){posts++;return pending;}return {selection:{digest:b,generation:2},bundles:[bundle(a),bundle(b)]};},
+    updateStatus(){},node:()=>({}),field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},focus(){}};},
+    empty(){},notify:message=>notices.push(message),run:async action=>{try{await action();}catch(e){notices.push(e.message);}}};
+  const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
+  const panel=source.slice(source.indexOf('  function showRuntimePanel('),source.indexOf('  function siteView('));
+  vm.runInNewContext(helpers+panel+'\nthis.show=showRuntimePanel;',context);
+  context.show(p);choice(b);
+  await new Promise(resolve=>setImmediate(resolve));
+  choice(b);await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(posts,1);
+  release({digest:b,generation:2});await new Promise(resolve=>setImmediate(resolve));
+  assert.equal(state.runtime.selection.digest,b);
+  assert.equal(state.config.site.title,'unsaved');assert.equal(state.revision,7);assert.equal(state.dirty,true);
+});
+test('legacy action appears only for unbound legacy versions',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const labels=[];
+  const node=()=>({append(){}});
+  const context={state:{},content:node(),node,heading(){},panel:()=>node(),empty(){},button:(label)=>{labels.push(label);return node();},
+    api:async()=>({published:3,versions:[
+      {id:1,created:new Date().toISOString(),mode:'legacy',generation:0,artifactDigest:null,status:'legacy待生成'},
+      {id:2,created:new Date().toISOString(),mode:'legacy',generation:1,artifactDigest:'a'.repeat(64),status:'已固定'},
+      {id:3,created:new Date().toISOString(),mode:null,generation:null,artifactDigest:null,status:'缺失/损坏'},
+    ]})};
+  const start=source.indexOf('  async function versionsView()'),end=source.indexOf('  function securityView()',start);
+  await vm.runInNewContext(source.slice(start,end)+'\nversionsView()',context);
+  assert.equal(labels.filter(label=>label==='生成兼容交付').length,1);
+});
+test('late publish response after logout cannot report success',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  let release,notices=[];
+  const pending=new Promise(resolve=>release=resolve);
+  const state={busy:false,dirty:false,revision:3,sessionEpoch:0,section:'site',runtime:{selection:{digest:'a'.repeat(64),generation:1}},overview:{},config:{}};
+  const context={state,api:async()=>pending,confirmAction:async()=>true,updateStatus(){},
+    notify:message=>notices.push(message),render:async()=>{}};
+  const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
+  const actions=source.slice(source.indexOf('  async function save()'),source.indexOf('  async function render()'));
+  vm.runInNewContext(helpers+actions+'\nthis.publishAction=publish;',context);
+  const request=context.publishAction();
+  await new Promise(resolve=>setImmediate(resolve));
+  state.sessionEpoch++;state.config=null;
+  release({version:5});await request;
+  assert.equal(state.overview.published,undefined);
+  assert.equal(notices.some(message=>message.includes('发布成功')),false);
+});
+test('malformed successful mutation response is uncertain, never a successful operation',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const apiSource=source.slice(source.indexOf('  async function api('),source.indexOf('  function dirty('));
+  const context={state:{csrf:'token',config:{}},fetch:async()=>({ok:true,status:200,json:async()=>{throw Error('bad JSON');}}),login(){}};
+  vm.runInNewContext(apiSource+'\nthis.request=api;',context);
+  await assert.rejects(context.request('/publish','POST',{revision:3}),/结果可能已生效.*不要自动重试/);
+});
+test('unselected runtime explains server registration before preview POST',async()=>{
+  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const state={busy:false,dirty:false,revision:3,sessionEpoch:0,runtime:{selection:{digest:null,generation:0}},config:{}};
+  let posts=0;
+  const context={state,api:async()=>{posts++;return {url:'/?preview=preview-00000000-0000-0000-0000-000000000000'};},updateStatus(){},notify(){},
+    node:()=>({}),panel:()=>({append(){},scrollIntoView(){}}),content:{},window:{open(){}}};
+  const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
+  const actions=source.slice(source.indexOf('  async function save()'),source.indexOf('  async function render()'));
+  vm.runInNewContext(helpers+actions+'\nthis.previewAction=preview;',context);
+  await assert.rejects(context.previewAction(),/服务器.*运行包/);
+  assert.equal(posts,0);
+});

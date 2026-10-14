@@ -13,6 +13,7 @@ const { auditRepository } = require("./repositories/audit");
 const { mountFrontend } = require("./frontend");
 const { mountResources } = require("./resources");
 const { mountModels } = require("./models");
+const {mountDeliveryAdmin,versionDeliverySummaries}=require('./delivery/admin-routes');
 
 function createApp(options = {}, {deliveryService} = {}) {
   options = {
@@ -197,10 +198,7 @@ function createApp(options = {}, {deliveryService} = {}) {
       const repo = contentRepository(store);
       res.json({
         published: (await repo.getDraft()).published,
-        versions: (await repo.listVersions()).map(({ id, created }) => ({
-          id,
-          created,
-        })),
+        versions: await versionDeliverySummaries(store,await repo.listVersions(),options.origin),
       });
     }),
   );
@@ -237,6 +235,7 @@ function createApp(options = {}, {deliveryService} = {}) {
   );
   mountResources({ app, admin, store, options });
   mountModels({ app, admin, store, options });
+  mountDeliveryAdmin({admin,store,service:deliveryService});
   app.use(["/api/projects", "/api/build"], requireAuth, (req, res) =>
     res.status(410).json({ error: "旧接口已停用，请使用 /admin" }),
   );

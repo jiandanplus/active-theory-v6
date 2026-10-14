@@ -61,6 +61,8 @@ function startAdmin() {
     revision: 0,
     dirty: false,
     busy: false,
+    sessionEpoch: 0,
+    runtime: {selection:{digest:null,generation:0},bundles:[]},
     section: "overview",
     resources: [],
     storages: [],
@@ -96,9 +98,10 @@ function startAdmin() {
     if (cls) el.className = cls;
     return el;
   }
-  function button(text, action, cls) {
+  function button(text, action, cls, busyAction = false) {
     const b = node("button", text, cls);
     b.type = "button";
+    if (busyAction) b.dataset.busyAction = "true";
     b.addEventListener("click", () => run(action, b));
     return b;
   }
@@ -160,11 +163,12 @@ function startAdmin() {
     } catch (e) {
       notify(e.message, true);
     } finally {
-      if (b) b.disabled = false;
+      if (b) b.disabled = !!(state.busy && b.dataset.busyAction);
     }
   }
   async function api(path, method = "GET", body) {
-    const res = await fetch("/api/admin" + path, {
+    let res;
+    try { res = await fetch("/api/admin" + path, {
       method,
       credentials: "same-origin",
       headers:
@@ -172,14 +176,17 @@ function startAdmin() {
           ? {}
           : { "Content-Type": "application/json", "X-CSRF-Token": state.csrf },
       body: body === undefined ? undefined : JSON.stringify(body),
-    });
-    const data = await res.json().catch(() => ({ error: "服务器响应无效" }));
+    }); } catch { throw new Error(method === "GET" ? "网络请求失败，请刷新后重试" : "网络结果不明，请刷新版本和最近操作核对，不要自动重试"); }
+    let data;
+    try { data = await res.json(); }
+    catch { if(res.ok) throw new Error(method === "GET" ? "服务器响应无效" : "服务器响应无效，结果可能已生效；请刷新版本和最近操作核对，不要自动重试"); }
     if (!res.ok) {
       if (res.status === 401 && state.config && path !== "/password") {
+        state.sessionEpoch++;
         state.config = null;
         login(true);
       }
-      throw new Error(data.error || "请求失败");
+      throw new Error(data?.error || "请求失败");
     }
     return data;
   }
@@ -193,10 +200,26 @@ function startAdmin() {
       node("span", "", "status-dot"),
       node(
         "span",
-        state.dirty ? "有未保存的修改" : "草稿已保存 · 修订 " + state.revision,
+        state.busy ? "正在处理，请稍后" : state.dirty ? "有未保存的修改" : "草稿已保存 · 修订 " + state.revision,
       ),
     );
     saveStatus.className = state.dirty ? "is-dirty" : "";
+    for(const control of document.querySelectorAll('[data-busy-action]')) control.disabled=state.busy;
+  }
+  async function building(action) {
+    if(state.busy)throw new Error("正在处理，请稍后");
+    state.busy=true;updateStatus();
+    try{return await action();}
+    finally{state.busy=false;updateStatus();}
+  }
+  function validRevision(value){return Number.isSafeInteger(value)&&value>=0;}
+  function validRuntime(value){return value&&value.selection&&validRevision(value.selection.generation)&&
+    (value.selection.digest===null||/^[a-f0-9]{64}$/.test(value.selection.digest))&&Array.isArray(value.bundles);}
+  async function refreshRuntime(){
+    const result=await api('/runtime');
+    if(!validRuntime(result))throw new Error('运行包状态响应无效');
+    state.runtime=result;
+    return result;
   }
   window.addEventListener("beforeunload", (event) => {
     if (state.dirty) {
@@ -401,9 +424,9 @@ function startAdmin() {
     saveStatus = node("div");
     const actions = node("div", undefined, "savebar-actions");
     actions.append(
-      button("保存草稿", save, "primary"),
-      button("预览草稿 ↗", preview),
-      button("发布网站", publish),
+      button("保存草稿", save, "primary", true),
+      button("预览草稿 ↗", preview, undefined, true),
+      button("发布网站", publish, undefined, true),
     );
     bar.append(saveStatus, actions);
     app.append(bar);
@@ -415,6 +438,7 @@ function startAdmin() {
       !(await confirmAction("有未保存的修改。退出登录将丢弃这些修改，继续吗？"))
     )
       return;
+    state.sessionEpoch++;
     await api("/logout", "POST", {});
     state.config = null;
     state.dirty = false;
@@ -424,12 +448,16 @@ function startAdmin() {
   async function save() {
     if (state.busy) throw new Error("正在处理，请稍后");
     state.busy = true;
+    updateStatus();
     try {
+      const epoch=state.sessionEpoch;
       const saved = JSON.stringify(state.config);
       const data = await api("/config", "PUT", {
         config: JSON.parse(saved),
         revision: state.revision,
       });
+      if(epoch!==state.sessionEpoch)return;
+      if(!validRevision(data?.revision))throw new Error('保存响应无效，请刷新草稿状态核对');
       state.revision = data.revision;
       state.dirty = JSON.stringify(state.config) !== saved;
       updateStatus();
@@ -440,12 +468,21 @@ function startAdmin() {
       );
     } finally {
       state.busy = false;
+      updateStatus();
     }
   }
   async function preview() {
+    if(state.busy)throw new Error('正在处理，请稍后');
+    const epoch=state.sessionEpoch;
     if (state.dirty) await save();
+    if(epoch!==state.sessionEpoch)return;
     if (state.dirty) throw new Error("保存期间内容已修改，请再次保存后预览");
+    if(!state.runtime.selection.digest)throw new Error('服务器尚未选择运行包；请先在服务器登记并选择运行包');
+    await building(async()=>{
     const data = await api("/preview", "POST", { revision: state.revision });
+    if(epoch!==state.sessionEpoch)return;
+    if(typeof data?.url!=='string'||!/^\/\?preview=preview-[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/.test(data.url))
+      throw new Error('预览响应无效，结果可能已生效；请刷新版本和最近操作核对，不要自动重试');
     const link = node("a", "打开草稿预览 ↗");
     link.href = data.url;
     link.target = "_blank";
@@ -454,21 +491,35 @@ function startAdmin() {
     p.append(link, node("p", "这是私有草稿预览，未发布到公开网站。", "muted"));
     p.scrollIntoView({ behavior: "smooth" });
     window.open(data.url, "_blank", "noopener");
+    });
   }
   async function publish() {
+    if(state.busy)throw new Error('正在处理，请稍后');
+    const epoch=state.sessionEpoch;
+    const selectionGeneration=state.runtime.selection.generation;
     if (
       !(await confirmAction(
         "确认发布当前草稿？网站的文案、作品和资源将在公开网站生效。只读 S3 测试不验证公开 URL 或 CORS；请先在前台预览资源，检查加载与跨域访问。",
       ))
     )
       return;
+    if(epoch!==state.sessionEpoch)return;
+    if(state.busy)throw new Error('正在处理，请稍后');
+    if(selectionGeneration!==state.runtime.selection.generation)throw new Error('运行包选择已变化，请重新确认发布');
     if (state.dirty) await save();
+    if(epoch!==state.sessionEpoch)return;
     if (state.dirty) throw new Error("保存期间内容已修改，请再次保存后发布");
+    if(!state.runtime.selection.digest)throw new Error('服务器尚未选择运行包；请先在服务器登记并选择运行包');
+    await building(async()=>{
     const result = await api("/publish", "POST", { revision: state.revision });
+    if(epoch!==state.sessionEpoch)return;
+    if(!Number.isSafeInteger(result?.version)||result.version<1)
+      throw new Error('发布响应无效，结果可能已生效；请刷新版本和最近操作核对，不要自动重试');
     state.overview.published = result.version;
     notify("发布成功 · 版本 " + result.version);
     if (state.section === "versions" || state.section === "overview")
       await render();
+    });
   }
   async function render() {
     if (!state.config) return;
@@ -495,6 +546,9 @@ function startAdmin() {
     const o = await api("/overview");
     state.overview = o;
     heading("网站总览", "从内容到发布，在这里管理每一个细节。");
+    const runtimePanel=panel(content,'运行包');
+    await refreshRuntime();
+    showRuntimePanel(runtimePanel);
     const metrics = node("div", undefined, "metrics");
     for (const [label, value, note] of [
       ["当前发布版本", "v" + o.published, "公开网站正在使用"],
@@ -552,6 +606,46 @@ function startAdmin() {
             "muted",
           ),
         );
+  }
+  function showRuntimePanel(p,restoreFocus=false) {
+    const {selection,bundles}=state.runtime;
+    p.replaceChildren(node('h2','运行包'));
+    p.append(node('p','选择只影响之后的预览与发布；不会修改历史内容或当前草稿。','muted'));
+    if(!bundles.length){empty(p,'服务器尚未登记运行包；请由管理员在服务器登记。内容和账号仍可编辑。');return;}
+    const chosen=bundles.find(bundle=>bundle.digest===selection.digest);
+    p.append(node('p',chosen
+      ? `当前：${chosen.digest.slice(0,12)}… · ${chosen.profileId} · ${chosen.bytes} 字节`
+      : '尚未选择运行包；预览和发布前请从服务器登记的包中选择。'));
+    const options=[{value:'',label:'请选择运行包'},...bundles.map(bundle=>({
+      value:bundle.digest,label:`${bundle.digest.slice(0,12)}… · ${bundle.profileId} · ${bundle.bytes} 字节`,
+    }))];
+    const input=field(p,'用于之后预览与发布的运行包',selection.digest||'',value=>{
+      if(!value||value===state.runtime.selection.digest){input.value=state.runtime.selection.digest||'';return;}
+      run(async()=>{
+        if(state.busy)throw new Error('正在处理，请稍后');
+        const epoch=state.sessionEpoch;
+        try {
+          await building(async()=>{
+            let result;
+            try { result=await api('/runtime/selection','PUT',{digest:value,generation:state.runtime.selection.generation}); }
+            catch(error) { if(epoch===state.sessionEpoch)await refreshRuntime(); throw error; }
+            if(epoch!==state.sessionEpoch)return;
+            if(result?.digest!==value||!validRevision(result.generation))
+              throw new Error('选择响应无效，结果可能已生效；请刷新运行包状态核对，不要自动重试');
+            await refreshRuntime();
+          });
+        } catch(error) {
+          if(epoch===state.sessionEpoch)showRuntimePanel(p,true);
+          throw error;
+        }
+        if(epoch!==state.sessionEpoch)return;
+        showRuntimePanel(p,true);
+        notify('运行包选择已更新，仅影响之后的预览与发布。');
+      });
+    },{choices:options});
+    input.dataset.busyAction='true';
+    input.disabled=state.busy;
+    if(restoreFocus)input.focus();
   }
   function siteView() {
     heading("网站设置", "维护网站标题、导航与联系信息。");
@@ -1306,7 +1400,7 @@ function startAdmin() {
     }
     const table = node("table"),
       head = node("tr");
-    for (const label of ["版本", "发布时间", "状态", "操作"])
+    for (const label of ["版本", "发布时间", "状态", "交付", "操作"])
       head.append(node("th", label));
     const thead = node("thead");
     thead.append(head);
@@ -1318,10 +1412,13 @@ function startAdmin() {
         node("td", "v" + v.id),
         node("td", new Date(v.created).toLocaleString("zh-CN")),
         node("td", v.id === data.published ? "当前公开版本" : "历史版本"),
+        node('td',`${v.status||'缺失/损坏'}${v.artifactDigest?' · '+v.artifactDigest.slice(0,12)+'…':''}`),
       );
       const td = node("td");
       td.append(
         button("恢复到草稿", async () => {
+          if(state.busy)throw new Error('正在处理，请稍后');
+          const epoch=state.sessionEpoch;
           if (
             !(await confirmAction(
               "将版本 v" +
@@ -1332,18 +1429,43 @@ function startAdmin() {
             ))
           )
             return;
+          if(epoch!==state.sessionEpoch)return;
+          if(state.busy)throw new Error('正在处理，请稍后');
+          await building(async()=>{
           await api("/versions/" + v.id + "/restore", "POST", {
             revision: state.revision,
           });
+          if(epoch!==state.sessionEpoch)return;
           const cfg = await api("/config");
+          if(epoch!==state.sessionEpoch)return;
+          if(!cfg||!validRevision(cfg.revision)||!cfg.config)throw new Error('恢复响应无效，请刷新草稿与版本核对');
           state.config = cfg.config;
           state.revision = cfg.revision;
           state.dirty = false;
           updateStatus();
           notify("已恢复为草稿。预览检查后可重新发布。");
           await render();
-        }),
+          });
+        },undefined,true),
       );
+      if(v.mode==='legacy'&&v.artifactDigest===null&&Number.isSafeInteger(v.generation))
+        td.append(button('生成兼容交付',async()=>{
+          if(state.busy)throw new Error('正在处理，请稍后');
+          const epoch=state.sessionEpoch;
+          if(!(await confirmAction('为版本 v'+v.id+' 生成兼容交付？历史内容不会改变，也不会替换已有交付。')))return;
+          if(epoch!==state.sessionEpoch)return;
+          if(state.busy)throw new Error('正在处理，请稍后');
+          await building(async()=>{
+            const result=await api('/versions/'+v.id+'/delivery','POST',{generation:v.generation});
+            if(epoch!==state.sessionEpoch)return;
+            if(result?.version!==v.id||typeof result.artifactDigest!=='string'||!/^[a-f0-9]{64}$/.test(result.artifactDigest))
+              throw new Error('兼容交付响应无效，结果可能已生效；请刷新版本和最近操作核对，不要自动重试');
+            await render();
+          });
+          if(epoch!==state.sessionEpoch)return;
+          notify('兼容交付已固定，历史内容未改变。');
+          document.querySelector('[data-section="versions"]')?.focus();
+        },undefined,true));
       row.append(td);
       body.append(row);
     }
