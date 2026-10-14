@@ -125,7 +125,7 @@ function contentFixture(t) {
     chars: [{ id: 97, char: "a" }],
     pages: ["../images/font.png"],
   });
-  write("index.html", "<!doctype html><html><head><title>Fixture</title></head><body></body></html>");
+  write("index.html", '<!doctype html><html><head><title>Fixture</title></head><body><script>window._UNSUPPORTED_PAGE_ = "unsupported.html"; var s = "assets/js/app." + window._CACHE_ + ".js";</script></body></html>');
   write("assets/js/app.fixture.js", "let SONGS = [];");
   const legacyPath = path.join(root, "legacy.sqlite");
   const db = new DatabaseSync(legacyPath);

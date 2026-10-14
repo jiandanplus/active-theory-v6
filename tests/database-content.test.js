@@ -285,7 +285,7 @@ test("manifest is catalogued with frozen icon dependencies and HTML preserves na
   );
   fs.writeFileSync(
     path.join(f.root, "index.html"),
-    '<!doctype html><head><title>Fixture</title><link rel="manifest" href="assets/meta/manifest.json"><link rel="canonical" href="https://outside.test/page"></head>',
+    '<!doctype html><head><title>Fixture</title><link rel="manifest" href="assets/meta/manifest.json"><link rel="canonical" href="https://outside.test/page"></head><script>window._UNSUPPORTED_PAGE_ = "unsupported.html"; var s = "assets/js/app." + window._CACHE_ + ".js";</script>',
   );
   const catalog = await inventoryResources({
     root: f.root,

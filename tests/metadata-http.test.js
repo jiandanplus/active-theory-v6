@@ -36,12 +36,13 @@ test('preview dependencies and failures remain authenticated and private',async 
   const f=await httpFixture(t); await f.createAdmin(); const headers=await f.login();
   fs.mkdirSync(path.join(f.root,'assets/shaders'),{recursive:true});
   fs.writeFileSync(path.join(f.root,'assets/shaders/compiled.vs'),'fixture shader');
+  fs.writeFileSync(path.join(f.root,'unsupported.html'),'<head><title>Unsupported fixture</title></head>');
   await f.store.query("UPDATE personal_site.resources SET details=details || $1::jsonb WHERE id='image'",[JSON.stringify({path:'assets/images/image.png'})]);
   const draft=await require('../admin-server/repositories/content').contentRepository(f.store).getDraft();
   const id=await require('../admin-server/config').createPreview(f.store,draft.revision,{root:f.root,dataDir:f.root+'/data'},'owner');
-  for(const endpoint of [`/?preview=${id}`,`/api/site/${id}/config`,`/api/site/${id}/bridge.js`,`/api/site/${id}/app.js`,`/api/site/${id}/compiled.vs`,`/api/site/${id}/resources/image/image.png`,`/assets/js/app.fixture.js?preview=${id}`,'/admin/','/api/setup/status']) {
+  for(const endpoint of [`/?preview=${id}`,`/api/site/${id}/config`,`/api/site/${id}/bridge.js`,`/api/site/${id}/app.js`,`/api/site/${id}/compiled.vs`,`/api/site/${id}/unsupported.html`,`/api/site/${id}/resources/image/image.png`,`/assets/js/app.fixture.js?preview=${id}`,'/admin/','/api/setup/status']) {
     const response=await f.request(endpoint,{headers});
-    assert.equal(response.status,200,endpoint);
+    assert.equal(response.status,/\/api\/site\/[^/]+\/(?:app\.js|compiled\.vs)$/.test(endpoint)?422:200,endpoint);
     assert.equal(response.headers.get('cache-control'),'private, no-store',endpoint);
     assert.match(response.headers.get('x-robots-tag'),/noindex/);
   }
@@ -49,7 +50,7 @@ test('preview dependencies and failures remain authenticated and private',async 
   assert.equal(program.status,200);
   assert.equal(program.headers.get('cache-control'),'private, no-store');
   assert.match(program.headers.get('x-robots-tag'),/noindex/);
-  for(const endpoint of [`/api/site/${id}/identity.js`,`/api/site/${id}/config`,`/api/site/${id}/resources/image/image.png`,'/api/admin/config']) {
+  for(const endpoint of [`/api/site/${id}/identity.js`,`/api/site/${id}/config`,`/api/site/${id}/unsupported.html`,`/api/site/${id}/resources/image/image.png`,'/api/admin/config']) {
     const response=await f.request(endpoint);
     assert.equal(response.status,401);
     assert.equal(response.headers.get('cache-control'),'private, no-store');

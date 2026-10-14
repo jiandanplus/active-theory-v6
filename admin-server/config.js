@@ -161,47 +161,7 @@ function validateConfig(config, schema) {
   }
   return config;
 }
-function buildUIL(snapshot) {
-  const { config } = snapshot;
-  const data = structuredClone(snapshot.template.baseUIL);
-  for (const scene of config.scenes)
-    for (const field of scene.fields) {
-      if (field.key.startsWith("__")) continue;
-      if (["resource", "geometry"].includes(field.type)) {
-        const old = data[field.key];
-        if (old?.src === field.value) continue;
-        const src =
-          field.type === "geometry"
-            ? field.value.replace(/^\/models\//, "/assets/geometry/admin/")
-            : field.value;
-        const filename = src.split("/").at(-1).split("?")[0];
-        data[field.key] = {
-          ...old,
-          src,
-          filename,
-          prefix: "",
-          relative: "",
-          compressed: false,
-          useCompressed: false,
-          hotreload: false,
-        };
-      } else data[field.key] = field.value;
-    }
-  const speed =
-    config.scenes
-      .find((s) => s.id === "TreeScene")
-      ?.fields.find((f) => f.key === "__blackhole_speed")?.value ?? 1;
-  const size =
-    config.scenes
-      .find((s) => s.id === "TreeScene")
-      ?.fields.find((f) => f.key === "__blackhole_size")?.value ?? 1;
-  const key = "INPUT_P_Element_21_TreeScenecode_1_code";
-  if (typeof data[key] === "string" && data[key].includes("Lensed accretion"))
-    data[key] =
-      data[key].replace(/\btime\b/g, `(time * ${speed.toFixed(4)})`) +
-      `\npos *= ${size.toFixed(4)};`;
-  return data;
-}
+const {buildUIL}=require('./engine/legacy-adapter');
 function assertRevision(draft, revision) {
   if (!draft || revision !== draft.revision)
     throw fail(409, "配置版本冲突，请刷新后重新编辑");

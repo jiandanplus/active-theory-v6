@@ -27,7 +27,7 @@ test('bridge uses same projection for detail/list/internal home transitions',()=
   const document=fakeDocument(),window={SiteIdentity:identity,SiteMetadataDOM:require('../shared/page-metadata-dom'),fetch:async()=>{}};
   function XHR(){} XHR.prototype.open=function(){};
   const location={origin:'https://owner.example',pathname:'/work/one'};
-  const script=require('../admin-server/frontend').bridgeSource(8,config,{assets:{},legacyMap:{}},location.origin);
+  const script=require('../admin-server/frontend').bridgeSource(8,config,{assets:{},legacyMap:{}},location.origin,[],{});
   require('node:vm').runInNewContext(script,{window,document,location,URL,Request,XMLHttpRequest:XHR});
   assert.equal(document.title,identity.pageMetadata(config,location.origin,location.pathname).title);
   for(const state of ['work/one','work','about','contact','work/one','unknown']) {

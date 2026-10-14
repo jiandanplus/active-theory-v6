@@ -1,11 +1,12 @@
 const fs = require("node:fs"),
   path = require("node:path");
 const express = require("express");
-const { buildUIL, appFile } = require("./config");
+const { appFile } = require("./config");
+const {patchAppSource,patchShaders}=require("./engine/legacy-adapter");
+const {bridgeSource,versionedUIL,renderHTML}=require("./engine/render");
 const { fail } = require("./security");
 const { route } = require("./http");
 const { pageMetadata } = require('../shared/site-identity');
-const { renderPageMetadata } = require('./page-metadata');
 const {
   resolveVersion,
   resolvePublishedResource,
@@ -15,239 +16,8 @@ const {
   publicSnapshot,
   collectReferences,
   resourceAsset,
-  mapResourceURL,
   mapResourceTree,
-  canonicalResourceURL,
 } = require("./snapshots");
-const quote = (value) => JSON.stringify(value ?? "");
-function replaceClass(source, name, transform) {
-  const start = source.indexOf(`Class((function ${name}(`);
-  if (start < 0) return source;
-  const next = source.indexOf("Class((function ", start + 20),
-    end = next < 0 ? source.length : next;
-  return (
-    source.slice(0, start) +
-    transform(source.slice(start, end)) +
-    source.slice(end)
-  );
-}
-function patchAppSource(source, config) {
-  const site = config.site;
-  source = replaceClass(source, "CMSData", (code) => code.replace(
-    "_workPages.length ? _workPages : new StateArray(mockData())", "_workPages",
-  ));
-  // Keep empty content on the engine's normal font/geometry/shader lifecycle.
-  // No sentinel glyphs: an empty mesh has zero vertices and finite zero bounds.
-  source = replaceClass(source, "Text3D", (code) => code.replace(
-    "text && createText(text, _fontObject)", "createText(text ?? \"\", _fontObject)",
-  ));
-  source = replaceClass(source, "GLTextThread", (code) => code.replace(
-    "let backing = [];",
-    "if (geom && !buffers.position.length) { geom.boundingBox.min.set(0, 0, 0); geom.boundingBox.max.set(0, 0, 0); geom.boundingSphere.center.set(0, 0, 0); geom.boundingSphere.radius = 0; } let backing = [];",
-  ));
-  source = replaceClass(source, "GLText", (code) => code.replace(
-    "&& (text = txt)) return", "&& ((text = txt), true)) return",
-  ).replace(
-    "_this.geometry.attributes.uv.setArray(buffers.uv),",
-    "_this.geometry.attributes.uv.setArray(buffers.uv), _this.geometry.attributes.local.setArray(buffers.local),",
-  ));
-  source = source.replace(
-    'async setText(text, options) { if (text && (text = text.toString(), !1 !== options?.seoText))',
-    'async setText(text, options) { if (text != null && (text = text.toString(), !1 !== options?.seoText))',
-  );
-  // The legacy worker path helper concatenates root-relative paths twice.
-  // Keep managed media/model URLs anchored to the actual origin (and port).
-  source = source.replace(
-    "this.absolutePath = function (path) {",
-    'this.absolutePath = function (path) { path = typeof window !== "undefined" && window.__SITE_RESOURCE_URL__ ? window.__SITE_RESOURCE_URL__(path) : path; if (path.startsWith("/")) return new URL(path, location.origin).href;',
-  );
-  source = source.replace(
-    "this.getPath = function (path) {",
-    "this.getPath = function (path) { const mapped = window.__SITE_RESOURCE_URL__?.(path); if (mapped && mapped !== path) return mapped;",
-  );
-  source = replaceClass(source, "AssetLoader", (code) =>
-    code.replaceAll(
-      "fetch(path)",
-      "fetch(window.__SITE_RESOURCE_URL__?.(path) || path)",
-    ),
-  );
-  source = replaceClass(source, "GeomThread", (code) =>
-    code.replaceAll(
-      'path.includes("assets/geometry/")',
-      '(path.includes("assets/geometry/") || path.startsWith("/api/site/"))',
-    ),
-  );
-  source = replaceClass(source, "InstanceMesh", (code) =>
-    code.replaceAll(
-      'file.includes("assets/geometry")',
-      '(file.includes("assets/geometry") || file.startsWith("/api/site/"))',
-    ),
-  );
-  source = replaceClass(source, "ParticleDistributor", (code) =>
-    code.replaceAll(
-      'path.includes("assets/geometry")',
-      '(path.includes("assets/geometry") || path.startsWith("/api/site/"))',
-    ),
-  );
-  source = replaceClass(source, 'ViewController', code=>{
-    const anchor='_this.bind("navigate", (path => _this.navigate(path))), document.title = "AGI旅行者· AGI Voyager", _this.bind("Work/project", (data => { document.title = data ? `${data.title} · Active Theory` : "AGI旅行者· AGI Voyager" }));';
-    if(code.split(anchor).length!==2) throw fail(503,'前台导航与当前运行包不兼容');
-    return code.replace(anchor,()=> '_this.bind("navigate", (path => _this.navigate(path))), _this.bind("Router/state", (state => window.__SITE_UPDATE_IDENTITY__?.(state))), window.__SITE_UPDATE_IDENTITY__?.();');
-  });
-  source = replaceClass(source, "NavUI", (code) =>
-    code
-      .replace(
-        'text: "Work", _type:',
-        () => `text: ${quote(site.navWork)}, link: "work", _type:`,
-      )
-      .replace(
-        'text: "Contact", _type:',
-        () => `text: ${quote(site.navContact)}, link: "contact", _type:`,
-      ),
-  );
-  source = replaceClass(source, "NavUIItem", (code) =>
-    code.replace(
-      "_this.params.text.toLowerCase()",
-      "(_this.params.link || _this.params.text.toLowerCase())",
-    ),
-  );
-  source = replaceClass(source, "ContactUI", (code) => {
-    code = code.replace(
-      "function replaceRandomLetters(str, numReplacements) {",
-      "function replaceRandomLetters(str, numReplacements) { if (str.length < 2) return str;",
-    ).replaceAll(/await _this\.wait\(\(_ => _this\.(\w+)\.dimensions\.width\)\)/g,
-      "await _this.$1.loaded()");
-    for (const [ref, key] of Object.entries({
-      contact: "contactTitle",
-      lax: "cityLax",
-      nyc: "cityNyc",
-      ams: "cityAms",
-      email: "email",
-      ...(!site.labUrl ? { subscribe: null, privacy: null, careers: null, sync: null } : {}),
-    })) {
-      code = code.replace(
-        new RegExp(`(_innerText: )"(?:[^"\\\\]|\\\\.)*"(, refName: "${ref}")`),
-        (_, a, b) => a + quote(site[key]) + b,
-      );
-      code = code.replace(
-        new RegExp(
-          `(_this\\.${ref}\\.setText\\(replaceRandomLetters\\()"(?:[^"\\\\]|\\\\.)*"`,
-        ),
-        (_, a) => a + quote(site[key]),
-      );
-      code = code.replace(
-        new RegExp(`GLA11y\\.textNode\\(_this\\.${ref}\\.group, "[^"]*"\\)`),
-        () => `GLA11y.textNode(_this.${ref}.group, ${quote(site[key])})`,
-      );
-    }
-    if (!site.emailLink)
-      code = code.replace(/_this\.email\.interact\(hover, \(_ => window\.open\("mailto:[^"]*"\)\), "#"\), /, "");
-    if (!site.labUrl) {
-      code = code.replace(/_this\.(?:subscribe|privacy|careers|ig|in|tw)\.interact\(hover, \(_ => window\.open\("[^"]*", "_blank"\)\), "#"(?:, "[^"]*")?\), /g, "");
-      code = code.replace(
-        '_this.ref_MobileSync980 = _this.initClass(MobileSync), _this.ref_MobileSync980.isFragment && _promises.push(_this.wait(_this.ref_MobileSync980, "__ready")), ', "",
-      ).replace(
-        '_this.bind("ViewController/contact",',
-        '["ig", "in", "tw", "subscribe", "privacy", "careers", "sync", "line2", "line3", "line4"].forEach(key => _this[key].hide()), _this.bind("ViewController/contact",',
-      );
-    }
-    return code.replace(/"mailto:[^"\s]*"/g, () =>
-      quote(`mailto:${site.emailLink}`),
-    );
-  });
-  source = replaceClass(source, "CleanRoom", (code) =>
-    code.replace(
-      /let url = "[^"]*";/,
-      () => `let url = ${quote(site.labUrl)};`,
-    ),
-  );
-  if (Array.isArray(config.songs))
-    source = source.replace(
-      /let SONGS = \[[\s\S]*?\];/,
-      () => `let SONGS = ${JSON.stringify(config.songs)};`,
-    );
-  if (config.songs?.length === 0)
-    source = source.replace(
-      "let SONGS = []; SONGS = SONGS.shuffle()",
-      'let SONGS = []; if (!SONGS.length) { _this.wrapper?.hide?.(); _this.set("Global/audioEnabled", false); _this.flag?.("__ready", true); _this.onInit?.(); return; } SONGS = SONGS.shuffle()',
-    );
-  return source;
-}
-function identityBridgeSource(config,origin,preview) {
-  return `const identityConfig=${quote(config)},identityOrigin=${quote(origin)};
-    window.__SITE_UPDATE_IDENTITY__=function(state){
-      if(!window.SiteIdentity||!window.SiteMetadataDOM)return;
-      const path=state===undefined?location.pathname:window.SiteIdentity.publicPathForState(state);
-      const meta=window.SiteIdentity.pageMetadata(identityConfig,identityOrigin,path||'/__not-found');
-      window.SiteMetadataDOM.applyPageMetadata(document,meta,{preview:${JSON.stringify(preview)}});
-    };
-    window.__SITE_UPDATE_IDENTITY__();`;
-}
-function bridgeSource(
-  version,
-  config,
-  snapshot = { assets: {}, legacyMap: {} },
-  origin,
-) {
-  const allowed = snapshot.config
-    ? new Set(collectReferences(snapshot).map((r) => r.resourceId))
-    : new Set();
-  const mappings = Object.fromEntries(
-    Object.entries(snapshot.legacyMap || {})
-      .filter(([, slot]) => allowed.has(snapshot.assets[slot]?.resourceId))
-      .map(([alias]) => [
-        canonicalResourceURL(alias),
-        mapResourceURL(snapshot, version, alias).split(/[?#]/)[0],
-      ]),
-  );
-  return `(()=>{const base=${quote(`/api/site/${version}`)}, mappings=${quote(mappings)};
-    function map(value){try{if(typeof value!=='string')return value;const u=new URL(value.replace(/^~/,''),location.origin+'/');if(u.pathname.includes('/api/site/'))return value;
-      let key=/^https?:\\/\\//i.test(value)&&Object.hasOwn(mappings,value)?value:u.origin===location.origin?decodeURIComponent(u.pathname).replace(/^\\//,''):value;
-      if(Object.hasOwn(mappings,key))return mappings[key]+(/\\.ktx2?$/i.test(mappings[key])?u.search:u.search.replace(/-compressedKtx2?/g,''))+u.hash;
-      if(u.origin!==location.origin)return value;
-      if(/\\/cms\\/projects-[^/]+\\.json$/.test(u.pathname))return base+'/projects.json';
-      if(/\\/cms\\/metadata-[^/]+\\.json$/.test(u.pathname))return base+'/metadata.json';
-      if(/\\/cms\\/contact-[^/]+\\.json$/.test(u.pathname))return base+'/contact.json';
-      if(u.origin===location.origin&&/\\/assets\\/data\\/uil\\.[^/]+\\.json$/.test(u.pathname))return base+'/uil.json';
-      if(u.origin===location.origin&&u.pathname==='/assets/shaders/compiled.vs')return base+'/compiled.vs';
-      return value;}catch{return value;}}
-    window.__SITE_RESOURCE_URL__=map;
-    const fetchOriginal=window.fetch;window.fetch=function(input,init){const old=input instanceof Request?input.url:String(input);const next=map(old);return fetchOriginal.call(this,next!==old&&input instanceof Request?new Request(new URL(next,location.origin).href,input):next!==old?next:input,init);};
-    const open=XMLHttpRequest.prototype.open;XMLHttpRequest.prototype.open=function(method,url,...args){return open.call(this,method,map(url),...args);};
-    window.__SITE_VERSION__=${quote(String(version))};${identityBridgeSource(config,origin,String(version).startsWith('preview-'))}
-  })();`;
-}
-function patchShaders(source, config) {
-  const fields = config.scenes.find((s) => s.id === "TreeScene")?.fields || [];
-  const value = (name) =>
-    fields.find((f) => f.key === `__blackhole_${name}`)?.value ?? 1;
-  const parts = source.split("{@}");
-  for (let i = 0; i < parts.length - 1; i++)
-    if (parts[i] === "LogoParticleShader.glsl") {
-      parts[i + 1] = parts[i + 1]
-        .replace(/\btime\b/g, `(time * ${value("speed").toFixed(4)})`)
-        .replace(/\b2\.16\b/g, (2.16 * value("size")).toFixed(6))
-        .replace(/\b0\.54\b/g, (0.54 * value("size")).toFixed(6))
-        .replace(
-          "vec4(emission, 1.0)",
-          `vec4(emission * ${value("brightness").toFixed(4)}, 1.0)`,
-        )
-        .replace(
-          "vec4(color, 1.0)",
-          `vec4(color * ${value("brightness").toFixed(4)}, 1.0)`,
-        );
-    }
-  return parts.join("{@}");
-}
-function escapeHTML(text) {
-  return String(text).replace(
-    /[&<>"']/g,
-    (char) =>
-      ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[
-        char
-      ],
-  );
-}
 function safeStatic(directory) {
   const serve = express.static(directory, {
     dotfiles: "deny",
@@ -308,10 +78,15 @@ function mountFrontend(app, store, options) {
           case "config":
             return res.json(config);
           case "bridge.js":
-            return res.type("js").send(bridgeSource(id, config, snapshot, options.origin));
+            return res.type("js").send(bridgeSource(id, config, snapshot, options.origin, collectReferences(snapshot), {}));
           case 'identity.js':
             return res.type('js').send(['site-identity.js','page-metadata-dom.js']
               .map(name=>fs.readFileSync(path.join(__dirname,'../shared',name),'utf8')).join('\n;\n'));
+          case 'unsupported.html': {
+            const file=path.join(options.root,'unsupported.html');
+            if(!fs.existsSync(file))throw fail(503,'缺少前台运行资源，请阅读部署说明');
+            return res.type('html').send(fs.readFileSync(file,'utf8'));
+          }
           case "app.js": {
             const file = appFile(options.root);
             if (!file) throw fail(503, "缺少前台运行资源，请阅读部署说明");
@@ -324,7 +99,7 @@ function mountFrontend(app, store, options) {
                     "utf8",
                   ),
                   config,
-                ),
+                ).source,
               );
           }
           case "uil.json":
@@ -341,7 +116,7 @@ function mountFrontend(app, store, options) {
                     "utf8",
                   ),
                   config,
-                ),
+                ).source,
               );
           case "metadata.json":
           case "contact.json": {
@@ -395,27 +170,7 @@ function mountFrontend(app, store, options) {
           path.join(options.root, "index.html"),
           "utf8",
         );
-        html = html.replace(
-          /(<link\b[^>]*\bhref=["'])([^"']+)(["'][^>]*>)/gi,
-          (all, start, url, end) =>
-            /\brel=["'][^"']*(?:icon|manifest)/i.test(all)
-              ? start + mapResourceURL(snapshot, id, url) + end
-              : all,
-        );
-        html = html.replace(
-          /url\(\s*(["']?)([^"')]+)\1\s*\)/g,
-          (all, q, url) =>
-            /\.(?:woff2?|ttf|otf)(?:[?#]|$)/i.test(url)
-              ? `url(${q}${mapResourceURL(snapshot, id, url)}${q})`
-              : all,
-        );
-        html = html.replace(
-          /s = "assets\/js\/app\." \+ window\._CACHE_ \+ "\.js"/,
-          `s = "/api/site/${id}/app.js"`,
-        );
-        html=html.replace(/<head\b[^>]*>/i,head=>head+
-          `<script src="/api/site/${id}/identity.js"></script><script src="/api/site/${id}/bridge.js"></script>`);
-        html = renderPageMetadata(html, meta, {preview:String(id).startsWith('preview-')});
+        html=renderHTML({html,snapshot:{...snapshot,config},target:{type:String(id).startsWith('preview-')?'preview':'version',id:String(id)},origin:options.origin,pathname:req.path,programs:{}}).source;
         if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
         res.type("html").send(html);
       } catch (error) {
@@ -446,31 +201,6 @@ function mountFrontend(app, store, options) {
   app.get("/unsupported.html", (req, res) =>
     res.sendFile(path.join(options.root, "unsupported.html")),
   );
-}
-function versionedUIL(snapshot, id) {
-  const data = buildUIL(snapshot);
-  for (const [key, value] of Object.entries(data)) {
-    if (!value || typeof value !== "object" || typeof value.src !== "string")
-      continue;
-    const original =
-      /(?:geometry|initialPositions)$/.test(key) &&
-      value.relative?.includes(".")
-        ? value.relative
-        : value.src;
-    const src = mapResourceURL(snapshot, id, original);
-    if (src !== original)
-      data[key] = {
-        ...value,
-        src,
-        relative: "",
-        prefix: "",
-        filename: src.split("/").at(-1).split("?")[0],
-        compressed: false,
-        useCompressed: false,
-        hotreload: false,
-      };
-  }
-  return data;
 }
 module.exports = {
   versionedUIL,

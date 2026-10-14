@@ -4,6 +4,15 @@ const authorizedRoot = process.env.AUTHORIZED_RUNTIME_ROOT;
 if (authorizedRoot && authorizedRoot !== '/Users/jiandan/Code/MyCode/active-theory-v6') throw Error('Unauthorized runtime root');
 const runtimeRoot = authorizedRoot || require("node:path").join(__dirname, "..");
 const licensedRuntime = authorizedRoot ? 'app.1778129964370.js' : require("../admin-server/config").appFile(runtimeRoot);
+const {applyAppPatch}=require('../admin-server/engine/legacy-adapter');
+const completeConfig=(input={})=>{
+  const {initialConfig,validateConfig}=require('../admin-server/config');
+  const schema=initialConfig('/nonexistent');
+  return validateConfig({...schema,site:{...schema.site,title:'Name',description:'',navWork:'',navContact:'',contactTitle:'',cityLax:'',cityNyc:'',cityAms:'',email:'',emailLink:'',labUrl:'',...input.site},projects:[],songs:input.songs||[]},schema);
+};
+const patchRuntime=(source,input)=>require('../admin-server/engine/legacy-adapter').patchAppSource(source,completeConfig(input)).source;
+const single=(id,source,config)=>applyAppPatch(id,source,config).source;
+const compose=(ids,source,config)=>ids.reduce((value,id)=>single(id,value,config),source);
 const viewAnchor = '_this.bind("navigate", (path => _this.navigate(path))), document.title = "AGI旅行者· AGI Voyager", _this.bind("Work/project", (data => { document.title = data ? `${data.title} · Active Theory` : "AGI旅行者· AGI Voyager" }));';
 const runtimeTest = (name, fn) => test(`authorized runtime: ${name}`, {
   skip: !licensedRuntime && "Authorized original runtime bundle absent; engine compatibility is not verified",
@@ -17,18 +26,17 @@ function runtimeClass(source, name) {
   return source.slice(start, end < 0 ? source.length : end);
 }
 runtimeTest('ViewController metadata hook replaces both legacy title writers',()=>{
-  const patched=require('../admin-server/frontend').patchAppSource(runtimeSource(),{site:{title:'Name'},songs:[]});
+  const patched=patchRuntime(runtimeSource(),{site:{title:'Name'},songs:[]});
   const view=runtimeClass(patched,'ViewController');
   assert.match(view,/__SITE_UPDATE_IDENTITY__/);
   assert.doesNotMatch(view,/document\.title\s*=/);
   assert.doesNotMatch(view,/data\.title\} · Active Theory/);
 });
 test('ViewController incompatible or duplicate navigation anchors fail closed',()=>{
-  const {patchAppSource}=require('../admin-server/frontend');
-  for(const body of ['document.title="old";',viewAnchor+viewAnchor]) assert.throws(()=>patchAppSource('Class((function ViewController(){'+body+'}));',{site:{},songs:[]}),error=>error.status===503);
+  for(const body of ['document.title="old";',viewAnchor+viewAnchor]) assert.throws(()=>single('view.identity','Class((function ViewController(){'+body+'}));',{site:{},songs:[]}),error=>error.status===422);
 });
 runtimeTest("ContactUI empty and one-character text are safe and zero-width layout completes", async () => {
-  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const source = patchRuntime(runtimeSource(), { site: {}, songs: [] });
   const code = runtimeClass(source, "ContactUI");
   const helper = code.slice(code.indexOf("function replaceRandomLetters"), code.indexOf(" _this.element &&"));
   const replace = new Function(`${helper};return replaceRandomLetters;`)();
@@ -49,7 +57,7 @@ runtimeTest("ContactUI empty and one-character text are safe and zero-width layo
   }
 });
 runtimeTest("ContactUI absent configured links and personal accessibility text are not retained", () => {
-  const code = runtimeClass(require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] }), "ContactUI");
+  const code = runtimeClass(patchRuntime(runtimeSource(), { site: {}, songs: [] }), "ContactUI");
   assert(!code.includes('mailto:'));
   assert(!code.includes("drawbookai.cn"));
   assert(!code.includes('"Los Angeles"'));
@@ -57,7 +65,7 @@ runtimeTest("ContactUI absent configured links and personal accessibility text a
   assert.equal(links, "", "absent targets must not register interactive links");
 });
 runtimeTest("ContactUI without external destination does not instantiate personal QR or advertise its controls", () => {
-  const patch = require("../admin-server/frontend").patchAppSource;
+  const patch = patchRuntime;
   const empty = runtimeClass(patch(runtimeSource(), { site: {}, songs: [] }), "ContactUI");
   assert(!empty.includes("_this.initClass(MobileSync)"), "no source-domain QR or multiplayer session on an empty contact page");
   for (const label of ["JION US", "ABOUT US", "[ wechat ]", "Newsletter Signup", "Careers"])
@@ -68,7 +76,7 @@ runtimeTest("ContactUI without external destination does not instantiate persona
   assert(filled.includes("JION US"));
 });
 runtimeTest("CMS workItems uses real zero/one/many StateArrays through actual Model protocol", async () => {
-  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const source = patchRuntime(runtimeSource(), { site: {}, songs: [] });
   const model = runtimeClass(source, "Model");
   const method = model.slice(model.indexOf("this.makeRequest ="), model.indexOf(", this.request ="));
   const cms = runtimeClass(source, "CMSData");
@@ -83,7 +91,7 @@ runtimeTest("CMS workItems uses real zero/one/many StateArrays through actual Mo
   }
 });
 runtimeTest("Text3D initializes empty content through the real text creation path", () => {
-  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const source = patchRuntime(runtimeSource(), { site: {}, songs: [] });
   const code = runtimeClass(source, "Text3D");
   const init = code.slice(code.indexOf("function initText()"), code.indexOf("async function overrideLocalize"));
   for (const text of ["", "Hello"]) {
@@ -95,7 +103,7 @@ runtimeTest("Text3D initializes empty content through the real text creation pat
 });
 runtimeTest("actual text worker produces finite zero bounds and no glyphs for empty content", () => {
   const vm = require("node:vm");
-  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const source = patchRuntime(runtimeSource(), { site: {}, songs: [] });
   const code = runtimeClass(source, "GLTextThread").replace(/,\s*$/, ";");
   const context = { result: null, window: { zUtils3D: true }, Thread: { upload(fn) { context.generate = fn; } }, Class(fn) { new fn(); }, resolve: (buffers) => { context.result = buffers; }, GeometryAttribute: function(array) { this.array = array; }, Geometry: class {
     addAttribute(key, value) { this[key] = value; }
@@ -110,7 +118,7 @@ runtimeTest("actual text worker produces finite zero bounds and no glyphs for em
   for (const value of [context.result.boundingBox.min.x, context.result.boundingBox.max.x, context.result.boundingSphere.center.x, context.result.boundingSphere.radius]) assert.equal(value, 0);
 });
 runtimeTest("GLText clears existing geometry and string on nonempty to empty update", async () => {
-  const source = require("../admin-server/frontend").patchAppSource(runtimeSource(), { site: {}, songs: [] });
+  const source = patchRuntime(runtimeSource(), { site: {}, songs: [] });
   const code = runtimeClass(source, "GLText").replace(/,\s*$/, ";");
   let Type;
   const create = () => { let resolve; const p = new Promise(r => resolve = r); p.resolve = resolve; return p; };
@@ -216,7 +224,7 @@ test("inactive UIL layers stay inventoried but do not authorize or block publica
 });
 test("bridge maps media at actual loader entry and preserves Request headers and XHR arguments", async () => {
   const vm = require("node:vm");
-  const { bridgeSource, patchAppSource } = require("../admin-server/frontend");
+  const { bridgeSource } = require("../admin-server/frontend");
   const snapshot = {
     template: { baseUIL: { picture: { src: "assets/images/pic.png" } } },
     config: { site: { title: "T" }, songs: [], scenes: [], projects: [] },
@@ -234,7 +242,7 @@ test("bridge maps media at actual loader entry and preserves Request headers and
     window: { fetch: (...args) => calls.push(args) },
   };
   context.XMLHttpRequest.prototype.open = (...args) => xhr.push(args);
-  vm.runInNewContext(bridgeSource(9, snapshot.config, snapshot, 'http://site.test'), context);
+  vm.runInNewContext(bridgeSource(9, snapshot.config, snapshot, 'http://site.test', require('../admin-server/snapshots').collectReferences(snapshot), {}), context);
   const request = new Request("http://site.test/assets/images/pic.png", {
     headers: { "x-test": "yes" },
   });
@@ -270,7 +278,7 @@ test("bridge maps media at actual loader entry and preserves Request headers and
   new Function(
     "window",
     "location",
-    patchAppSource(source, snapshot.config),
+    compose(['assets.get-path','hydra.absolute-path'],source,snapshot.config),
   ).call(target, context.window, context.location);
   assert.equal(
     target.getPath("assets/images/pic.png"),
@@ -321,6 +329,8 @@ test("bridge and snapshot mappings distinguish exact external queries without re
       snapshot.config,
       snapshot,
       'http://site.test',
+      collectReferences(snapshot),
+      {},
     ),
     context,
   );
@@ -363,11 +373,10 @@ test("bridge and snapshot mappings distinguish exact external queries without re
   );
 });
 test("geometry and instance loader preserve already-versioned URLs before Worker dispatch", () => {
-  const { patchAppSource } = require("../admin-server/frontend");
   const source =
-    'Class((function GeomThread(){function load(path){path.includes("assets/geometry/") || (path = "assets/geometry/" + path);return path;}this.load=load;}));Class((function InstanceMesh(){this.load=function(file){file.includes("assets/geometry") || (file = `assets/geometry/${file}`);return file;};}));';
+    'Class((function GeomThread(){function load(path){path.includes("assets/geometry/") || (path = "assets/geometry/" + path); path.includes("assets/geometry/"); return path;}this.load=load;}));Class((function InstanceMesh(){this.load=function(file){file.includes("assets/geometry") || (file = `assets/geometry/${file}`);return file;};}));';
   const classes = {};
-  new Function("Class", patchAppSource(source, { site: {}, songs: [] }))(
+  new Function("Class", compose(['geometry.version-path','instance.version-path'],source,{site:{},songs:[]}))(
     (fn) => (classes[fn.name] = fn),
   );
   const url = "/api/site/3/resources/model/model.bin";
@@ -375,11 +384,10 @@ test("geometry and instance loader preserve already-versioned URLs before Worker
   assert.equal(new classes.InstanceMesh().load(url), url);
 });
 test("particle point-cloud loader preserves version URLs before worker dispatch", () => {
-  const { patchAppSource } = require("../admin-server/frontend");
   const source =
     'Class((function ParticleDistributor(){this.path=function(path){path.includes("assets/geometry") || (path = "assets/geometry/" + path);return path;};}));';
   let Type;
-  new Function("Class", patchAppSource(source, { site: {}, songs: [] }))(
+  new Function("Class", single('particles.version-path',source,{site:{},songs:[]}))(
     (fn) => (Type = fn),
   );
   assert.equal(
@@ -434,9 +442,8 @@ test("unchanged empty UIL src preserves the active dotted relative geometry refe
   assert(collectReferences(snapshot).some((r) => r.resourceId === "rock"));
 });
 test("worker root-relative geometry paths keep one slash and the actual origin", () => {
-  const { patchAppSource } = require("../admin-server/frontend");
   const source = 'this.absolutePath = function (path) { return "old/"+path; };';
-  const patched = patchAppSource(source, { site: {}, songs: [] });
+  const patched = single('hydra.absolute-path',source,{site:{},songs:[]});
   const target = {};
   new Function("location", patched).call(target, {
     origin: "http://localhost:3001",
@@ -447,7 +454,7 @@ test("worker root-relative geometry paths keep one slash and the actual origin",
   );
 });
 test("versioned bridge rewrites CMS and shader requests without embedding secrets", () => {
-  const { bridgeSource, patchAppSource } = require("../admin-server/frontend");
+  const { bridgeSource } = require("../admin-server/frontend");
   const config = {
     site: { title: "My site", navWork: "作品", navContact: "联系" },
     songs: [],
@@ -457,7 +464,7 @@ test("versioned bridge rewrites CMS and shader requests without embedding secret
   assert.doesNotThrow(() => new Function(script));
   const source =
     'Class((function ViewController(){'+viewAnchor+'})), Class((function Main(){}));';
-  assert.match(patchAppSource(source, config), /__SITE_UPDATE_IDENTITY__/);
+  assert.match(single('view.identity',source,config), /__SITE_UPDATE_IDENTITY__/);
 });
 test("converted models use engine-compatible geometry aliases", () => {
   const { buildUIL } = require("../admin-server/config");
@@ -475,7 +482,6 @@ test("converted models use engine-compatible geometry aliases", () => {
   assert.equal(result.logo.src, "/assets/geometry/admin/abc.bin");
 });
 test("patches preserve dollar replacement characters and empty music lists", () => {
-  const { patchAppSource } = require("../admin-server/frontend");
   const config = {
     site: {
       title: "$& title",
@@ -487,7 +493,7 @@ test("patches preserve dollar replacement characters and empty music lists", () 
   };
   const source =
     'Class((function ViewController(){'+viewAnchor+'}));Class((function NavUI(){let x={text: "Work", _type: 1};}));Class((function ContactUI(){let x={_innerText: "old", refName: "email"};})); let SONGS = [{title:"old",src:"x"}];';
-  const patched = patchAppSource(source, config);
+  const patched = compose(['view.identity','nav.work','contact.email.inner-text','songs.list'],source,config);
   assert.match(patched,/__SITE_UPDATE_IDENTITY__/);
   assert.equal(require('../shared/site-identity').pageMetadata(config,'http://site.test','/').title,'$& title');
   assert(patched.includes('"$& work"'));
