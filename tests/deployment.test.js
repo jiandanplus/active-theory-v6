@@ -14,7 +14,7 @@ test('PG18 catalog fingerprint reproduces from untouched 001 SQL in two fresh is
       await tx.query(sql);
       await tx.query('INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)',[1,digest(sql)]);
     });
-    assert.equal(digest(JSON.stringify((await store.query(query)).rows)), expected);
+    assert.equal(digest(JSON.stringify((await store.query(query)).rows)), require('../admin-server/migration-registry').migrations[0].schemaSignature);
     assert.deepEqual(await require('../admin-server/migrations').inspectInstallation(store), {state:'uninstalled',schemaVersion:1});
     await store.transaction(require('../admin-server/migrations').migrate);
     assert.equal(digest(JSON.stringify((await store.query(query)).rows)), expected);

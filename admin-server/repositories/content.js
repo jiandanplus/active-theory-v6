@@ -180,11 +180,13 @@ function contentRepository(db) {
           },
         ],
       );
-      for (const v of bundle.versions)
+      for (const v of bundle.versions) {
         await db.query(
           "INSERT INTO personal_site.versions(id,created,snapshot) VALUES($1,$2,$3)",
           [v.id, v.created, composeSnapshot(v.snapshot)],
         );
+        await db.query("INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES($1,'legacy')",[v.id]);
+      }
       await db.query(
         "INSERT INTO personal_site.site_settings(id,site,revision,published,template_id,default_storage) VALUES(true,$1,$2,$3,$4,$5)",
         [

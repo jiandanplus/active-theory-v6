@@ -34,6 +34,9 @@ test('migration repeats safely and installation record is authoritative', async 
   assert.deepEqual(await inspectInstallation(store), {state:'uninstalled', schemaVersion:currentSchemaVersion});
   await store.transaction(migrate);
   assert.equal((await store.query('SELECT count(*)::int AS n FROM personal_site.schema_migrations')).rows[0].n, currentSchemaVersion);
+  assert.equal(currentSchemaVersion,3);
+  assert.deepEqual((await store.query('SELECT id,runtime_digest,generation FROM personal_site.runtime_selection')).rows,[{id:true,runtime_digest:null,generation:0}]);
+  for(const table of ['runtime_bundles','delivery_artifacts','delivery_bindings']) assert.equal((await store.query(`SELECT count(*)::int AS n FROM personal_site.${table}`)).rows[0].n,0);
   await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('test',$1)",[currentSchemaVersion]);
   assert.deepEqual(await inspectInstallation(store), {state:'installed', schemaVersion:currentSchemaVersion});
 });

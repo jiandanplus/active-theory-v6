@@ -20,17 +20,18 @@ function inspectorWithSignatures(signatures) {
 test('inspection accepts a known catalog signature assigned to the recorded version',async t=>{
   const {store} = await require('./helpers/postgres').postgresFixture(t);
   await store.query("ALTER TABLE personal_site.site_settings ADD COLUMN signature_fixture text");
-  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',2)");
-  const {schemaSignature,signatureQuery} = require('../admin-server/migrations');
+  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',3)");
+  const {signatureQuery} = require('../admin-server/migrations');
   const changed = require('node:crypto').createHash('sha256').update(JSON.stringify((await store.query(signatureQuery)).rows)).digest('hex');
-  const inspect = inspectorWithSignatures([schemaSignature,changed]).inspectInstallation;
+  const registry = require('../admin-server/migration-registry');
+  const inspect = inspectorWithSignatures([registry.migrations[0].schemaSignature,registry.migrations[1].schemaSignature,changed]).inspectInstallation;
   assert.equal((await inspect(store)).state,'installed');
 });
 test('inspection rejects another known version catalog even when the prefix checksum matches',async t=>{
   const {store} = await require('./helpers/postgres').postgresFixture(t);
-  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',2)");
+  await store.query("INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',3)");
   const {schemaSignature} = require('../admin-server/migrations');
-  const inspect = inspectorWithSignatures([schemaSignature,'different-version-signature']).inspectInstallation;
+  const inspect = inspectorWithSignatures([schemaSignature,schemaSignature,'different-version-signature']).inspectInstallation;
   assert.equal((await inspect(store)).state,'incompatible');
   const light = {query:async(sql,args)=>{
     assert.notEqual(sql,require('../admin-server/migrations').signatureQuery,'lightweight inspection must not scan catalogs');
@@ -74,7 +75,7 @@ test('V1 upgrades once, preserves history and serializes competitors', async t =
   assert.deepEqual(await inspectInstallation(store),{state:'upgrade_required',schemaVersion:1});
   const results = await Promise.all([upgradeInstalled(store),upgradeInstalled(store)]);
   assert.equal(results.filter(r=>r.upgraded).length,1);
-  assert.deepEqual(await inspectInstallation(store),{state:'installed',schemaVersion:2});
+  assert.deepEqual(await inspectInstallation(store),{state:'installed',schemaVersion:3});
   assert.deepEqual(await preserved(store),before);
   assert.deepEqual((await store.query(historySql)).rows,beforeHistory);
   assert.deepEqual((await store.query(previewsSql)).rows,beforePreviews);
