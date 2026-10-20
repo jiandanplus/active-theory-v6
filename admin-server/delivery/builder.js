@@ -100,19 +100,14 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
       ?runtimeMedia(rewritten.files.get(entry.key).toString(),entry,snapshot,target,references):rewritten.files.get(entry.key));
   }
   const routes={};
-  for(const [index,pathname] of ['/', '/work',...config.projects.map(p=>'/work/'+p.slug)].entries()){
+  const pagePaths=['/', '/work',...config.projects.map(p=>'/work/'+p.slug)];
+  if(profile.id==='legacy-six-scenes-v1')pagePaths.push('/contact');
+  for(const [index,pathname] of pagePaths.entries()){
     if(Object.hasOwn(routes,pathname))throw bad();
     const key='page-'+index,entry=runtime.files.find(f=>f.key===runtime.entryKey);
     const result=profile.transformHTML({html:files.get(entry.key).toString(),snapshot:{...snapshot,config},target,origin,programs,pathname,inputPath:entry.path,references});
     report(key,result.report);
     let source=runtimeMedia(result.source,entry,snapshot,target,references);
-    if(profile.id==='legacy-six-scenes-v1'){
-      const basicURL=(pathname==='/'?'/basic':'/basic'+pathname)+(target.type==='preview'?'?preview='+target.id:'');
-      const link=`<a data-basic-entry href="${basicURL}" style="position:fixed;bottom:16px;right:16px;z-index:2147483647;background:#171d27;color:#fff;border:1px solid #768293;border-radius:24px;padding:10px 18px;font:14px system-ui;text-decoration:none">普通网页 ↗</a>`;
-      source=source.replace(/<body\b[^>]*>/i,body=>body+link);
-      const guard=`<script>if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)location.replace(${JSON.stringify(basicURL)});</script>`;
-      source=source.replace('</head>',guard+'</head>');
-    }
     const html=renderPageMetadata(source,pageMetadata(config,origin,pathname),{preview:target.type==='preview'});
     validateHTML(html,target,programs,false);routes[pathname]=add(key,'html',html);
     const basicPath=pathname==='/'?'/basic':'/basic'+pathname;
@@ -120,6 +115,7 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
     routes[basicPath]=add('basic-page-'+index,'html',basicHTML);
   }
   for(const pathname of ['/contact','/basic/contact']){
+    if(Object.hasOwn(routes,pathname))continue;
     const html=renderPageMetadata(renderPortfolio({config,target,pathname,basic:pathname.startsWith('/basic'),scripts:false}),pageMetadata(config,origin,'/contact'),{preview:target.type==='preview'});
     routes[pathname]=add(pathname.startsWith('/basic')?'basic-contact':'contact-page','html',html);
   }
@@ -128,11 +124,6 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
   const unsupported=profile.transformUnsupportedHTML({html:files.get('unsupported').toString(),snapshot:unsupportedSnapshot,target,references,inputPath:unsupportedEntry.path});
   report('unsupported',unsupported.report);
   let unsupportedSource=runtimeMedia(unsupported.source,unsupportedEntry,snapshot,target,references);
-  if(profile.id!=='portfolio-v1'){
-    const basicBody=renderPortfolio({config,target,basic:true,scripts:false}).match(/<body>([\s\S]*)<\/body>/i)[1];
-    const fallback=`<div id="site-basic-fallback" style="position:fixed;inset:0;overflow:auto;z-index:2147483647;background:#11151a;color:#eef1f5;text-align:left;font:16px/1.7 system-ui"><style>@scope (#site-basic-fallback) {${require('../portfolio/styles')}}</style>${basicBody}</div>`;
-    unsupportedSource=unsupportedSource.replace(/<\/body\s*>/i,fallback+'</body>');
-  }
   const unsupportedHTML=renderPageMetadata(unsupportedSource,pageMetadata(config,origin,'/'),{preview:target.type==='preview'});
   validateHTML(unsupportedHTML,target,programs,true);endpoints['unsupported.html']=add('unsupported','html',unsupportedHTML);
   const documents=Object.create(null),allowed=new Set(references.map(r=>r.resourceId));

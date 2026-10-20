@@ -247,7 +247,14 @@ test('fixed production profile builds original audited bytes with synthetic six-
   const before=JSON.stringify(source),result=await buildArtifact(args);assert.equal(JSON.stringify(source),before);
   assertArtifactManifest(result.manifest);assert.equal(Object.keys(result.manifest.runtime).length,8);
   assert.equal(result.manifest.patchReport.filter(r=>r.id==='programs.program.worker-create').length,1);
-  assert.equal(result.manifest.patchReport.filter(r=>r.id.endsWith('html.app-startup')).length,3);
+  const readPage=async key=>(await f.cas.read(result.manifest.files.find(entry=>entry.key===key))).toString();
+  const homeHTML=await readPage(result.manifest.routes['/']);
+  assert.doesNotMatch(homeHTML,/data-basic-entry|prefers-reduced-motion/,'Original presentation must not gain floating controls or forced alternate-page navigation');
+  const contactHTML=await readPage(result.manifest.routes['/contact']);
+  assert.match(contactHTML,/\/api\/site\/43\/app\.js/,'Direct Contact must use the original frontend program');
+  assert.doesNotMatch(await readPage(result.manifest.endpoints['unsupported.html']),/site-basic-fallback/,'Do not overlay a different page on the original unsupported view');
+  assert.ok(result.manifest.routes['/basic/contact'],'An explicitly requested basic route may remain available');
+  assert.equal(result.manifest.patchReport.filter(r=>r.id.endsWith('html.app-startup')).length,4);
   const app=(await f.cas.read(result.manifest.files.find(e=>e.key===result.manifest.endpoints['app.js']))).toString();
   assert(app.includes('new Worker(Thread.PATH)'));assert(app.includes('window.__SITE_WRAPPER_CODE__'));
   const invalid=structuredClone(source);invalid.config.scenes.pop();
