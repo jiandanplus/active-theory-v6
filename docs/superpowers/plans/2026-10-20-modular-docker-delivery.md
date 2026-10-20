@@ -1,5 +1,7 @@
 # 阶段 C/D 与 Docker 一键交付 Implementation Plan
 
+**User correction:** Preserve the original frontend effects and add backend work-list configuration only. The historical sample acceptance below is not acceptance of the user's original site. Do not default or silently switch an existing site to the different portfolio demo; see [original frontend correction](../../verification/original-frontend-correction.md).
+
 > **For agentic workers:** Use subagent-driven-development with independent file ownership and task reviews. The user has authorized completion through Docker deployment and browser verification; routine implementation choices do not require another approval.
 
 **Goal:** Complete the approved C/D architecture scope and deliver a clean-checkout Docker launch that opens a usable personal website and authenticated management UI.
