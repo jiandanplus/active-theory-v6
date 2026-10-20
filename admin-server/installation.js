@@ -15,9 +15,10 @@ async function installationStatus(store) {
   return inspectInstallation(store,{verifyStructure:false});
 }
 async function preflight(options, mode) {
-  if (!["empty", "bundle", "legacy"].includes(mode))
+  if (!["empty", "bundle", "legacy", "demo"].includes(mode))
     throw fail(400, "安装模式无效");
   try {
+    if(mode === 'demo')return await require('./portfolio/sample').demoBundle();
     if (mode === "legacy")
       return await require("./importers/sqlite").readLegacy({
         root: options.root,
@@ -34,7 +35,7 @@ async function preflight(options, mode) {
   }
 }
 async function installSite(store, { bundle, account, expectedDigest, mode }) {
-  if (!["empty", "bundle", "legacy"].includes(mode))
+  if (!["empty", "bundle", "legacy", "demo"].includes(mode))
     throw fail(400, "安装模式无效");
   if (
     typeof expectedDigest !== "string" ||

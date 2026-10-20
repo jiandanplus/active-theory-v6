@@ -9,6 +9,7 @@ const ADAPTER_SOURCES=Object.freeze([
   'admin-server/engine/profiles/legacy-six-scenes-v1.js','admin-server/engine/program-paths.js',
   'admin-server/engine/registry.js','admin-server/engine/render.js','admin-server/page-metadata.js',
   'admin-server/snapshots.js','shared/page-metadata-dom.js','shared/site-identity.js',
+  'admin-server/engine/profiles/portfolio-v1.js','admin-server/portfolio/render.js','admin-server/portfolio/styles.js',
 ].sort());
 async function captureAdapterIdentity(){
   const sources=new Map();

@@ -39,7 +39,11 @@ test('complete artifact is deterministic from CAS after original runtime root di
   assert.deepEqual(first,second);assert.equal(JSON.stringify(f.args.source),before);
   assertArtifactManifest(first.manifest);assert.equal(first.manifest.sourceSnapshotDigest,digestJSON(f.args.source));
   assert.equal(Object.keys(first.manifest.endpoints).length,10);
-  assert.deepEqual(Object.keys(first.manifest.routes),['/','/work','/work/one']);
+  assert.deepEqual(Object.keys(first.manifest.routes),['/','/basic','/work','/basic/work','/work/one','/basic/work/one','/contact','/basic/contact']);
+  const basic=first.manifest.files.find(entry=>entry.key===first.manifest.routes['/basic']);
+  const basicHTML=(await f.cas.read(basic)).toString();
+  assert.match(basicHTML,/<main\b/);
+  assert.doesNotMatch(basicHTML,/<script\b/);
   assert.equal(first.manifest.routes['/work/unknown'],undefined);
   for(const entry of first.manifest.files)assert.deepEqual(await f.cas.read(entry),await f.cas.read(second.manifest.files.find(e=>e.key===entry.key)));
   const app=first.manifest.files.find(e=>e.key===first.manifest.endpoints['app.js']);

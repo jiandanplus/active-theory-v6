@@ -1,10 +1,12 @@
 const legacy=require('./profiles/legacy-six-scenes-v1');
+const portfolio=require('./profiles/portfolio-v1');
 const {fail}=require('../security');
 const {assertRuntimeManifest,sha256,canonicalJSON}=require('../delivery/contracts');
 // This registry is fixed in trusted server code. Packages cannot register profiles.
 function get(profileId) {
-  if(profileId!==legacy.id)throw fail(422,'不支持的运行配置');
-  return legacy;
+  if(profileId===legacy.id)return legacy;
+  if(profileId===portfolio.id)return portfolio;
+  throw fail(422,'不支持的运行配置');
 }
 function validateRuntime(manifest,files,profile) {
   assertRuntimeManifest(manifest);

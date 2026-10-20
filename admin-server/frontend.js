@@ -31,7 +31,7 @@ function mountFrontend(app,store,options,{cas}) {
   app.get('/api/site/:version/resources/:id/:fileName',route((req,res,next)=>resource(req,res,next,req.params.version,req.params.id)));
   app.get('/api/site/:version/runtime/:key',deliver(req=>({runtimeKey:req.params.key})));
   app.get('/api/site/:version/:file',deliver(req=>({endpoint:req.params.file})));
-  app.get(['/','/work','/work/:slug'],deliver(req=>({pagePath:req.path}),{page:true}));
+  app.get(['/','/work','/work/:slug','/contact','/basic','/basic/work','/basic/work/:slug','/basic/contact'],deliver(req=>({pagePath:req.path}),{page:true}));
   app.get('/unsupported.html',deliver(()=>({endpoint:'unsupported.html'})));
   app.get(['/assets/*','/room/*','/bush.bin/*'],route(async(req,res,next)=>{
     // Legacy media names are aliases only, never a static program fallback.

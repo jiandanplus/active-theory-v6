@@ -10,6 +10,11 @@ function exactBody(body,keys) {
     Object.keys(body).length===keys.length&&keys.every(key=>Object.hasOwn(body,key));
 }
 function mountDeliveryAdmin({admin,store,service}) {
+  admin.post('/runtime/builtin',route(async(req,res)=>{
+    if(!exactBody(req.body,[]))throw fail(400,'模板登记参数无效');
+    const input=await require('../portfolio/builtin').builtinRuntime();
+    res.json(await service.register({...input,actor:{id:req.adminSession.id,username:req.adminSession.username}}));
+  }));
   admin.get('/runtime',route(async(req,res)=>{
     const runtime=runtimeRepository(store);
     const [selection,bundles]=await Promise.all([runtime.getSelection(),runtime.listBundles()]);

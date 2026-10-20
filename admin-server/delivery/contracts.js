@@ -116,7 +116,8 @@ function assertArtifactManifest(value) {
   } catch { throw bad(); }
   const files = fileIndex(value.files, false);
   mapping(value.routes, files, key => {
-    if (key !== '/' && key !== '/work' && !/^\/work\/[a-z0-9][a-z0-9-]{0,100}$/.test(key)) throw bad();
+    const route=key.replace(/^\/basic(?=\/|$)/,'')||'/';
+    if (route !== '/' && route !== '/work' && route !== '/contact' && !/^\/work\/[a-z0-9][a-z0-9-]{0,100}$/.test(route)) throw bad();
   }, () => ['html']);
   if (!Object.hasOwn(value.routes, '/') || !Object.hasOwn(value.routes, '/work')) throw bad();
   fields(value.endpoints, Object.keys(ENDPOINT_ROLES));

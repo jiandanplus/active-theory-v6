@@ -19,4 +19,4 @@ function renderPageMetadata(html,meta,{preview=false}={}) {
   });
   return html.replace(/<html\b([^>]*)>/i,(_,attrs)=>`<html${attrs.replace(/\s+lang\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi,'')} lang="${escape(meta.language)}">`);
 }
-module.exports={renderPageMetadata,ownedMeta};
+module.exports={renderPageMetadata,ownedMeta,escape};

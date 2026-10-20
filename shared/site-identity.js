@@ -39,6 +39,7 @@
     const meta={status:200,title,siteTitle:title,description:site.description,language:LANGUAGES.includes(site.language)?site.language:'en',image:'',url:''};
     let image=site.socialImage;
     if (path==='/work') meta.title=site.navWork?`${site.navWork} · ${title}`:title;
+    else if (path==='/contact') meta.title=site.navContact?`${site.navContact} · ${title}`:title;
     else if (path!=='/') {
       const match=/^\/work\/([a-z0-9][a-z0-9-]{0,100})$/.exec(path);
       const project=match&&(config.projects||[]).find(p=>p.slug===match[1]);

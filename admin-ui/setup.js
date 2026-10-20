@@ -8,7 +8,7 @@ function mount({ root, onInstalled }) {
   const state = {
     status: "unavailable",
     csrf: "",
-    mode: "empty",
+    mode: "demo",
     report: null,
     digest: "",
     username: "",
@@ -258,6 +258,7 @@ function mount({ root, onInstalled }) {
     select.id = "setup-mode";
     label.htmlFor = select.id;
     for (const [value, text] of [
+      ["demo", "内置个人主页示例（推荐）"],
       ["empty", "空白站点"],
       ["bundle", "服务器内容包"],
       ["legacy", "旧站迁移（只读）"],
@@ -274,6 +275,8 @@ function mount({ root, onInstalled }) {
       source();
     });
     card.append(label, select);
+    if (state.mode === "demo")
+      card.append(el("p", "包含原创示例图形和作品文案；安装后可在后台修改，再选择内置模板并预览、发布。", "muted"));
     if (state.mode === "empty")
       card.append(
         el(
