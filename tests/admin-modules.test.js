@@ -5,6 +5,199 @@ const path = require('node:path');
 const vm = require('node:vm');
 const root = path.join(__dirname, '../admin-ui');
 const names = ['helpers', 'state', 'api', 'dom', 'session', 'actions', 'overview', 'site', 'scenes', 'projects', 'resources', 'storage', 'versions', 'security'];
+function deferredResponse() {
+  let resolve;
+  const promise = new Promise(done => resolve = done);
+  return {promise, resolve};
+}
+async function lifecycleAdmin() {
+  const {document, walk} = require('./helpers/admin-dom')();
+  const draft = {site: {title: 'Lifecycle draft', description: '', language: 'zh-CN', socialImage: ''}, projects: [], scenes: [], songs: []};
+  const overview = {published: 1, resources: 0, audit: [], defaultStorage: 'local', masterKeyConfigured: true};
+  const responses = {
+    '/config': {config: draft, revision: 4}, '/config/schema': {schema: structuredClone(draft)},
+    '/resources': {resources: []}, '/storages': {storages: [], defaultStorage: 'local'}, '/overview': overview,
+    '/runtime': {selection: {digest: null, generation: 0}, bundles: []}, '/versions': {versions: []},
+  };
+  const pending = new Map();
+  let authenticated = true;
+  const environment = {document, crypto: require('node:crypto').webcrypto, addEventListener() {},
+    SiteIdentity: require('../shared/site-identity'), SiteContentContract: require('../shared/content-contract'),
+    fetch: async url => {
+      if (url === '/api/setup/status') return {ok: true, json: async () => ({state: 'installed'})};
+      const route = url.replace('/api/admin', '');
+      if (pending.get(route)?.length) return pending.get(route).shift().promise;
+      if (route === '/logout') authenticated = false;
+      if (route === '/login') authenticated = true;
+      const result = ['/session', '/login'].includes(route) ? {authenticated, initialized: true, csrfToken: 'lifecycle'} : route === '/logout' ? {} : responses[route];
+      assert.notEqual(result, undefined, url);
+      return {ok: true, json: async () => result};
+    }};
+  const app = require('../admin-ui/admin').startAdmin(environment);
+  await app.ready;
+  return {app, document, walk, responses, overview,
+    defer(route) {
+      const pendingResponse = deferredResponse();
+      if (!pending.has(route)) pending.set(route, []);
+      pending.get(route).push(pendingResponse);
+      return {resolve: (value, status = 200) => pendingResponse.resolve({ok: status === 200, status, json: async () => value})};
+    },
+    async navigate(section) {app.state.section = section; await app.render();},
+    async relogin() {await walk().find(el => el.tagName === 'FORM').dispatch('submit');},
+  };
+}
+test('pending async sections cannot append or replace shared data after navigation', async () => {
+  for (const [section, route, result, forbidden] of [
+    ['overview', '/overview', {published: 99, resources: 99, audit: [], defaultStorage: 'stale'}, '网站总览'],
+    ['resources', '/resources', {resources: [{id: 'old', name: 'private-old', kind: 'image'}]}, '资源库'],
+    ['storage', '/storages', {storages: [{id: 'stale', name: 'private-store'}], defaultStorage: 'stale'}, '存储设置'],
+    ['versions', '/versions', {versions: []}, '发布版本'],
+  ]) {
+    const f = await lifecycleAdmin();
+    const resources = f.app.state.resources, storages = f.app.state.storages, overview = f.app.state.overview;
+    const delayed = f.defer(route);
+    const oldRender = f.navigate(section);
+    await f.navigate('site');
+    delayed.resolve(result); await oldRender;
+    assert.ok(!f.walk().some(el => el.tagName === 'H1' && el.textContent === forbidden), section);
+    assert.equal(f.app.state.resources, resources, section + ' resources');
+    assert.equal(f.app.state.storages, storages, section + ' storages');
+    assert.equal(f.app.state.overview, overview, section + ' overview');
+  }
+});
+test('earlier same-section render cannot replace the latest render or state', async () => {
+  for (const [section, route, oldData, newData] of [
+    ['overview', '/overview', {published: 91, resources: 0, audit: []}, {published: 2, resources: 0, audit: []}],
+    ['resources', '/resources', {resources: [{id: 'old', name: 'old', kind: 'image'}]}, {resources: []}],
+    ['storage', '/storages', {storages: [{id: 'old', name: 'old'}], defaultStorage: 'old'}, {storages: [], defaultStorage: 'local'}],
+    ['versions', '/versions', {versions: [{id: 91, created: '2026-01-01'}]}, {versions: []}],
+  ]) {
+    const f = await lifecycleAdmin(), delayed = f.defer(route);
+    const oldRender = f.navigate(section);
+    f.responses[route] = newData; await f.navigate(section);
+    const current = {overview: f.app.state.overview, resources: f.app.state.resources, storages: f.app.state.storages};
+    delayed.resolve(oldData); await oldRender;
+    assert.equal(f.app.state.overview, current.overview, section);
+    assert.equal(f.app.state.resources, current.resources, section);
+    assert.equal(f.app.state.storages, current.storages, section);
+    assert.equal(f.walk().filter(el => el.tagName === 'H1').length, 1, section);
+    assert.ok(!f.walk().some(el => el.textContent === 'v91'), section);
+  }
+});
+test('pending resource picker cannot expose old-session data after logout, expiry or relogin', async () => {
+  for (const transition of ['navigation', 'logout', 'expiry', 'relogin']) {
+    const f = await lifecycleAdmin(); await f.navigate('site');
+    const delayed = f.defer('/resources');
+    const pickerRequest = f.walk().find(el => el.textContent === '选择资源').dispatch('click');
+    if (transition === 'navigation') await f.navigate('projects');
+    else if (transition === 'expiry') {
+      const expired = f.defer('/versions');
+      const request = f.document.querySelectorAll('[data-section]').find(el => el.dataset.section === 'versions').dispatch('click');
+      expired.resolve({error: '会话已过期'}, 401); await request;
+    } else {
+      await f.walk().find(el => el.textContent === '退出登录').dispatch('click');
+      if (transition === 'relogin') await f.relogin();
+    }
+    delayed.resolve({resources: [{id: 'private-old', name: 'private-old-session', kind: 'image', url: '/media/private-old'}]});
+    await pickerRequest;
+    assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 0, transition);
+    assert.ok(!f.app.state.resources.some(resource => resource.id === 'private-old'), transition);
+    assert.ok(!f.walk().some(el => el.textContent === 'private-old-session'), transition);
+  }
+});
+test('session and view invalidation remove picker, storage and confirmation dialogs', async () => {
+  const f = await lifecycleAdmin(); await f.navigate('site');
+  await f.walk().find(el => el.textContent === '选择资源').dispatch('click');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 1);
+  await f.navigate('storage');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 0);
+  await f.walk().find(el => el.textContent === '＋ 添加 S3 存储').dispatch('click');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 1);
+  await f.walk().find(el => el.textContent === '退出登录').dispatch('click');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 0);
+});
+test('all pending async views stay isolated from a replacement session', async () => {
+  for (const [section, route, stale] of [
+    ['overview', '/overview', {published: 88, resources: 88, audit: [], defaultStorage: 'private'}],
+    ['resources', '/resources', {resources: [{id: 'private', name: 'private', kind: 'image'}]}],
+    ['storage', '/storages', {storages: [{id: 'private', name: 'private'}], defaultStorage: 'private'}],
+    ['versions', '/versions', {versions: [{id: 88, created: '2026-01-01'}]}],
+  ]) {
+    const f = await lifecycleAdmin(), delayed = f.defer(route);
+    const old = f.navigate(section);
+    await f.walk().find(el => el.textContent === '退出登录').dispatch('click');
+    f.app.state.section = 'site'; await f.relogin();
+    const current = {resources: f.app.state.resources, storages: f.app.state.storages, overview: f.app.state.overview};
+    delayed.resolve(stale); await old;
+    assert.equal(f.walk().filter(el => el.tagName === 'H1').map(el => el.textContent).join(','), '网站设置', section);
+    assert.equal(f.app.state.resources, current.resources, section);
+    assert.equal(f.app.state.storages, current.storages, section);
+    assert.equal(f.app.state.overview, current.overview, section);
+  }
+});
+test('expiry closes and cancels an old pending confirmation without completing logout', async () => {
+  const f = await lifecycleAdmin(); f.app.state.dirty = true;
+  const oldLogout = f.walk().find(el => el.textContent === '退出登录').dispatch('click');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 1);
+  const expired = f.defer('/versions');
+  const expiry = f.document.querySelectorAll('[data-section]').find(el => el.dataset.section === 'versions').dispatch('click');
+  expired.resolve({error: '会话已过期'}, 401); await expiry; await oldLogout;
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 0);
+  assert.ok(f.walk().some(el => el.textContent === '欢迎回来'));
+  assert.equal(f.app.state.sessionEpoch, 1, 'invalidated confirmation must not continue logout');
+});
+test('conversion dialog is removed on session invalidation', async () => {
+  const f = await lifecycleAdmin();
+  f.responses['/resources'] = {resources: [{id: 'model', name: 'Model', kind: 'model', source: 'local', status: 'uploaded'}]};
+  await f.navigate('resources');
+  await f.walk().find(el => el.textContent === '转换为 BIN').dispatch('click');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 1);
+  await f.walk().find(el => el.textContent === '退出登录').dispatch('click');
+  assert.equal(f.walk().filter(el => el.tagName === 'DIALOG').length, 0);
+});
+test('late password change response cannot log out a replacement session', async () => {
+  const f = await lifecycleAdmin(); await f.navigate('security');
+  const delayed = f.defer('/password');
+  const change = f.walk().find(el => el.tagName === 'FORM').dispatch('submit');
+  await f.walk().find(el => el.textContent === '退出登录').dispatch('click');
+  f.app.state.section = 'site'; await f.relogin();
+  const current = f.app.state.config, epoch = f.app.state.sessionEpoch;
+  delayed.resolve({}); await change; await new Promise(resolve => setImmediate(resolve));
+  assert.equal(f.app.state.config, current);
+  assert.equal(f.app.state.sessionEpoch, epoch);
+});
+test('restore action from a detached versions view cannot replace later draft edits', async () => {
+  const f = await lifecycleAdmin();
+  f.responses['/versions'] = {versions: [{id: 1, created: '2026-01-01'}]};
+  await f.navigate('versions');
+  const delayed = f.defer('/versions/1/restore');
+  const restore = f.walk().find(el => el.textContent === '恢复到草稿').dispatch('click');
+  await f.walk().find(el => el.textContent === '确认继续').dispatch('click');
+  await f.navigate('site');
+  const heading = f.walk().find(el => el.tagName === 'H1');
+  const title = f.walk().find(el => el.tagName === 'INPUT' && el.value === 'Lifecycle draft');
+  title.value = 'new unsaved edit'; await title.dispatch('input');
+  f.responses['/config'] = {config: {...f.app.state.config, site: {...f.app.state.config.site, title: 'old restored'}}, revision: 5};
+  delayed.resolve({revision: 5}); await restore;
+  assert.equal(f.app.state.config.site.title, 'new unsaved edit');
+  assert.equal(f.app.state.dirty, true);
+  assert.equal(f.walk().find(el => el.tagName === 'H1'), heading);
+});
+test('rejected stale view request cannot display its error over the current section', async () => {
+  const f = await lifecycleAdmin(), delayed = f.defer('/versions');
+  const request = f.document.querySelectorAll('[data-section]').find(el => el.dataset.section === 'versions').dispatch('click');
+  await f.navigate('site');
+  delayed.resolve({error: 'old view private error'}, 500); await request;
+  assert.notEqual(f.document.getElementById('notice').textContent, 'old view private error');
+});
+test('current navigation request still reports a real error and restores its trigger', async () => {
+  const f = await lifecycleAdmin(), delayed = f.defer('/versions');
+  const trigger = f.document.querySelectorAll('[data-section]').find(el => el.dataset.section === 'versions');
+  const request = trigger.dispatch('click');
+  delayed.resolve({error: 'current view failed'}, 500); await request;
+  assert.equal(f.document.getElementById('notice').textContent, 'current view failed');
+  assert.equal(trigger.disabled, false);
+});
 test('admin modules load deterministically before a compatible boot with one explicit shared state', () => {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const files = [...html.matchAll(/<script defer src="([^"]+)"/g)].map(match => match[1]);

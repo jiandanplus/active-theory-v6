@@ -8,6 +8,22 @@ const {createCAS}=require('../admin-server/delivery/cas');
 const {digestJSON,canonicalJSON,assertArtifactManifest}=require('../admin-server/delivery/contracts');
 const {projectSnapshot}=require('../admin-server/delivery/projection');
 const {buildArtifact}=require('../admin-server/delivery/builder');
+test('portfolio unsupported artifacts preserve basic managed thumbnails for published and preview targets',async t=>{
+  const f=await fixture(t),{root,manifest}=await require('../admin-server/portfolio/builtin').builtinRuntime();
+  for(const entry of manifest.files)await f.cas.put(fs.readFileSync(path.join(root,entry.path)));
+  const digest=digestJSON(manifest),source=(await require('../admin-server/portfolio/sample').demoBundle()).draft;
+  for(const target of [{type:'version',id:'73'},{type:'preview',id:'preview-01234567-1234-1234-1234-123456789abc'}]){
+    const result=await buildArtifact({...f.args,source,target,bundle:{digest,manifest},selection:{digest,generation:1},profile:require('../admin-server/engine/registry').get('portfolio-v1')});
+    const read=async key=>(await f.cas.read(result.manifest.files.find(entry=>entry.key===key))).toString();
+    const basic=await read(result.manifest.routes['/basic']),unsupported=await read(result.manifest.endpoints['unsupported.html']);
+    const images=html=>[...html.matchAll(/<img\b[^>]*src="([^"]+)"/g)].map(match=>match[1]);
+    assert.equal(images(basic).length,2);
+    assert.deepEqual(images(unsupported),images(basic));
+    for(const url of images(unsupported))assert.ok(url.startsWith('/api/site/'+target.id+'/resources/'));
+    assert.doesNotMatch(unsupported,/src="\/media\//);
+    assert.equal(result.manifest.sourceSnapshotDigest,digestJSON(source));
+  }
+});
 async function replaceInput(f,key,value){
   const entry=f.manifest.files.find(e=>e.key===key),bytes=Buffer.from(value),stored=await f.cas.put(bytes);
   entry.size=stored.size;entry.sha256=stored.sha256;

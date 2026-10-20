@@ -38,6 +38,8 @@ function create(context) {
     await render();
   }
   function login(initialized) {
+    context.invalidateView?.();
+    state.busy = false;
     if (!initialized)
       return window.SiteSetup.mount({ root: app, onInstalled: init });
     app.replaceChildren();
@@ -150,6 +152,7 @@ function create(context) {
     )
       return;
     state.sessionEpoch++;
+    context.invalidateView?.();
     await api("/logout", "POST", {});
     state.config = null;
     state.dirty = false;
@@ -158,6 +161,7 @@ function create(context) {
   }
   async function render() {
     if (!state.config) return;
+    context.invalidateView?.();
     context.content.replaceChildren();
     for (const b of document.querySelectorAll("[data-section]")) {
       const active = b.dataset.section === state.section;

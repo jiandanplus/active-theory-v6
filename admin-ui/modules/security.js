@@ -33,6 +33,7 @@ function create(context) {
     form.addEventListener("submit", (event) => {
       event.preventDefault();
       run(async () => {
+        const epoch = state.sessionEpoch;
         if (
           state.dirty &&
           !(await confirmAction(
@@ -40,7 +41,11 @@ function create(context) {
           ))
         )
           return;
+        if (epoch !== state.sessionEpoch) return;
         await api("/password", "POST", { currentPassword, newPassword });
+        if (epoch !== state.sessionEpoch) return;
+        state.sessionEpoch++;
+        context.invalidateView?.();
         state.config = null;
         state.dirty = false;
         state.csrf = "";

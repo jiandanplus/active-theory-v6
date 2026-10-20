@@ -18,7 +18,7 @@ npm run docker:token  # 仅在私有终端操作；不要共享输出
 npm run docker:down   # 保留 PostgreSQL 与站点数据卷
 ```
 
-启动成功后在 `/admin/` 输入安装令牌，完成数据库检查，选“自带示例 / 作品集”或空白内容，设置管理员并手动登录。在“引擎 / 运行包”登记内置模板，选择 `portfolio-v1`，再保存、预览、发布。内置模板来源是镜像 `/app/examples/portfolio/`，清单由可信服务器代码生成；无需上传来源不明的 JavaScript 或自行编写 JSON。示例内容、SVG 和 WebGL 为新写演示，不包含原站艺术资产。关闭 JavaScript 仍可阅读服务端生成的页面；WebGL 只是增强效果。
+启动成功后在 `/admin/` 输入安装令牌，完成数据库检查，选“自带示例 / 作品集”或空白内容，设置管理员并手动登录。随后按顺序操作：总览 → 运行包 → 添加内置个人主页模板 → 在下拉框选择 `portfolio-v1` → 保存草稿 → 预览草稿 → 发布网站。内置模板来源是镜像 `/app/examples/portfolio/`，清单由可信服务器代码生成；无需上传来源不明的 JavaScript 或自行编写 JSON。示例内容、SVG 和 WebGL 为新写演示，不包含原站艺术资产。关闭 JavaScript 仍可阅读服务端生成的页面；WebGL 只是增强效果。
 
 默认镜像不复制 `assets/`，默认 Compose 没有 `assets` bind，因此不会自动在主机创建空 assets 目录。`/app/data` 预先由 node 用户拥有，命名卷初始化继承该所有权。已有外部卷若来自 root，先备份并由运维核对权限，不要用宽泛的递归 chown 猜测修复路径。
 

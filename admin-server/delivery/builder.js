@@ -124,7 +124,8 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
     routes[pathname]=add(pathname.startsWith('/basic')?'basic-contact':'contact-page','html',html);
   }
   const unsupportedEntry=runtime.files.find(f=>f.key==='unsupported');
-  const unsupported=profile.transformUnsupportedHTML({html:files.get('unsupported').toString(),snapshot,target,references,inputPath:unsupportedEntry.path});
+  const unsupportedSnapshot=profile.id==='portfolio-v1'?{...snapshot,config}:snapshot;
+  const unsupported=profile.transformUnsupportedHTML({html:files.get('unsupported').toString(),snapshot:unsupportedSnapshot,target,references,inputPath:unsupportedEntry.path});
   report('unsupported',unsupported.report);
   let unsupportedSource=runtimeMedia(unsupported.source,unsupportedEntry,snapshot,target,references);
   if(profile.id!=='portfolio-v1'){

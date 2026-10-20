@@ -83,6 +83,15 @@ test('built-in runtime registration is authenticated, explicit and publishes imm
   const basic = await (await f.request('/basic')).text();
   assert.match(basic, /Fixture/);
   assert.doesNotMatch(basic, /<script\b/);
+  const imageURLs = html => [...html.matchAll(/<img\b[^>]*src="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(imageURLs(basic).length, 1, 'fixture has one managed project thumbnail');
+  const publicTarget = /\/api\/site\/([^/]+)\/identity\.js/.exec(initial)[1];
+  const unsupported = await f.request('/api/site/' + publicTarget + '/unsupported.html');
+  assert.equal(unsupported.status, 200);
+  assert.deepEqual(imageURLs(await unsupported.text()), imageURLs(basic));
+  for (const url of imageURLs(basic)) {
+    assert.ok(url.startsWith('/api/site/' + publicTarget + '/resources/'));
+  }
   const draft = await contentRepository(f.store).getDraft();
   draft.config.site.title = 'Unpublished secret title';
   const saved = await f.request('/api/admin/config',{method:'PUT',headers,body:JSON.stringify({config:draft.config,revision:draft.revision})});
@@ -97,6 +106,20 @@ test('built-in runtime registration is authenticated, explicit and publishes imm
   const previewHTML = await privatePage.text();
   assert.match(previewHTML,/Unpublished secret title/);
   assert.match(privatePage.headers.get('cache-control'),/private/);
+  const privateTarget = new URL(previewURL, f.base).searchParams.get('preview');
+  const privateUnsupportedURL = '/api/site/' + privateTarget + '/unsupported.html';
+  assert.equal((await f.request(privateUnsupportedURL)).status, 401);
+  const privateUnsupported = await f.request(privateUnsupportedURL, {headers});
+  assert.equal(privateUnsupported.status, 200);
+  assert.match(privateUnsupported.headers.get('cache-control'), /private/);
+  const privateBasic = await f.request('/basic?preview=' + privateTarget, {headers});
+  const privateImages = imageURLs(await privateBasic.text());
+  assert.equal(privateImages.length, 1);
+  assert.deepEqual(imageURLs(await privateUnsupported.text()), privateImages);
+  for (const url of privateImages) {
+    assert.ok(url.startsWith('/api/site/' + privateTarget + '/resources/'));
+    assert.equal((await f.request(url)).status, 401);
+  }
   for(const path of [
     /href="([^\"]*\/work\?preview=[^\"]+)"/.exec(previewHTML)?.[1],
     /href="(\/basic\?preview=[^\"]+)"/.exec(previewHTML)?.[1],

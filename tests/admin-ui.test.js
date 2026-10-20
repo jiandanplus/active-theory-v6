@@ -227,6 +227,7 @@ test('runtime choice serializes pending selection and leaves unsaved draft untou
     empty(){},notify:message=>notices.push(message),run:async action=>{try{await action();}catch(e){notices.push(e.message);}}};
   const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
   const panel=source.slice(source.indexOf('  function showRuntimePanel('),source.indexOf('  function siteView('));
+  context.context=context;
   vm.runInNewContext(helpers+panel+'\nthis.show=showRuntimePanel;',context);
   context.show(p);choice(b);
   await new Promise(resolve=>setImmediate(resolve));
@@ -247,6 +248,7 @@ test('legacy action appears only for unbound legacy versions',async()=>{
       {id:3,created:new Date().toISOString(),mode:null,generation:null,artifactDigest:null,status:'缺失/损坏'},
     ]})};
   const start=source.indexOf('  async function versionsView()'),end=source.indexOf('  function securityView()',start);
+  context.context=context;
   await vm.runInNewContext(source.slice(start,end)+'\nversionsView()',context);
   assert.equal(labels.filter(label=>label==='生成兼容交付').length,1);
 });
@@ -289,6 +291,29 @@ test('unselected runtime explains server registration before preview POST',async
 
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function tick(){return new Promise(resolve=>setImmediate(resolve));}
+test('overlapping resource refreshes apply only the newest live view response',async()=>{
+  const {document}=require('./helpers/admin-dom')();
+  const state={sessionEpoch:0,section:'resources',resources:[]},pending=[deferred(),deferred(),deferred()];
+  let reads=0;
+  const context={state,document,window:{addEventListener(){}},api:()=>pending[reads++].promise};
+  Object.assign(context,require('../admin-ui/modules/state').create(context));
+  const {refreshResources}=require('../admin-ui/modules/resources').create(context);
+  const first=refreshResources(),second=refreshResources();
+  pending[1].resolve({resources:[{id:'newest'}]});await second;
+  pending[0].resolve({resources:[{id:'old'}]});await first;
+  assert.deepEqual(state.resources,[{id:'newest'}]);
+  const beforeSession=refreshResources();state.sessionEpoch++;
+  pending[2].resolve({resources:[{id:'private-old-session'}]});await beforeSession;
+  assert.deepEqual(state.resources,[{id:'newest'}]);
+});
+test('first-run documentation uses the exact overview panel and action path',()=>{
+  const fs=require('node:fs'),path=require('node:path');
+  for(const name of ['README.md','DEPLOYMENT.md']) {
+    const source=fs.readFileSync(path.join(__dirname,'..',name),'utf8');
+    assert.match(source,/总览 → 运行包 → 添加内置个人主页模板 → 在下拉框选择 `portfolio-v1` → 保存草稿 → 预览草稿 → 发布网站/);
+    assert.doesNotMatch(source,/引擎 \/ 运行包/);
+  }
+});
 test('failed action restores trigger focus only within its live session and unchanged focus intent',async()=>{
   const source=adminSource();
   for(const scenario of ['recover','cancel','session','removed','disabled','moved','moved-back','pending-busy','not-focused']){
@@ -297,6 +322,7 @@ test('failed action restores trigger focus only within its live session and unch
     const b={disabled:false,dataset:{busyAction:'true'},isConnected:true,focus(){document.activeElement=this;},closest(){return null;}};
     document.activeElement=scenario==='not-focused'?body:b;
     const context={state,document,notify(){}};
+    context.context=context;
     const run=require('node:vm').runInNewContext(source.slice(source.indexOf('  async function run('),source.indexOf('  async function api('))+'\nrun;',context);
     const request=run(()=>pending.promise,b);
     document.activeElement=body;
@@ -329,6 +355,7 @@ test('older overview runtime GET cannot replace a newer selection or redraw its 
     field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},disabled:false,focus(){}};},empty(){},warning(){},notify(){},run:async action=>{await action();}};
   const helpers=source.slice(source.indexOf('  function updateStatus()'),source.indexOf('  window.addEventListener'));
   const overview=source.slice(source.indexOf('  async function overviewView()'),source.indexOf('  function siteView('));
+  context.context=context;
   vm.runInNewContext(helpers+overview+'\nthis.actions={overviewView,refreshRuntime};',context);
   const oldView=context.actions.overviewView();await tick();
   state.section='site';state.section='overview';
@@ -353,6 +380,7 @@ test('runtime GET begun before logout cannot enter the next session',async()=>{
   const pending=deferred(),old='a'.repeat(64),state={sessionEpoch:0,config:{},runtime:{selection:{digest:old,generation:4},bundles:[]}};
   const helpers=source.slice(source.indexOf('  function validRevision('),source.indexOf('  window.addEventListener'));
   const context={state,runtimeRequestSequence:0,api:async()=>pending.promise};
+  context.context=context;
   vm.runInNewContext(helpers+'\nthis.refresh=refreshRuntime;',context);
   const request=context.refresh();state.sessionEpoch++;state.config=null;
   pending.resolve({selection:{digest:null,generation:0},bundles:[]});await request;
@@ -368,6 +396,7 @@ test('failed or uncertain preview restores real busy controls while logout remai
   const context={state,node,saveStatus:node('div'),document:{querySelectorAll:()=>controls},api:async()=>pending.promise,
     notify:(message,error)=>notices.push({message,error}),panel:()=>node('section'),content:node('main'),window:{open(){}}};
   const parts=[source.slice(source.indexOf('  function button('),source.indexOf('  function notify(')),source.slice(source.indexOf('  async function run('),source.indexOf('  async function api(')),source.slice(source.indexOf('  function updateStatus()'),source.indexOf('  window.addEventListener')),source.slice(source.indexOf('  async function save()'),source.indexOf('  async function render()'))];
+  context.context=context;
   vm.runInNewContext(parts.join('\n')+'\nthis.makeButton=button;this.actions={preview,publish};',context);
   const preview=context.makeButton('预览',context.actions.preview,undefined,true),publish=context.makeButton('发布',context.actions.publish,undefined,true),logout=context.makeButton('退出',()=>{logoutClicks++;});
   controls.push(preview,publish);

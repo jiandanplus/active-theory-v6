@@ -5,10 +5,16 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
   const { state, document, node, button, notify, confirmAction, api, field, panel, heading, warning, empty, load, preview, render, canPick, canConvert, resourcePreviewURL } = context;
-  async function refreshResources() {
-    state.resources = (await api("/resources")).resources;
+  let resourceRequestSequence = 0;
+  async function refreshResources(current = context.captureView?.() || (() => true)) {
+    const sequence = ++resourceRequestSequence, epoch = state.sessionEpoch;
+    const result = await api("/resources");
+    if (sequence !== resourceRequestSequence || epoch !== state.sessionEpoch || !current()) return false;
+    state.resources = result.resources;
+    return true;
   }
   function conversionEditor(resource) {
+    const current = context.captureView?.() || (() => true);
     const dialog = node("dialog", undefined, "modal"),
       head = node("div", undefined, "modal-head");
     head.append(
@@ -35,19 +41,19 @@ function create(context) {
           if (!Number.isFinite(size) || size < 0.1 || size > 5)
             throw new Error("模型尺寸须在 0.1–5 之间");
           await api("/resources/" + resource.id + "/convert", "POST", { size });
+          if (!current()) return;
           dialog.close();
-          await refreshResources();
-          await render();
+          if (!await refreshResources(current)) return;
           notify("转换完成，可在模型槽位选择新 BIN 资源。");
+          await render();
         },
         "primary",
       ),
     );
-    document.body.append(dialog);
-    dialog.addEventListener("close", () => dialog.remove());
-    dialog.showModal();
+    showDialog(dialog);
   }
   function resourceCard(resource, select) {
+    const current = context.captureView?.() || (() => true);
     const card = node("article", undefined, "resource-card"),
       preview = node("div", undefined, "resource-preview");
     if (resource.kind === "image") {
@@ -116,10 +122,11 @@ function create(context) {
             ))
           )
             return;
+          if (!current()) return;
           await api("/resources/" + resource.id, "PATCH", {
             trashed: !resource.trashed,
           });
-          await refreshResources();
+          if (!current() || !await refreshResources(current)) return;
           await render();
         }),
       );
@@ -129,7 +136,8 @@ function create(context) {
     return card;
   }
   async function picker(kind, onSelect) {
-    await refreshResources();
+    const current = context.captureView?.() || (() => true);
+    if (!await refreshResources(current)) return;
     const dialog = node("dialog", undefined, "modal"),
       head = node("div", undefined, "modal-head");
     head.append(
@@ -156,6 +164,7 @@ function create(context) {
     for (const resource of state.resources.filter((r) => canPick(r, kind)))
       grid.append(
         resourceCard(resource, (r) => {
+          if (!current()) return;
           onSelect(r.url);
           dialog.close();
         }),
@@ -163,12 +172,19 @@ function create(context) {
     if (!grid.children.length)
       empty(grid, "暂无可用资源。可先在资源库上传或添加外链。");
     dialog.append(grid);
-    document.body.append(dialog);
-    dialog.addEventListener("close", () => dialog.remove());
-    dialog.showModal();
+    showDialog(dialog);
+  }
+  function showDialog(dialog) {
+    if (context.mountDialog) context.mountDialog(dialog);
+    else {
+      document.body.append(dialog);
+      dialog.addEventListener("close", () => dialog.remove());
+      dialog.showModal();
+    }
   }
   async function resourcesView() {
-    await refreshResources();
+    const current = context.captureView?.() || (() => true);
+    if (!await refreshResources(current)) return;
     heading(
       "资源库",
       "统一管理图片、视频、音乐与模型。上传和回收会立即保存，不需要发布。",
@@ -207,17 +223,19 @@ function create(context) {
           select.disabled = true;
           try {
             await uploadFile(file.files[0], select.value, (percent) => {
+              if (!current()) return;
               progress.value = percent;
               status.textContent =
                 percent < 100
                   ? "上传中 · " + percent + "%"
                   : "上传完成，服务器正在验证文件…";
             });
+            if (!current()) return;
             status.textContent = "上传成功";
             file.value = "";
-            await refreshResources();
-            await render();
+            if (!await refreshResources(current)) return;
             notify("资源已上传。需在内容中选用后保存、发布。");
+            await render();
           } finally {
             file.disabled = false;
             select.disabled = false;
@@ -258,9 +276,9 @@ function create(context) {
       grid,
       button("添加外链", async () => {
         await api("/resources/link", "POST", { name, url, kind });
-        await refreshResources();
-        await render();
+        if (!current() || !await refreshResources(current)) return;
         notify("外链已添加，公开可访问性尚未验证。");
+        await render();
       }),
     );
     external.append(form);

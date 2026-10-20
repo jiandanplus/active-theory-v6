@@ -6,11 +6,13 @@
 function create(context) {
   const { state, node, button, notify, run, api, building, validRevision, refreshRuntime, field, panel, heading, warning, empty } = context;
   async function overviewView() {
+    const current = context.captureView?.() || (() => true);
     const o = await api("/overview");
+    if (!current()) return;
     state.overview = o;
     heading("网站总览", "从内容到发布，在这里管理每一个细节。");
     const runtimePanel=panel(context.content,'运行包');
-    if(!await refreshRuntime()||state.section!=='overview'||!runtimePanel.isConnected)return;
+    if(!await refreshRuntime()||!current()||state.section!=='overview'||!runtimePanel.isConnected)return;
     showRuntimePanel(runtimePanel);
     const metrics = node("div", undefined, "metrics");
     for (const [label, value, note] of [
@@ -71,6 +73,7 @@ function create(context) {
         );
   }
   function showRuntimePanel(p,restoreFocus=false) {
+    const current = context.captureView?.() || (() => true);
     const {selection,bundles}=state.runtime;
     p.replaceChildren(node('h2','运行包'));
     p.append(node('p','选择只影响之后的预览与发布；不会修改历史内容或当前草稿。','muted'));
@@ -79,7 +82,7 @@ function create(context) {
       let refreshed = false;
       await building(async () => {
         const result = await api('/runtime/builtin', 'POST', {});
-        if (epoch !== state.sessionEpoch) return;
+        if (epoch !== state.sessionEpoch || !current()) return;
         if (!/^[a-f0-9]{64}$/.test(result?.digest || '') ||
             typeof result.profileId !== 'string' || !result.profileId ||
             !Number.isSafeInteger(result.files) || result.files < 1 ||
@@ -87,7 +90,7 @@ function create(context) {
           throw new Error('添加模板响应无效，结果可能已生效；请刷新运行包状态核对，不要自动重试');
         refreshed = await refreshRuntime();
       });
-      if (epoch !== state.sessionEpoch || !refreshed || !p.isConnected) return;
+      if (epoch !== state.sessionEpoch || !current() || !refreshed || !p.isConnected) return;
       showRuntimePanel(p);
       notify('内置个人主页模板已添加，请在下方明确选择后再预览或发布。');
     }, undefined, true);
@@ -111,17 +114,17 @@ function create(context) {
           await building(async()=>{
             let result;
             try { result=await api('/runtime/selection','PUT',{digest:value,generation:state.runtime.selection.generation}); }
-            catch(error) { if(epoch===state.sessionEpoch)await refreshRuntime(); throw error; }
-            if(epoch!==state.sessionEpoch)return;
+            catch(error) { if(epoch===state.sessionEpoch&&current())await refreshRuntime(); throw error; }
+            if(epoch!==state.sessionEpoch||!current())return;
             if(result?.digest!==value||!validRevision(result.generation))
               throw new Error('选择响应无效，结果可能已生效；请刷新运行包状态核对，不要自动重试');
             refreshed=await refreshRuntime();
           });
         } catch(error) {
-          if(epoch===state.sessionEpoch&&p.isConnected)showRuntimePanel(p,true);
+          if(epoch===state.sessionEpoch&&current()&&p.isConnected)showRuntimePanel(p,true);
           throw error;
         }
-        if(epoch!==state.sessionEpoch||!refreshed||!p.isConnected)return;
+        if(epoch!==state.sessionEpoch||!current()||!refreshed||!p.isConnected)return;
         showRuntimePanel(p,true);
         notify('运行包选择已更新，仅影响之后的预览与发布。');
       });

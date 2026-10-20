@@ -6,6 +6,22 @@
 function create(context) {
   const { state, document, crypto, picker } = context;
   let noticeTimer;
+  const dialogs = new Set();
+  function mountDialog(dialog, onInvalidate = () => {}) {
+    const owned = {dialog, onInvalidate};
+    dialogs.add(owned);
+    dialog.addEventListener('close', () => {dialogs.delete(owned); dialog.remove();}, {once: true});
+    document.body.append(dialog);
+    dialog.showModal();
+  }
+  function closeDialogs() {
+    for (const {dialog, onInvalidate} of dialogs) {
+      onInvalidate();
+      if (dialog.open) dialog.close();
+      dialog.remove();
+    }
+    dialogs.clear();
+  }
   function node(tag, text, cls) {
     const el = document.createElement(tag);
     if (text !== undefined) el.textContent = text;
@@ -61,13 +77,13 @@ function create(context) {
         },
         { once: true },
       );
-      document.body.append(dialog);
-      dialog.showModal();
+      mountDialog(dialog, () => {accepted = false; resolve(false);});
       cancel.focus();
     });
   }
   async function run(action, b) {
     const epoch = state.sessionEpoch, hadFocus = b && document.activeElement === b;
+    let current = context.captureView?.() || (() => true);
     let movedFocus = false;
     const watchFocus = (event) => {
       if (event.target !== b && !event.target.closest?.("dialog")) movedFocus = true;
@@ -75,9 +91,13 @@ function create(context) {
     if (hadFocus) document.addEventListener("focusin", watchFocus);
     if (b) b.disabled = true;
     try {
-      await action();
+      const result = action();
+      // Navigation starts a new render synchronously. Own that destination,
+      // while later navigation still invalidates this action's continuation.
+      current = context.captureView?.() || current;
+      await result;
     } catch (e) {
-      notify(e.message, true);
+      if (epoch === state.sessionEpoch && current()) notify(e.message, true);
     } finally {
       if (b) b.disabled = !!(state.busy && b.dataset.busyAction);
       if (hadFocus) document.removeEventListener("focusin", watchFocus);
@@ -167,7 +187,7 @@ function create(context) {
     row.append(input, label);
     parent.append(row);
   }
-  return { node, button, notify, confirmAction, run, field, panel, heading, warning, empty, check };
+  return { node, button, notify, confirmAction, run, field, panel, heading, warning, empty, check, mountDialog, closeDialogs };
 }
 return { create };
 });

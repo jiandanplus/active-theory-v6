@@ -6,7 +6,9 @@
 function create(context) {
   const { state, document, node, button, notify, api, field, panel, heading, warning, check, render, storageBody } = context;
   async function storageView() {
+    const current = context.captureView?.() || (() => true);
     const result = await api("/storages");
+    if (!current()) return;
     state.storages = result.storages;
     state.defaultStorage = result.defaultStorage;
     heading(
@@ -41,6 +43,7 @@ function create(context) {
             "POST",
             {},
           );
+          if (!current()) return;
           notify(
             result.ok
               ? "连接测试通过（只读），不验证公开 URL 或 CORS。请在前台预览资源，检查加载与跨域访问。"
@@ -58,8 +61,9 @@ function create(context) {
                 ...storageBody(store),
                 isDefault: true,
               });
-            await render();
+            if (!current()) return;
             notify("默认上传位置已更新。");
+            await render();
           }),
         );
       if (store.type === "s3")
@@ -71,6 +75,7 @@ function create(context) {
     );
   }
   function storageEditor(existing) {
+    const current = context.captureView?.() || (() => true);
     const dialog = node("dialog", undefined, "modal"),
       head = node("div", undefined, "modal-head");
     head.append(
@@ -132,18 +137,22 @@ function create(context) {
         "保存存储配置",
         async () => {
           await api("/storages", "POST", storageBody(values));
+          if (!current()) return;
           dialog.close();
-          await render();
           notify("存储配置已保存，请执行连接测试。");
+          await render();
         },
         "primary",
       ),
     );
     form.append(actions);
     dialog.append(form);
-    document.body.append(dialog);
-    dialog.addEventListener("close", () => dialog.remove());
-    dialog.showModal();
+    if (context.mountDialog) context.mountDialog(dialog);
+    else {
+      document.body.append(dialog);
+      dialog.addEventListener("close", () => dialog.remove());
+      dialog.showModal();
+    }
   }
   return { storageView, storageEditor };
 }
