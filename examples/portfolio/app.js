@@ -69,7 +69,8 @@ gl_FragColor=vec4(c,clamp((ring+disk)*hole,0.,.98));}`;
     motion.addEventListener('change',preference);
     document.addEventListener('visibilitychange',visibility);
     canvas.addEventListener('webglcontextlost',event => {event.preventDefault();dispose();canvas.hidden=true;button.hidden=true;});
-    window.addEventListener('pagehide',dispose,{once:true});
+    window.addEventListener('pagehide',event => {if(event.persisted)setRunning(false);else dispose();});
+    window.addEventListener('pageshow',event => {if(event.persisted&&!disposed)setRunning(wanted);});
     setRunning(wanted);
   } catch {if(gl)dispose();canvas.hidden=true;button.hidden=true;}
 })();

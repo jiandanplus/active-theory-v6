@@ -14,7 +14,7 @@ function create(context) {
     showRuntimePanel(runtimePanel);
     const metrics = node("div", undefined, "metrics");
     for (const [label, value, note] of [
-      ["当前发布版本", "v" + o.published, "公开网站正在使用"],
+      ["当前发布版本", o.published === null ? "尚未发布" : "v" + o.published, o.published === null ? "发布后即可访问公开网站" : "公开网站正在使用"],
       ["草稿修订", state.revision, "保存与发布互不影响"],
       ["作品数量", state.config.projects.length, "展示在作品空间"],
       ["资源数量", o.resources, "图片 / 视频 / 音乐 / 模型"],

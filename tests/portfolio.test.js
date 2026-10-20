@@ -94,6 +94,17 @@ test('built-in runtime registration is authenticated, explicit and publishes imm
   assert.equal((await f.request(previewURL)).status,401);
   const privatePage = await f.request(previewURL,{headers});
   assert.equal(privatePage.status,200);
-  assert.match(await privatePage.text(),/Unpublished secret title/);
+  const previewHTML = await privatePage.text();
+  assert.match(previewHTML,/Unpublished secret title/);
   assert.match(privatePage.headers.get('cache-control'),/private/);
+  for(const path of [
+    /href="([^\"]*\/work\?preview=[^\"]+)"/.exec(previewHTML)?.[1],
+    /href="(\/basic\?preview=[^\"]+)"/.exec(previewHTML)?.[1],
+  ]){
+    assert.ok(path,'preview exposes work and ordinary-page navigation');
+    const response=await f.request(path,{headers});
+    assert.equal(response.status,200,'preview navigation must preserve the full private target identity');
+    assert.match(response.headers.get('cache-control'),/private/);
+    assert.equal((await f.request(path)).status,401);
+  }
 });

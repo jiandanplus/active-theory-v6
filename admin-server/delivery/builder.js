@@ -107,7 +107,7 @@ async function buildArtifact({cas,bundle,source,target,origin,selection,profile,
     report(key,result.report);
     let source=runtimeMedia(result.source,entry,snapshot,target,references);
     if(profile.id==='legacy-six-scenes-v1'){
-      const basicURL=(pathname==='/'?'/basic':'/basic'+pathname)+(target.type==='preview'?'?preview='+target.id.slice(8):'');
+      const basicURL=(pathname==='/'?'/basic':'/basic'+pathname)+(target.type==='preview'?'?preview='+target.id:'');
       const link=`<a data-basic-entry href="${basicURL}" style="position:fixed;bottom:16px;right:16px;z-index:2147483647;background:#171d27;color:#fff;border:1px solid #768293;border-radius:24px;padding:10px 18px;font:14px system-ui;text-decoration:none">普通网页 ↗</a>`;
       source=source.replace(/<body\b[^>]*>/i,body=>body+link);
       const guard=`<script>if(window.matchMedia&&window.matchMedia('(prefers-reduced-motion: reduce)').matches)location.replace(${JSON.stringify(basicURL)});</script>`;
