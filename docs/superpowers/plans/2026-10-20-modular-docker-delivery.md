@@ -8,6 +8,8 @@
 
 **Tech Stack:** Node.js 24+, Express, PostgreSQL 18, native browser JavaScript, Docker Compose, incremental JSDoc/checkJs.
 
+**Status (2026-10-20):** Tasks 1–5 implemented and locally verified on application commit `c2391c6`; Docker home and admin are open for user review. Exact evidence and original-scene/cloud/production boundaries are recorded in [the verification report](../../verification/modular-docker-delivery.md). This is local delivery, not a GitHub push or production rollout.
+
 ## Global Constraints
 
 - Preserve immutable migrations 001/002/003 and all existing authentication, CSRF/Origin, transaction, preview, resource revocation and history semantics.
@@ -24,10 +26,10 @@
 
 **Interfaces:** `mountContentRoutes({admin,store,options,deliveryService})`; shared browser/CommonJS validation exports; `GET /health/live` returns only `{status:'ok'}` and `GET /health/ready` checks DB and installation without leaking secrets. Request IDs are validated/generated, returned as X-Request-ID and JSON request summaries omit query strings, credentials and bodies. Ready may accept an uninstalled compatible DB so the installer can run; upgrade-required/incompatible/unavailable is 503.
 
-- [ ] Capture existing content/resources API behavior through regression tests before extraction. Add shared validation parity and real health fault tests, then observe the expected failures for missing contracts/health.
-- [ ] Move handlers and use cases without weakening locking. Keep SQL in existing repositories; split resource/storage routes and resource services by responsibility. Keep public exports compatible where used by old tests.
-- [ ] Move validation rules into a browser/CommonJS shared module, separate generic site/project/song rules from template scene slot validation, and retain Chinese errors. Backend maps validation errors into the existing status contract; frontend can consume the same rules.
-- [ ] Run relevant content/config/resource/auth/installation/health tests against the dedicated test database. Record exact commands and results in `output/cd-reports/backend.md`.
+- [x] Capture existing content/resources API behavior through regression tests before extraction. Add shared validation parity and real health fault tests, then observe the expected failures for missing contracts/health.
+- [x] Move handlers and use cases without weakening locking. Keep SQL in existing repositories; split resource/storage routes and resource services by responsibility. Keep public exports compatible where used by old tests.
+- [x] Move validation rules into a browser/CommonJS shared module, separate generic site/project/song rules from template scene slot validation, and retain Chinese errors. Backend maps validation errors into the existing status contract; frontend can consume the same rules.
+- [x] Run relevant content/config/resource/auth/installation/health tests against the dedicated test database. Record exact commands and results in `output/cd-reports/backend.md`.
 
 ## Task 2: Admin modules and accessible stateful interactions
 
@@ -35,10 +37,10 @@
 
 **Interfaces:** retain CommonJS helper exports and the boot function; browser modules load in deterministic order from index.html with no bundler requirement. Separate API client, state lifecycle, DOM/dialog helpers and overview/site/scenes/projects/resources/storage/versions/security views. Shared validation is served at `/admin/content-contract.js`. `POST /api/admin/runtime/builtin` returns `{digest,profileId,files,bytes}` and only registers the first-party package; user selection remains explicit. Add a clear UI action for it.
 
-- [ ] Add parity tests exercising module boot, stale responses, dirty edits, pending actions, confirmation/focus, storage secret masking, view switching and module loading. Preserve real behavior, update source-locator tests to inspect the new modules rather than freezing the old monolith shape.
-- [ ] Extract helpers and views into genuinely focused modules using an explicit injected context. Preserve API endpoints and all Chinese feedback. Keep API/session state owned once.
-- [ ] Add the first-party runtime registration control beside existing runtime choices, with busy and unknown-result semantics. Use shared content validation before save.
-- [ ] Run the admin UI tests and record commands/results in `output/cd-reports/admin.md`.
+- [x] Add parity tests exercising module boot, stale responses, dirty edits, pending actions, confirmation/focus, storage secret masking, view switching and module loading. Preserve real behavior, update source-locator tests to inspect the new modules rather than freezing the old monolith shape.
+- [x] Extract helpers and views into genuinely focused modules using an explicit injected context. Preserve API endpoints and all Chinese feedback. Keep API/session state owned once.
+- [x] Add the first-party runtime registration control beside existing runtime choices, with busy and unknown-result semantics. Use shared content validation before save.
+- [x] Run the admin UI tests and record commands/results in `output/cd-reports/admin.md`.
 
 ## Task 3: Semantic portfolio, first-party sample, and progressive 3D
 
@@ -46,11 +48,11 @@
 
 **Interfaces:** trusted profile ID `portfolio-v1`, template ID `portfolio`; four explicit program roles compatible with the existing builder (`index`,`unsupported`,`app`,`compiled-shaders`) plus any declared stylesheet. No silent selection, no production hash learned from user uploads. `/api/admin/runtime/builtin` only registers known first-party program bytes. Setup gets a distinct `demo` source and the existing `empty/bundle/legacy` modes remain compatible.
 
-- [ ] Add tests for new profile closure and deterministic delivery, escaped semantic home/work/detail/contact content, stale draft protection, private preview access, origin changes and missing/corrupt program failure.
-- [ ] Implement first-party semantic HTML from the same projected snapshot with navigation, introduction, projects, contact, skip link and visible links to ordinary content. Render all essential content without JS. Make legacy 3D pages provide an ordinary-content entry and respond safely when WebGL initialization fails or reduced-motion is requested; never render draft as fallback.
-- [ ] Add an optional procedural WebGL black-hole accent for the sample, with reduced-motion, context loss, visibility, resize and dispose handling; show the semantic page when it cannot start. It is an original sample and does not claim visual parity with the user's jar.
-- [ ] Provide generic Chinese sample content and original generated SVG art under examples, with provenance. Install as draft only, register/select/publish through normal authenticated controls. Preserve schema validation and historical references.
-- [ ] Record focused protocol and actual browser/no-JS/mobile/keyboard results in `output/cd-reports/portfolio.md`.
+- [x] Add tests for new profile closure and deterministic delivery, escaped semantic home/work/detail/contact content, stale draft protection, private preview access, origin changes and missing/corrupt program failure.
+- [x] Implement first-party semantic HTML from the same projected snapshot with navigation, introduction, projects, contact, skip link and visible links to ordinary content. Render all essential content without JS. Make legacy 3D pages provide an ordinary-content entry and respond safely when WebGL initialization fails or reduced-motion is requested; never render draft as fallback.
+- [x] Add an optional procedural WebGL black-hole accent for the sample, with reduced-motion, context loss, visibility, resize and dispose handling; show the semantic page when it cannot start. It is an original sample and does not claim visual parity with the user's jar.
+- [x] Provide generic Chinese sample content and original generated SVG art under examples, with provenance. Install as draft only, register/select/publish through normal authenticated controls. Preserve schema validation and historical references.
+- [x] Record focused protocol and actual browser/no-JS/mobile/keyboard results in `output/cd-reports/portfolio.md`.
 
 ## Task 4: One-command Docker, quality tools, CI and deployment docs
 
@@ -58,16 +60,18 @@
 
 **Interfaces:** a documented one-command local launcher such as `npm run docker:up` generates fresh installation secrets in an owned ignored deployment directory (never overwrites existing config), validates port/origin, invokes Compose with an explicit env file and leaves persistent named volumes. Local HTTP binds loopback only; production keeps the HTTPS guard. Display the local URL and setup token only to the operator. Never bake operator secrets or original assets into images. Docker checks `/health/ready`. Add non-destructive status/stop commands and documented backup/recovery; do not provide automatic data deletion.
 
-- [ ] Add launch/config tests for repeat invocation preserving secrets, invalid origins/ports, separate DB roles, missing optional assets, readiness and image contents. Observe missing launcher/config failures before implementation.
-- [ ] Implement self-contained default sample deployment with DB role init and volume ownership. Avoid default public credentials; permit production configuration and external PG without claiming production TLS verified locally.
-- [ ] Add scoped lint/format/typecheck with JSDoc examples, base tests that do not need proprietary assets and a separate authorized-runtime check. CI runs clean npm ci and PostgreSQL tests, and fails rather than calling skipped proprietary checks complete.
-- [ ] Organize only tracked historical acquisition/generation tools under a documented tools/ location with compatibility where needed; leave original user experiments untouched. Add third-party inventory without assigning a new license to unknown inherited material.
-- [ ] Update README, Docker deployment and contribution docs for clean clone, install, first publish, storage config, upgrade, backup, restore and limitations. Run tool checks and deployment tests, record in `output/cd-reports/docker.md`.
+- [x] Add launch/config tests for repeat invocation preserving secrets, invalid origins/ports, separate DB roles, missing optional assets, readiness and image contents. Observe missing launcher/config failures before implementation.
+- [x] Implement self-contained default sample deployment with DB role init and volume ownership. Avoid default public credentials; permit production configuration and external PG without claiming production TLS verified locally.
+- [x] Add scoped lint/format/typecheck with JSDoc examples, base tests that do not need proprietary assets and a separate authorized-runtime check. CI runs clean npm ci and PostgreSQL tests, and fails rather than calling skipped proprietary checks complete.
+- [x] Organize only tracked historical acquisition/generation tools under a documented tools/ location with compatibility where needed; leave original user experiments untouched. Add third-party inventory without assigning a new license to unknown inherited material.
+- [x] Update README, Docker deployment and contribution docs for clean clone, install, first publish, storage config, upgrade, backup, restore and limitations. Run tool checks and deployment tests, record in `output/cd-reports/docker.md`.
 
 ## Task 5: Integrated acceptance, review and user handoff
 
-- [ ] Run all tests and scoped quality tools on the final code; run actual Docker build and deploy the default entrypoint to a new loopback port with owned volumes/database, no original private state.
-- [ ] Complete browser install with a test administrator, register/select the built-in runtime, preview and publish the demo. Verify public home/work/detail/contact, editing/publish history, local upload/retrieval, logout protection, restart persistence, mobile, keyboard, zoom, no-JS and WebGL-failure/reduced-motion. Run isolated S3 protocol tests; describe live cloud/TLS evidence separately.
-- [ ] Exercise consistent owned-data backup/restore into another dedicated instance; verify key content/account/history/media and CAS hashes. Keep final original test instance running for the user.
-- [ ] Perform fresh task and whole-change reviews, resolve findings and preserve evidence. Compare original dirty files before any integration. Integrate authorized finished work locally if safe, leaving user changes intact; no GitHub push is required by this goal.
-- [ ] Open the tested Docker site and its admin UI in Codex; provide URL and test login through local handoff with exact evidence and remaining owner license decisions. Mark the goal complete only after all required outcomes are proven.
+- [x] Run all tests and scoped quality tools on the final code; run actual Docker build and deploy the default entrypoint to a new loopback port with owned volumes/database, no original private state.
+- [x] Complete browser install with a test administrator, register/select the built-in runtime, preview and publish the demo. Verify public home/work/detail/contact, editing/publish history, local upload/retrieval, logout protection, restart persistence, mobile, keyboard, zoom, no-JS and WebGL-failure/reduced-motion. Run isolated S3 protocol tests; describe live cloud/TLS evidence separately.
+- [x] Exercise consistent owned-data backup/restore into another dedicated instance; verify key content/account/history/media and CAS hashes. Keep final original test instance running for the user.
+- [x] Perform fresh task and whole-change reviews, resolve findings and preserve evidence. Compare original dirty files before any integration. Integrate authorized finished work locally if safe, leaving user changes intact; no GitHub push is required by this goal.
+- [x] Open the tested Docker site and its admin UI in Codex; provide URL and test login through local handoff with exact evidence and remaining owner license decisions. Mark the goal complete only after all required outcomes are proven.
+
+Task reports were preserved at `output/cd-reports/` in the managed worktree and copied into the original project's `output/cd-docker-integration-20261020/reports/`. The cross-task browser/image/restore evidence and known limits are consolidated in the verification report; the early task reports are not final deployment claims.

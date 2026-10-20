@@ -53,6 +53,8 @@ npm test
 
 开发范围与质量工具的精确覆盖见 [CONTRIBUTING.md](CONTRIBUTING.md)。生产 / 外部 PostgreSQL、备份恢复和升级见 [DEPLOYMENT.md](DEPLOYMENT.md)。示例来源与未知继承内容的许可边界见 [PROVENANCE.md](PROVENANCE.md) 和 [THIRD_PARTY.md](THIRD_PARTY.md)。历史工具说明见 [tools/README.md](tools/README.md)，授权旧引擎协议见 [docs/ENGINE-RUNTIME.md](docs/ENGINE-RUNTIME.md)。
 
+本轮架构与本地 Docker 交付的实际测试、浏览器、镜像身份和隔离恢复结果见 [C/D 验收记录](docs/verification/modular-docker-delivery.md)。记录明确区分自有示例验收、原 3D 场景视觉、公网部署和真实云存储，不把它们混为同一个完成结论。
+
 ## 许可状态
 
 仓库未为全部历史代码或素材指定新的统一许可证。发布者必须确认继承代码、品牌、字体、模型与媒体的权利后，再决定如何许可和分发。新增样例不是“已获得原站素材授权”的声明。
