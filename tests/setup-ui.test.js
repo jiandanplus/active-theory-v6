@@ -19,7 +19,7 @@ test("setup shell loads before admin and removes terminal initialization instruc
   assert.ok(html.includes('/admin/site-identity.js'));
   assert.ok(html.indexOf('/admin/site-identity.js') < html.indexOf('/admin/setup.js'));
   const admin = fs.readFileSync(
-    require.resolve("../admin-ui/admin.js"),
+    require.resolve("../admin-ui/modules/session.js"),
     "utf8",
   );
   assert.match(admin, /SiteSetup.mount/);

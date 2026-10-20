@@ -1,6 +1,6 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
+const adminSource = require("./helpers/admin-source");
 const ui = require("../admin-ui/admin.js");
 test('bundled media previews use authenticated ID URLs rather than admin-relative or bare asset paths', () => {
   assert.equal(ui.resourcePreviewURL({id:'bundle:id',source:'bundled',url:'assets/pic.png'}),'/media/bundle%3Aid');
@@ -73,10 +73,7 @@ test("stored credentials are never reused as visible editor values", () => {
   );
 });
 test("admin DOM has no HTML injection sinks and includes navigation and dirty guard", () => {
-  const source = fs.readFileSync(
-    require.resolve("../admin-ui/admin.js"),
-    "utf8",
-  );
+  const source = adminSource();
   assert.doesNotMatch(
     source,
     /\.innerHTML\s*=|insertAdjacentHTML|document\.write/,
@@ -95,10 +92,7 @@ test("admin DOM has no HTML injection sinks and includes navigation and dirty gu
     assert.ok(source.includes(section));
 });
 test("deployment and font guidance names actual env and explicit validation limits", () => {
-  const source = fs.readFileSync(
-    require.resolve("../admin-ui/admin.js"),
-    "utf8",
-  );
+  const source = adminSource();
   assert.doesNotMatch(source, /ADMIN_MASTER_KEY/);
   assert.match(source, /SITE_MASTER_KEY/);
   assert.match(source, /字形.*验证.*拒绝/);
@@ -124,10 +118,7 @@ test("uploaded local and S3 models can convert but external and ready models can
   );
 });
 test("confirmations use asynchronous accessible in-page dialogs without native blockers", () => {
-  const source = fs.readFileSync(
-    require.resolve("../admin-ui/admin.js"),
-    "utf8",
-  );
+  const source = adminSource();
   assert.doesNotMatch(source, /\bconfirm\(/);
   assert.match(source, /function confirmAction\(/);
   assert.match(source, /aria-labelledby/);
@@ -137,7 +128,7 @@ test("confirmations use asynchronous accessible in-page dialogs without native b
 });
 test("multiline field never writes the read-only textarea type property", () => {
   const vm = require("node:vm");
-  const source = fs.readFileSync(require.resolve("../admin-ui/admin.js"), "utf8");
+  const source = adminSource();
   const fieldSource = source.slice(source.indexOf("  function field("), source.indexOf("  function panel("));
   const created = [];
   const node = (tag) => {
@@ -154,7 +145,7 @@ test("multiline field never writes the read-only textarea type property", () => 
   assert.equal(number.type, "number");
 });
 test("identity fields provide controlled language choices and description limits", () => {
-  const source = fs.readFileSync(require.resolve("../admin-ui/admin.js"), "utf8");
+  const source = adminSource();
   const fieldSource = source.slice(source.indexOf("  function field("), source.indexOf("  function panel("));
   const node = (tag, text) => ({tagName:tag.toUpperCase(), textContent:text, children:[], listeners:{}, append(...children){this.children.push(...children);}, addEventListener(event,listener){this.listeners[event]=listener;}});
   const field = require('node:vm').runInNewContext(fieldSource+'\nfield;', {node,crypto:{randomUUID:()=> 'identity'}});
@@ -171,7 +162,7 @@ test("identity fields provide controlled language choices and description limits
   assert.equal(description.maxLength,500);
 });
 test('site identity interactions update the existing draft and dirty state', () => {
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  const source=adminSource();
   const start=source.indexOf('  function siteView(');
   const end=source.indexOf('\n  function ',start+4);
   const controls=[]; const buttons=[]; const panels=[]; let changes=0;
@@ -194,7 +185,7 @@ test('site identity interactions update the existing draft and dirty state', () 
   assert.equal(changes,4);
 });
 test('pending preview click blocks another preview and publish until completion',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  const source=adminSource();
   const vm=require('node:vm');
   const start=source.indexOf('  async function save()');
   const end=source.indexOf('  async function render()',start);
@@ -224,7 +215,7 @@ test('pending preview click blocks another preview and publish until completion'
   assert.match(notices.at(-1).message,/响应无效/);
 });
 test('runtime choice serializes pending selection and leaves unsaved draft untouched',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const a='a'.repeat(64),b='b'.repeat(64),bundle=digest=>({digest,profileId:'fixture',bytes:12});
   const state={config:{site:{title:'unsaved'}},revision:7,dirty:true,busy:false,sessionEpoch:0,
     runtime:{selection:{digest:a,generation:1},bundles:[bundle(a),bundle(b)]}};
@@ -232,7 +223,7 @@ test('runtime choice serializes pending selection and leaves unsaved draft untou
   const pending=new Promise(resolve=>release=resolve);
   const p={replaceChildren(){},append(){}};
   const context={state,runtimeRequestSequence:0,api:async path=>{if(path==='/runtime/selection'){posts++;return pending;}return {selection:{digest:b,generation:2},bundles:[bundle(a),bundle(b)]};},
-    updateStatus(){},node:()=>({}),field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},focus(){}};},
+    updateStatus(){},node:()=>({}),button:()=>({}),field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},focus(){}};},
     empty(){},notify:message=>notices.push(message),run:async action=>{try{await action();}catch(e){notices.push(e.message);}}};
   const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
   const panel=source.slice(source.indexOf('  function showRuntimePanel('),source.indexOf('  function siteView('));
@@ -246,7 +237,7 @@ test('runtime choice serializes pending selection and leaves unsaved draft untou
   assert.equal(state.config.site.title,'unsaved');assert.equal(state.revision,7);assert.equal(state.dirty,true);
 });
 test('legacy action appears only for unbound legacy versions',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const labels=[];
   const node=()=>({append(){}});
   const context={state:{},content:node(),node,heading(){},panel:()=>node(),empty(){},button:(label)=>{labels.push(label);return node();},
@@ -260,7 +251,7 @@ test('legacy action appears only for unbound legacy versions',async()=>{
   assert.equal(labels.filter(label=>label==='生成兼容交付').length,1);
 });
 test('late publish response after logout cannot report success',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   let release,notices=[];
   const pending=new Promise(resolve=>release=resolve);
   const state={busy:false,dirty:false,revision:3,sessionEpoch:0,section:'site',runtime:{selection:{digest:'a'.repeat(64),generation:1}},overview:{},config:{}};
@@ -277,14 +268,14 @@ test('late publish response after logout cannot report success',async()=>{
   assert.equal(notices.some(message=>message.includes('发布成功')),false);
 });
 test('malformed successful mutation response is uncertain, never a successful operation',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const apiSource=source.slice(source.indexOf('  async function api('),source.indexOf('  function dirty('));
   const context={state:{csrf:'token',config:{}},fetch:async()=>({ok:true,status:200,json:async()=>{throw Error('bad JSON');}}),login(){}};
   vm.runInNewContext(apiSource+'\nthis.request=api;',context);
   await assert.rejects(context.request('/publish','POST',{revision:3}),/结果可能已生效.*不要自动重试/);
 });
 test('unselected runtime explains server registration before preview POST',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const state={busy:false,dirty:false,revision:3,sessionEpoch:0,runtime:{selection:{digest:null,generation:0}},config:{}};
   let posts=0;
   const context={state,api:async()=>{posts++;return {url:'/?preview=preview-00000000-0000-0000-0000-000000000000'};},updateStatus(){},notify(){},
@@ -299,7 +290,7 @@ test('unselected runtime explains server registration before preview POST',async
 function deferred(){let resolve,reject;const promise=new Promise((yes,no)=>{resolve=yes;reject=no;});return {promise,resolve,reject};}
 function tick(){return new Promise(resolve=>setImmediate(resolve));}
 test('failed action restores trigger focus only within its live session and unchanged focus intent',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8');
+  const source=adminSource();
   for(const scenario of ['recover','cancel','session','removed','disabled','moved','moved-back','pending-busy','not-focused']){
     const pending=deferred(),body={},listeners=new Set(),state={busy:false,sessionEpoch:0};
     const document={body,activeElement:null,addEventListener(type,fn){listeners.add(fn);},removeEventListener(type,fn){listeners.delete(fn);}};
@@ -325,14 +316,14 @@ test('failed action restores trigger focus only within its live session and unch
   }
 });
 test('older overview runtime GET cannot replace a newer selection or redraw its old panel',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const a='a'.repeat(64),b='b'.repeat(64),bundles=[a,b].map(digest=>({digest,profileId:'fixture',files:1,bytes:12,registeredAt:'2026-01-01T00:00:00Z'}));
   const pending=[deferred(),deferred(),deferred(),deferred()];let reads=0,selectionBody,choice;
   const elements=[];
   const node=(tag,text)=>({tag,textContent:text||'',children:[],dataset:{},isConnected:true,classList:{add(){}},append(...items){this.children.push(...items);},replaceChildren(...items){this.children=items;},scrollIntoView(){},focus(){}});
   const state={config:{projects:[]},section:'overview',overview:{},storages:[],revision:8,dirty:true,busy:false,sessionEpoch:0,runtime:{selection:{digest:a,generation:1},bundles}};
   const content=node('main');
-  const context={state,content,node,window:{},document:{querySelectorAll:()=>[]},saveStatus:null,runtimeRequestSequence:0,
+  const context={state,content,node,button:()=>node('button'),window:{},document:{querySelectorAll:()=>[]},saveStatus:null,runtimeRequestSequence:0,
     api:async(path,method,body)=>{if(path==='/overview')return {published:1,resources:0,defaultStorage:'local',masterKeyConfigured:true,audit:[]};if(path==='/runtime')return pending[reads++].promise;if(path==='/runtime/selection'){selectionBody=body;return {digest:body.digest,generation:body.generation+1};}throw Error(path);},
     heading(){},panel:(parent,title)=>{const p=node('section');p.title=title;parent.append(p);elements.push(p);return p;},
     field:(parent,label,value,onChange)=>{choice=onChange;return {dataset:{},disabled:false,focus(){}};},empty(){},warning(){},notify(){},run:async action=>{await action();}};
@@ -358,7 +349,7 @@ test('older overview runtime GET cannot replace a newer selection or redraw its 
   pending[3].resolve({selection:{digest:a,generation:3},bundles});await tick();
 });
 test('runtime GET begun before logout cannot enter the next session',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const pending=deferred(),old='a'.repeat(64),state={sessionEpoch:0,config:{},runtime:{selection:{digest:old,generation:4},bundles:[]}};
   const helpers=source.slice(source.indexOf('  function validRevision('),source.indexOf('  window.addEventListener'));
   const context={state,runtimeRequestSequence:0,api:async()=>pending.promise};
@@ -369,7 +360,7 @@ test('runtime GET begun before logout cannot enter the next session',async()=>{
   assert.equal(state.runtime.selection.generation,4);
 });
 test('failed or uncertain preview restores real busy controls while logout remains available',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   for(const outcome of ['reject','uncertain']){
   const pending=deferred(),controls=[],notices=[];let logoutClicks=0;
   const state={busy:false,dirty:false,revision:3,sessionEpoch:0,section:'site',runtime:{selection:{digest:'a'.repeat(64),generation:1}},config:{}};
@@ -392,7 +383,7 @@ test('failed or uncertain preview restores real busy controls while logout remai
   }
 });
 test('publish rechecks selection and busy state after pending confirmation',async()=>{
-  const source=fs.readFileSync(require.resolve('../admin-ui/admin.js'),'utf8'),vm=require('node:vm');
+  const source=adminSource(),vm=require('node:vm');
   const helpers=source.slice(source.indexOf('  async function building('),source.indexOf('  window.addEventListener'));
   const actions=source.slice(source.indexOf('  async function save()'),source.indexOf('  async function render()'));
   for(const change of ['selection','busy']){
