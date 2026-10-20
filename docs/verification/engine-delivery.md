@@ -2,6 +2,8 @@
 
 日期：2026-10-15（Asia/Shanghai）。执行工作区：隔离 `feat/engine-delivery`，Task 14 输入提交 `48afdb4e6bfe551bd7fe3de50cd3ec2830b99fac`。本页记录实际证据，不是生产部署证明。最终应用代码为 `a00cd397c61b4b8dabf2b564ebb29f62e27a1aa9`；14 项任务复核、整分支独立审查、主代理全量测试与新镜像身份检查已完成，见末节。下文按时间保留早期结果和已关闭问题；原视觉与明确未验证项仍未解除。
 
+2026-10-20 补记：已按用户选择完成**本地合并及合并后全量测试**，详见文末“本地集成”。前述 2026-10-15 的“尚未合并”、工作区和证据位置均为历史状态；生产切换和原视觉验收仍未完成。
+
 ## 范围和来源
 
 Node 24.14.0、专用 PostgreSQL 18.4（父代理拥有 `site-pg-test-db-1`、网络 `site-pg-test_default`、回环 55432）。测试入口创建并清理自身 `site_test_<32hex>` 数据库；不回退真实 DATABASE_URL。原工作区只读授权范围：明确 11 程序文件、公开 UIL、assets 前台素材，及后续明确的 room/、bush.bin/、三个 CMS JSON 的只读检查。没有使用真实 `.env`、业务库、uploads、S3、当前 3000 服务；CMS 个人值不复制到报告/夹具。
@@ -146,3 +148,19 @@ GREEN 两条路径 settled 都为 `publish`/enabled/notbusy；422 保留错误�
 最终清理前，专用网络仅有父代理创建的 `site-pg-test-db-1`；除 control 库外有一个较早测试遗留、0 连接的随机测试库（目录修改时间早于本次最终全套）。主代理以明确 project/config 执行 `docker compose -p site-pg-test -f compose.test.yaml down`，exit 0，移除该专用 tmpfs 数据库容器及网络；测试数据不再保留。最新检查镜像/tag 也按确切名称移除，exit 0；未执行 Docker prune。浏览器证据和独立 Git 工作区保留，原项目未提交修改保持原样。
 
 交付状态：阶段 B 代码与上述隔离验证完成；原视觉、未覆盖的实际浏览器门禁及生产外部服务仍是明确未验证项。没有自动合并、推送、部署、正式数据库迁移或当前 3000 服务切换。阶段 C/D 尚未实施。
+
+## 本地集成（2026-10-20）
+
+用户选择本地合并后，在原项目 `/Users/jiandan/Code/MyCode/active-theory-v6` 执行 `git merge --ff-only feat/engine-delivery`，目标分支 `feat/authenticated-resource-admin` 从 `87b572e7117c4764fc4babe0046ea2d6b374fde7` 快进至 `c99141652f5aa292adfeb0619147f5ff667a7131`，exit 0。未拉取远程、推送 GitHub 或创建 PR。本节后续文档提交不修改应用代码。
+
+合并前记录原项目全部 270 个已修改/未跟踪文件的 SHA-256、文件类型和权限；合并后及测试后复核全部一致，暂存区、未提交 tracked diff 和 porcelain status 也一致。原 `.gitignore`、粒子生成脚本、黑洞/Logo 实验文件、`effects/` 和已有 `output/` 未被替换或提交。此次仅新增独立验收证据目录，不覆盖其中已有文件。
+
+在合并后的原项目运行前述清除数据库环境变量、固定 Node 24.14.0 与 `AUTHORIZED_RUNTIME_ROOT` 的完整 `node scripts/test-postgres.js`：**exit 0，474 pass / 0 fail / 0 skipped，30,965.947083 ms**。实际原程序测试已启用，并非靠跳过获得通过。`git diff --check 87b572e..c991416` exit 0；001/002/003 SQL 摘要与本文已记值一致。
+
+本轮专用 PostgreSQL 通过 `docker compose --env-file /dev/null -p site-pg-test -f compose.test.yaml up -d --wait` 启动，避免 Compose 读取原项目 `.env`。测试创建 UUID 测试库并使用临时根目录、随机 HTTP 端口；独立只读检查未发现访问原项目私有数据或写入公开素材的路径。结束时只剩 `site_test_control`，同一明确 project/config 的 `down` exit 0，已移除本轮临时容器及网络。没有运行正式迁移、读取真实 `.env/data/uploads` 或访问当前 3000 服务。
+
+归档前，将旧工作区 `output/`（包括被 Git 忽略的 console 日志）和 `.git/worktrees/active-theory-v6/sdd/` 审查/验收记录完整复制到原项目 **`output/phase-b-integration-20261020/`** 的 `prior-output/`、`sdd/`，两份递归 `diff -qr` 均 exit 0；同处保存本次 `full-test.log` 和前后文件校验记录。这些本地证据未加入 Git。Codex 已确认 engine-delivery 工作区为 `archived_worktree`，可恢复；已完整合并的 `feat/engine-delivery` 本地分支用 `git branch -d` 删除，未强制删除提交。
+
+**运行状态边界：本地代码合并不等于服务升级。** 如果现有进程从原目录启动，Express 可能在后台刷新时读取新的 `admin-ui/admin.js`，但该进程仍持有旧后端代码；新 JS 的 `/api/admin/runtime` 请求和运行包选择要求因此存在条件性的混合版本风险。本轮未访问服务，不声称该故障已经发生，也未擅自重启解决。正式切换仍需单独授权，并按文档完成一致备份、schema 3 显式升级、运行包登记/选择及历史交付或新发布；直接重启不保证公开页可用。
+
+本轮没有重跑容器构建、浏览器/GPU 或原素材画面对比，不改变本文已有视觉缺失及外部服务未验收结论。阶段 C/D 仍未实施。
