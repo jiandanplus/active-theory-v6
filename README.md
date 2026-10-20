@@ -1,168 +1,58 @@
-# active-theory-v6
+# Personal Portfolio CMS
 
-基于现有 3D 前台的个人网站项目，提供中文管理后台、受保护的首次安装、PostgreSQL 内容管理，以及本地 / 通用 S3 兼容资源存储。面向单站点、单管理员、单应用实例自托管，不提供公开注册。
+可自托管的个人作品网站：中文管理后台、受保护的首次安装、PostgreSQL 内容与版本、私有资源库、认证预览，以及可追踪发布。默认提供本项目新写的 `portfolio-v1` 示例，不依赖原 Active Theory 的 JavaScript、字体、模型或媒体。它是新的作品集页面和程序化 WebGL 装饰，不是原站 3D 视觉的等价复制。
 
-> 当前后台与 PostgreSQL 实现在 `feat/authenticated-resource-admin` 分支。下方克隆命令明确选择该分支，不假定已合并到 `main`。
->
-> **代码与素材分开提供。** `assets/` 不在 Git 中；全新克隆可启动管理后台并安装空白站点，但完整 3D 页面需要自行提供有权使用的运行包、字体、模型和媒体。没有运行资源时，公开页显示未配置提示，不会自动从原站下载。
+## 一条命令启动
 
-## 功能
-
-- 首次访问 `/admin/`：安装令牌授权 → 数据库检查 → 选择空白内容、服务器内容包或旧站迁移 → 创建或保留管理员 → 手动登录。
-- 中文后台管理网站信息、作品、音乐，以及六个场景中已识别的文案、资源和参数。
-- “网站设置 → 搜索与分享”支持描述、页面语言和默认分享图片；保存草稿、认证预览、发布后生效。语言不会自动翻译内容，作品描述与 image 优先，canonical 域名只来自服务器 `SITE_ORIGIN`。详见[后台说明](docs/ADMIN.md#网站描述语言与分享图片)。
-- 资源库支持本地上传、S3 兼容对象存储、HTTPS 外链；静态 GLB 可转换为当前引擎使用的 BIN。
-- 草稿、认证预览、不可变发布快照及恢复为草稿；匿名访客只能读取已发布内容及获准资源。
-- 服务端会话、密码哈希、CSRF / Origin 检查、登录限流和加密云凭证；没有默认管理员密码。
-- 只读旧 SQLite 导入，保留账号、资源 ID 和发布历史，并检查新私有目录中准备好的上传文件。
-
-**数据边界：** PostgreSQL 保存业务内容、资源记录、引用、账号和版本；媒体字节保存在服务器私有 `data/uploads/` 或 S3。外链只保存引用，不自动抓取。JavaScript / CSS / WASM 等程序包随代码与授权运行包部署，不允许后台任意上传执行。
-
-## 环境要求
-
-- Node.js **24 或更新版本**，使用 npm 安装锁文件依赖。
-- 独立 **PostgreSQL 18** 数据库；当前实测 18.4。应用使用非超级用户角色，拥有专用数据库的 `CONNECT`、`CREATE` 权限。不要手动预建 `personal_site` schema。
-- Docker 部署需要支持 Compose 的 Docker 环境；生产必须配置 HTTPS 反向代理。
-- 本地媒体目录或持久卷可写；3D 素材需自行提供授权副本。
-
-SQLite 仅作为旧站迁移的只读来源，不是运行时数据库。项目不能直接部署为 GitHub Pages 等纯静态站点。
-
-## 本地启动
-
-### 1. 获取代码与依赖
+需要 Node.js 24+、npm 和带 Compose v2 的 Docker；先启动 Docker。无需先下载原站素材，也无需先配置真实云服务。
 
 ```sh
-git clone --branch feat/authenticated-resource-admin https://github.com/jiandanplus/active-theory-v6.git
-cd active-theory-v6
+git clone <YOUR_REPOSITORY_URL>
+cd <YOUR_CHECKOUT>
+npm run docker:up
+```
+
+默认只监听本机 `http://127.0.0.1:3300`。启动器首次创建 `.deployment/local/config.env`，使用独立随机值生成数据库超级用户密码、应用角色密码、安装令牌和加密主密钥；再次执行保留原文件与持久卷。没有默认管理员账号或密码。交互终端会显示安装令牌，非交互日志隐藏令牌；需要时在私有终端执行 `npm run docker:token`。不要把令牌、配置文件或数据库 URL 发到聊天或公开日志。
+
+首次使用：
+
+1. 打开 `/admin/`，输入安装令牌，检查数据库。
+2. 选择自带作品集示例（或空白内容），创建自己的管理员密码，完成后手动登录。
+3. 在“引擎 / 运行包”页登记自带 `portfolio-v1` 运行包，再选择运行包；样例路径见 [部署说明](DEPLOYMENT.md)。
+4. 修改网站信息与作品，保存草稿，认证预览，再发布；打开公开首页和 `/work/<作品标识>` 验证。
+
+```sh
+npm run docker:status
+npm run docker:down
+# 可选择其他本地端口；现有目录不会被改写
+npm run docker:up -- --port 3400 --directory .deployment/another-local
+```
+
+`down` 不删除卷。不要用 `down -v` 代替。修改现有配置中的数据库密码不会更新已经初始化的数据库。
+
+## 代码与数据边界
+
+应用入口是 `server.js`，HTTP 组合位于 `admin-server/app.js`；后台浏览器模块位于 `admin-ui/modules/`；内容校验由 `shared/content-contract.js` 共享；示例位于 `examples/portfolio/`。PostgreSQL 保存业务记录、账号、资源引用和发布版本；私有 Docker 数据卷保存上传文件、运行包和发布制品；S3 为可选资源存储。公开请求不能读取草稿或任意服务器路径。
+
+`GET /health/live` 检查进程，`GET /health/ready` 检查数据库与兼容安装状态；尚未安装但数据库可用也是就绪。生产入口必须 HTTPS；本地 HTTP 仅用于 loopback 演示，不能把开发模式配置作为公网部署。
+
+## 开发与验证
+
+```sh
 npm ci
-```
-
-已有检出目录先检查 `git status`，保留本地修改，不要重克隆覆盖。阶段 B 在隔离的 `feat/engine-delivery` 工作区实施，尚不代表上述远程分支已经包含本轮变更；集成、推送和部署需另行确认。程序输入在服务器通过明确清单登记，媒体仍通过资源库管理，不能仅把新 app 文件放进 `assets/` 就切换发布。
-
-### 2. 配置数据库和本地环境
-
-先按[数据库权限说明](docs/POSTGRESQL-MIGRATION.md#部署目标和权限)准备专用 PostgreSQL 18 数据库及非超级用户账号。应用只能创建自己的 schema / 表，不会安装数据库服务或创建云数据库。
-
-仅在没有 `.env` 时复制模板：
-
-```sh
-test -e .env || cp .env.example .env
-chmod 600 .env
-```
-
-编辑 `.env`，将占位值替换为本地实际值，不要提交此文件：
-
-```dotenv
-NODE_ENV=development
-HOST=127.0.0.1
-PORT=3000
-SITE_ORIGIN=http://localhost:3000
-DATABASE_URL=postgresql://site_app:URL_ENCODED_PASSWORD@127.0.0.1:5432/personal_site
-SETUP_TOKEN=LOCALLY_GENERATED_HEX
-# 使用 S3 前还需设置独立的 SITE_MASTER_KEY。
-```
-
-`SETUP_TOKEN` 使用本机生成的至少 32 随机字节 hex，不能照抄占位文字：
-
-```sh
-node -e "console.log(require('node:crypto').randomBytes(32).toString('hex'))"
-```
-
-仅在自己的终端生成并保存，不截图或分享输出。数据库密码在 URL 中需要编码。`SITE_DATA_DIR` 可指定私有媒体目录，默认是项目的 `data/`，不能指向公开静态目录。
-
-### 3. 网页安装与发布
-
-```sh
-npm run dev
-```
-
-打开 `http://localhost:3000/admin/`，按向导完成安装。浏览器地址须与 `SITE_ORIGIN` 完全一致，不要混用 `localhost` 和 `127.0.0.1`。端口被占用时同时调整 `PORT` 与 `SITE_ORIGIN`，不要停止未知进程。
-
-安装完成后移除环境中的 `SETUP_TOKEN` 并重启自己的应用，再手动登录。修改内容后先保存草稿、预览，再发布；没有发布版本时访客不会看到草稿。已安装实例即使重新设置安装令牌，也不能再次初始化。
-
-### 运行包与内容发布
-
-运行包是经授权的前台程序输入，不等同于图片、视频和模型资源库。新安装可以先创建管理员并配置内容；发布和预览前必须在服务器登记完整运行包，再在后台明确选择。
-
-```sh
-npm run runtime:register -- --root /srv/authorized-runtime --manifest /srv/runtime-manifest.json --profile legacy-six-scenes-v1
-```
-
-这些是部署示例路径，不是可直接操作的现有目标。清单逐项列出相对路径、角色、大小和 SHA-256；程序不会自动扫描最新 app、下载远程脚本或执行包内安装程序。登记不会切换选择或公开版本。发布先完整构建/校验，再一次性切换；失败保留现有发布，版本号空洞正常。切换运行包只影响之后的预览/发布，历史程序不被替换。完整清单、容器挂载与排错见[运行包运维](docs/ENGINE-RUNTIME.md)。
-
-网站设置、资源上传、字体限制和模型转换详见[后台使用说明](docs/ADMIN.md)。`admin:init` 仅给出网页安装指引，忘记密码使用受控的 `npm run admin:reset`，不要删库重建。
-
-## 公网部署
-
-推荐从[PostgreSQL 部署、升级与迁移指南](docs/POSTGRESQL-MIGRATION.md)开始，按需求选一个模板：
-
-| 方式 | 文件 | 说明 |
-| --- | --- | --- |
-| 自带 PostgreSQL | `compose.yaml` | 独立数据库卷、非超级用户应用角色、健康依赖；数据库不映射宿主机端口 |
-| 外部 PostgreSQL | `compose.external.yaml` | 独立使用，不与前一个模板叠加，不启动内置 db |
-| 原生 Node.js | `npm start` | 自行准备 PG18、进程管理、私有持久目录与 HTTPS 代理 |
-
-应用 Compose 端口默认只绑定 `127.0.0.1:3000`。生产 `SITE_ORIGIN` 必须为 HTTPS，`TRUST_PROXY` 只填写实际信任的代理地址／网段。代理要允许上传体积并为模型转换留足超时。**不要把测试数据库配置或开发 HTTP 服务直接暴露公网。**
-
-备份必须包括同一维护窗口内的 PostgreSQL、私有 `data/delivery`、本地 uploads、授权 bundled 媒体及独立保管的主密钥；S3 对象另行备份。`data/delivery` 必须持久化，绝不能由静态服务器/CDN 直接公开。不要对真实部署执行 `docker compose down -v`。对象缺失/损坏时从匹配备份恢复，不能拿当前 assets 替代。
-
-## 配置对象存储
-
-默认可使用本地存储。要使用 S3，先生成并保存 `SITE_MASTER_KEY`，然后在后台填写 Endpoint、Region、Bucket、对象前缀、凭证和**公开访问基地址**。Endpoint 与访客访问的 CDN / Bucket URL 是两个不同配置。
-
-“测试连接”只执行只读权限检查，不等于公网访问或 CORS 已正常。应再上传小文件，用实际前台预览验证。切换默认存储只影响新上传，不会搬迁旧文件。当前不支持私有桶签名链接自动续期，详见[配置 S3](docs/ADMIN.md#配置-s3)。
-
-## 常用命令与测试
-
-| 命令 | 作用 |
-| --- | --- |
-| `npm run dev` / `npm start` | 启动同一 Node 服务，模式由环境决定，不是自动热更新 |
-| `npm run admin:key` | 本机生成 S3 凭证加密主密钥，不要公开输出 |
-| `npm run admin:reset` | 已安装实例的管理员恢复，使旧会话失效 |
-| `npm run import:check -- …` | 只读导入预检；旧站需明确 `--root`、`--legacy`、`--data-dir` |
-| `npm run db:migrate` | 维护窗口内显式升级已安装结构 1/2→3；结构 3 验证式 no-op，不创建管理员 |
-| `npm run runtime:register -- …` | 服务器按明确清单登记完整授权运行包，不自动选择 |
-| `npm run delivery:audit` | 只读统计/完整性诊断，不迁移、构建、删除或自动修复 |
-| `npm test` / `npm run test:postgres` | 相同的隔离 PostgreSQL 测试入口 |
-
-启动专用测试数据库后运行，不要把生产连接串当测试连接：
-
-```sh
-docker compose -p site-pg-test -f compose.test.yaml up -d --wait
-npm ci
+npm run lint
+npm run format:check
+npm run typecheck
+npm run test:launcher
+# 专用测试 PostgreSQL；不会操作真实站点数据库
+docker compose -f compose.test.yaml up -d --wait
 npm test
-npm audit
-# 仅关闭上面创建的专用测试项目，其 tmpfs 数据是一次性的。
-docker compose -p site-pg-test -f compose.test.yaml down
 ```
 
-测试默认使用回环端口 55432 和 UUID 临时数据库，不回退生产 `DATABASE_URL`。如显式指定 `TEST_DATABASE_URL`，需确认专用目标后设置 `TEST_DATABASE_CONFIRMED=yes`。有授权运行包时执行对应引擎测试；缺包时七项引擎集成检查明确跳过，不代表完整 3D 已验收。
+基础测试使用自建临时资源与专用 PostgreSQL，不需要原站素材。原站兼容性是独立且需要显式授权的门禁：`AUTHORIZED_RUNTIME_ROOT=/absolute/authorized/root npm run test:authorized-runtime`；没有素材会失败，不等于已经验证原站运行效果。CI 的绿色基础检查只证明代码、示例与隔离 Docker 路径，不证明生产 TLS、真实 S3、原站素材授权或浏览器视觉验收。
 
-2026-10-13 的 199 项结果属于此前 PostgreSQL 安装阶段，见[历史验证记录](docs/verification/postgresql-installation.md)。阶段 A 见[身份升级验证](docs/verification/site-identity-upgrade.md)，阶段 B 的实际执行范围、门禁和限制见[运行包交付验证](docs/verification/engine-delivery.md)。C/D 尚未实施；自动测试及合成协议夹具不代表原六场景视觉、真实 S3/CDN/CORS 或生产服务已验收。
+开发范围与质量工具的精确覆盖见 [CONTRIBUTING.md](CONTRIBUTING.md)。生产 / 外部 PostgreSQL、备份恢复和升级见 [DEPLOYMENT.md](DEPLOYMENT.md)。示例来源与未知继承内容的许可边界见 [PROVENANCE.md](PROVENANCE.md) 和 [THIRD_PARTY.md](THIRD_PARTY.md)。历史工具说明见 [tools/README.md](tools/README.md)，授权旧引擎协议见 [docs/ENGINE-RUNTIME.md](docs/ENGINE-RUNTIME.md)。
 
-## 常见问题
+## 许可状态
 
-- **后台能打开但提示数据库不可用**：检查 PG18、连接凭证、权限和网络。故障不会被当作新站，不要删除 schema 重试。
-- **安装完成但没有完整 3D 页面**：检查资源包和预检的 `missingRequired`；空白业务内容与缺运行资源是不同状态。先补齐授权资源并在隔离环境预检，不运行旧下载脚本掩盖缺失。
-- **保存后访客内容没变**：保存只修改草稿，预览需要登录；验证后点击发布。编辑磁盘 `cms/*.json` 不会自动覆盖已安装数据库。
-- **修改中文 3D 文案被拒绝**：原字体为有限字形图集，当前不自动生成新字形。选择已支持文案或另行准备授权字体资源。
-- **上传成功但 S3 前台加载失败**：分别检查公开基地址、对象可读权限和 CORS，不要把管理 API Endpoint 当公开 URL。
-- **旧模型迁移后缺失**：把停机备份中的 uploads 复制到新运行目录再预检；安装器不会自动搬运。缺关键几何会标记相应模板未就绪，不能用安装成功代替页面验收。
-
-## 资源授权、历史工具与仓库安全
-
-仓库早期来自站点本地化与脱敏工作，原 CMS 中仍可能包含占位主机、示例品牌、链接和不完整媒体。脱敏不等于获得原 3D 引擎、字体、模型、音乐或示例内容的再分发授权。本仓库没有为所有这些内容统一授予开源许可；复用和公开部署前请确认各项权利、替换个人内容并确定适用许可证。
-
-`download:core`、`download:assets`、`download:cms`、`patch-search-text.js` 等是保留的历史开发工具，不是新部署的必要步骤；它们可能下载或改写文件。后台正常运行不调用它们，不依赖上游实时代理，勿在已有站点上盲目执行。
-
-`.env`、`.env.*`（模板除外）、`data/` 和 `assets/` 已在忽略规则中；不要强制提交密码、令牌、数据库、备份、云凭证或未经授权的资源。真实密钥若曾提交，删除文件不能撤销历史泄漏，须先轮换。
-
-## 文档导航
-
-- [后台与资源管理](docs/ADMIN.md)
-- [运行包登记、交付与诊断](docs/ENGINE-RUNTIME.md)
-- [部署、备份、升级与旧站迁移](docs/POSTGRESQL-MIGRATION.md)
-- [实际验证与已知边界](docs/verification/postgresql-installation.md)
-- [结构 2 与站点身份验证](docs/verification/site-identity-upgrade.md)
-- [PostgreSQL 与安装向导设计](docs/superpowers/specs/2026-10-12-postgresql-installation-design.md)及[实施计划](docs/superpowers/plans/2026-10-12-postgresql-installation.md)
-- [首版后台设计](docs/superpowers/specs/2026-10-12-personal-site-admin-design.md)及[首版实施计划](docs/superpowers/plans/2026-10-12-personal-site-admin.md)，历史记录中的 SQLite 主存储与终端首装决定已被 PostgreSQL 设计替代，不作为当前部署步骤。
+仓库未为全部历史代码或素材指定新的统一许可证。发布者必须确认继承代码、品牌、字体、模型与媒体的权利后，再决定如何许可和分发。新增样例不是“已获得原站素材授权”的声明。

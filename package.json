@@ -1,16 +1,26 @@
 {
   "name": "active-theory-v6",
   "version": "1.0.0",
-  "description": "Zeta territory restoration of active-theory.net",
+  "description": "Self-hosted personal portfolio CMS with traceable PostgreSQL publishing",
   "main": "server.js",
   "scripts": {
-    "download:core": "node download-core.js",
-    "download:assets": "node download-assets.js",
-    "download:cms": "node download-cms.js",
+    "download:core": "node tools/legacy/download-core.js",
+    "download:assets": "node tools/legacy/download-assets.js",
+    "download:cms": "node tools/legacy/download-cms.js",
     "dev": "node server.js",
     "start": "node server.js",
     "test": "node scripts/test-postgres.js",
     "test:postgres": "node scripts/test-postgres.js",
+    "test:launcher": "node --test tests/cd-docker.test.js",
+    "test:authorized-runtime": "node scripts/test-authorized-runtime.js",
+    "docker:up": "node scripts/docker-local.js up",
+    "docker:status": "node scripts/docker-local.js status",
+    "docker:down": "node scripts/docker-local.js down",
+    "docker:token": "node scripts/docker-local.js token",
+    "lint": "eslint scripts/docker-local.js scripts/test-postgres.js scripts/test-authorized-runtime.js tests/cd-docker.test.js shared/content-contract.js admin-ui/modules/*.js",
+    "format": "prettier --write scripts/docker-local.js scripts/test-authorized-runtime.js scripts/test-postgres.js tests/cd-docker.test.js eslint.config.js tsconfig.json",
+    "format:check": "prettier --check scripts/docker-local.js scripts/test-authorized-runtime.js scripts/test-postgres.js tests/cd-docker.test.js eslint.config.js tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json",
     "db:migrate": "node scripts/db-migrate.js",
     "runtime:register": "node scripts/runtime-bundle.js",
     "delivery:audit": "node scripts/delivery-audit.js",
@@ -21,6 +31,12 @@
   },
   "engines": {
     "node": ">=24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.10.0",
+    "eslint": "^10.0.0",
+    "prettier": "^3.6.2",
+    "typescript": "^5.9.3"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1149.0",

@@ -1,0 +1,47 @@
+name: Quality and clean-clone delivery
+on:
+  push:
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: site_test
+          POSTGRES_PASSWORD: ci-test-only
+          POSTGRES_DB: site_test_control
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U site_test -d site_test_control"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+    env:
+      TEST_DATABASE_URL: postgresql://site_test:ci-test-only@127.0.0.1:5432/site_test_control
+      TEST_DATABASE_CONFIRMED: 'yes'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - run: npm run test:launcher
+      - run: npm test
+      - name: Clean image and non-root readiness smoke (no original assets)
+        run: |
+          test ! -d assets
+          npm run docker:up
+          curl --fail http://127.0.0.1:3300/health/ready
+          npm run docker:status
+      - name: Preserve data while stopping owned stack
+        if: always()
+        run: npm run docker:down
+      - name: Evidence boundary
+        run: echo 'Original-runtime compatibility is NOT verified in CI; explicit authorized-runtime gate required. Production TLS, real S3 and visual acceptance remain separate.'

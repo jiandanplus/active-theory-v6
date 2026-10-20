@@ -9,9 +9,10 @@ services:
       db:
         condition: service_healthy
     environment:
-      NODE_ENV: production
+      # Local loopback demonstration only. Production uses compose.external.yaml.
+      NODE_ENV: development
       HOST: 0.0.0.0
-      SITE_ORIGIN: ${SITE_ORIGIN:?Set the public HTTPS origin}
+      SITE_ORIGIN: ${SITE_ORIGIN:?Run npm run docker:up to initialize local config}
       DATABASE_URL: ${DATABASE_URL:?Set the non-superuser application database URL}
       SETUP_TOKEN: ${SETUP_TOKEN:-}
       LEGACY_SQLITE_PATH: ${LEGACY_SQLITE_PATH:-}
@@ -20,7 +21,6 @@ services:
       S3_ENDPOINT_ALLOWLIST: ${S3_ENDPOINT_ALLOWLIST:-}
     volumes:
       - site-data:/app/data
-      - ${SITE_ASSETS_DIR:-./assets}:/app/assets:ro
   db:
     image: postgres:18-alpine
     restart: unless-stopped
@@ -32,7 +32,12 @@ services:
       POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set the application password}
     volumes:
       - pg-data:/var/lib/postgresql
-      - ./docker/postgres-init.sh:/docker-entrypoint-initdb.d/10-app-role.sh:ro
+      - type: bind
+        source: ./docker/postgres-init.sh
+        target: /docker-entrypoint-initdb.d/10-app-role.sh
+        read_only: true
+        bind:
+          create_host_path: false
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
       interval: 2s

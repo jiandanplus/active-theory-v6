@@ -18,6 +18,5 @@ services:
       S3_ENDPOINT_ALLOWLIST: ${S3_ENDPOINT_ALLOWLIST:-}
     volumes:
       - site-data:/app/data
-      - ${SITE_ASSETS_DIR:-./assets}:/app/assets:ro
 volumes:
   site-data:

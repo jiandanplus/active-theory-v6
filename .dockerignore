@@ -9,3 +9,12 @@ scratch
 assets
 room
 *.log
+.deployment
+output
+tools
+tests
+docs
+.github
+*.zip
+*.obj
+*.bin
