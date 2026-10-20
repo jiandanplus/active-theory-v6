@@ -13,6 +13,13 @@ const { versionDeliverySummaries } = require("../delivery/admin-routes");
 
 function mountContentRoutes({ admin, store, options, deliveryService }) {
   admin.get(
+    "/config/schema",
+    route(async (req, res) => {
+      const { schema } = await contentRepository(store).getTemplate();
+      res.json({ schema });
+    }),
+  );
+  admin.get(
     "/config",
     route(async (req, res) => {
       const draft = await contentRepository(store).getDraft();

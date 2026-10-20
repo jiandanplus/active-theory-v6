@@ -13,7 +13,9 @@ function create(context) {
       const epoch=state.sessionEpoch;
       if (!window.SiteContentContract?.validateConfig)
         throw new Error("内容校验模块加载失败，请刷新页面后重试");
-      window.SiteContentContract.validateConfig(state.config, state.validationSchema || state.config);
+      if (!state.validationSchema)
+        throw new Error("内容校验结构未加载，请刷新页面后重试");
+      window.SiteContentContract.validateConfig(state.config, state.validationSchema);
       const saved = JSON.stringify(state.config);
       const data = await api("/config", "PUT", {
         config: JSON.parse(saved),

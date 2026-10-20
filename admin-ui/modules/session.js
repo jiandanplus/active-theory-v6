@@ -8,16 +8,26 @@ function create(context) {
   async function load() {
     const epoch = state.sessionEpoch;
     invalidateRuntime();
-    const [cfg, res, stores, overview] = await Promise.all([
+    const [cfg, canonical, res, stores, overview] = await Promise.all([
       api("/config"),
+      api("/config/schema"),
       api("/resources"),
       api("/storages"),
       api("/overview"),
     ]);
     if (epoch !== state.sessionEpoch) return;
+    // Never substitute the mutable current draft for the template's legacy-URL baseline.
+    let validationSchema;
+    try {
+      if (!canonical?.schema || !window.SiteContentContract?.validateConfig)
+        throw new Error("missing canonical schema");
+      window.SiteContentContract.validateConfig(canonical.schema, canonical.schema);
+      validationSchema = JSON.parse(JSON.stringify(canonical.schema));
+    } catch {
+      throw new Error("内容校验结构响应无效，请刷新页面后重试");
+    }
     state.config = cfg.config;
-    // A loaded draft is a client hint only; the server retains its authoritative schema.
-    state.validationSchema = JSON.parse(JSON.stringify(cfg.config));
+    state.validationSchema = validationSchema;
     state.revision = cfg.revision;
     state.resources = res.resources;
     state.storages = stores.storages;

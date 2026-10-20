@@ -46,6 +46,7 @@ test('API module sends same-origin CSRF only with mutations and invalidates expi
 test('shared client validation rejects unsafe drafts before any save request', async () => {
   const module = require('../admin-ui/modules/actions');
   const state = {config: {site: {title: '<script>bad</script>', description: '', language: 'zh-CN', socialImage: ''}, projects: [], scenes: [], songs: []}, busy: false, sessionEpoch: 0, revision: 1};
+  state.validationSchema = structuredClone(state.config);
   let requests = 0;
   const {save} = module.create({state, updateStatus() {}, window: {SiteContentContract: require('../shared/content-contract')}, api: async () => {requests++;}});
   await assert.rejects(save(), /文字内容不能包含 HTML/);
@@ -85,6 +86,7 @@ test('real module boot reaches all eight sections without duplicating or losing 
   const responses = {
     '/api/setup/status': {state: 'installed'}, '/api/admin/session': {authenticated: true, csrfToken: 'boot-csrf'},
     '/api/admin/config': {config: draft, revision: 4}, '/api/admin/resources': {resources: []},
+    '/api/admin/config/schema': {schema: structuredClone(draft)},
     '/api/admin/storages': {storages: [], defaultStorage: 'local'},
     '/api/admin/overview': {published: 1, resources: 0, audit: [], defaultStorage: 'local'},
     '/api/admin/runtime': {selection: {digest: null, generation: 0}, bundles: []}, '/api/admin/versions': {versions: []},
@@ -140,6 +142,7 @@ test('storage editor never populates configured or actual secret fields', () => 
 });
 test('save snapshot retains edits made while request is pending', async () => {
   const state = {busy: false, dirty: true, sessionEpoch: 0, revision: 4, config: {title: 'before'}};
+  state.validationSchema = {title: 'canonical'};
   let release, sent;
   const pending = new Promise(resolve => release = resolve);
   const {save} = require('../admin-ui/modules/actions').create({state, window: {SiteContentContract: {validateConfig() {}}},
@@ -151,6 +154,74 @@ test('save snapshot retains edits made while request is pending', async () => {
   assert.equal(state.revision, 5);
   assert.equal(state.dirty, true);
   assert.equal(state.busy, false);
+});
+function validationConfig() {
+  return {site: {title: 'Fixture', description: '', language: 'zh-CN', socialImage: ''}, projects: [], songs: [],
+    scenes: [{id: 'Home', label: 'Home', fields: [{key: 'image', label: 'Image', type: 'resource', value: 'http://legacy.invalid/image.png'}]}]};
+}
+async function validationAdmin(schemaResponse, currentURL = 'https://new.invalid/image.png') {
+  const {document, walk} = require('./helpers/admin-dom')();
+  const canonical = validationConfig(), current = structuredClone(canonical), calls = [];
+  current.scenes[0].fields[0].value = currentURL;
+  let draft = current, revision = 4;
+  const responses = {
+    '/api/setup/status': {state: 'installed'}, '/api/admin/session': {authenticated: true, csrfToken: 'test-csrf'},
+    '/api/admin/resources': {resources: []}, '/api/admin/storages': {storages: [], defaultStorage: 'local'},
+    '/api/admin/overview': {published: 1, resources: 0, audit: [], defaultStorage: 'local'},
+    '/api/admin/runtime': {selection: {digest: null, generation: 0}, bundles: []},
+    '/api/admin/versions': {published: 1, versions: [{id: 1, created: '2026-01-01'}]},
+  };
+  const environment = {document, crypto: require('node:crypto').webcrypto, addEventListener() {},
+    SiteIdentity: require('../shared/site-identity'), SiteContentContract: require('../shared/content-contract'),
+    fetch: async (url, options) => {
+      calls.push({url, options});
+      let result;
+      if (url === '/api/admin/config/schema') result = schemaResponse === undefined ? {schema: canonical} : schemaResponse;
+      else if (url === '/api/admin/versions/1/restore') {draft = structuredClone(canonical); result = {revision: ++revision};}
+      else if (url === '/api/admin/config') {
+        if (options.method === 'PUT') {
+          const body = JSON.parse(options.body);
+          require('../shared/content-contract').validateConfig(body.config, canonical);
+          draft = body.config; result = {revision: ++revision};
+        } else result = {config: draft, revision};
+      } else result = responses[url];
+      assert.notEqual(result, undefined, url);
+      return {ok: true, json: async () => result};
+    }};
+  const app = require('../admin-ui/admin').startAdmin(environment);
+  await app.ready;
+  return {...app, document, walk, calls, canonical};
+}
+test('restoring canonical legacy HTTP after loading a newer HTTPS draft allows unrelated edits to save', async () => {
+  const app = await validationAdmin();
+  await app.document.querySelectorAll('[data-section]').find(element => element.dataset.section === 'versions').dispatch('click');
+  const restore = app.walk().find(element => element.textContent === '恢复到草稿');
+  const request = restore.dispatch('click');
+  await app.walk().find(element => element.textContent === '确认继续').dispatch('click');
+  await request;
+  assert.equal(app.state.config.scenes[0].fields[0].value, 'http://legacy.invalid/image.png');
+  app.state.config.site.title = 'An unrelated edit'; app.state.dirty = true;
+  await app.actions.save();
+  assert.equal(app.state.revision, 6);
+  assert.equal(app.state.dirty, false);
+  assert.equal(app.calls.filter(call => call.options?.method === 'PUT').length, 1);
+  assert.deepEqual(app.state.validationSchema, app.canonical);
+  assert.notEqual(app.state.validationSchema, app.canonical);
+});
+test('unknown legacy HTTP is rejected even if unchanged from the loaded draft', async () => {
+  const app = await validationAdmin(undefined, 'http://unknown.invalid/image.png');
+  await assert.rejects(app.actions.save(), /HTTPS/);
+  assert.equal(app.calls.filter(call => call.options?.method === 'PUT').length, 0);
+});
+test('invalid canonical schema responses never fall back to the loaded draft or allow saves', async () => {
+  for (const response of [{}, {schema: null}, {schema: {}}, {config: validationConfig()}, {schema: {site: {}, projects: [], scenes: [], songs: []}}]) {
+    const app = await validationAdmin(response);
+    assert.equal(app.state.config, null);
+    assert.equal(app.state.validationSchema, null);
+    assert.match(app.walk().map(element => element.textContent).join(' '), /校验结构响应无效/);
+    await assert.rejects(app.actions.save(), /校验结构/);
+    assert.equal(app.calls.filter(call => call.options?.method === 'PUT').length, 0);
+  }
 });
 test('uncertain built-in registration never retries or claims success; stale sessions do not refresh', async () => {
   for (const outcome of ['malformed', 'network', 'logout']) {
@@ -197,4 +268,18 @@ test('an old request unauthorized response cannot expire a newer authenticated s
   assert.equal(logins, 0);
   assert.equal(state.config, newer);
   assert.equal(state.sessionEpoch, 1);
+});
+test('canonical schema arriving after a session change cannot replace the newer session baseline', async () => {
+  let release;
+  const pending = new Promise(resolve => release = resolve);
+  const canonical = validationConfig(), newer = structuredClone(canonical);
+  const state = {sessionEpoch: 0, config: null, validationSchema: null};
+  const {load} = require('../admin-ui/modules/session').create({state, invalidateRuntime() {},
+    api: async path => path === '/config/schema' ? pending : {config: canonical}});
+  const request = load();
+  state.sessionEpoch++; state.config = newer; state.validationSchema = newer;
+  release({schema: canonical});
+  await request;
+  assert.equal(state.config, newer);
+  assert.equal(state.validationSchema, newer);
 });
