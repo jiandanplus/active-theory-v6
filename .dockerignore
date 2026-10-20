@@ -9,6 +9,12 @@ scratch
 assets
 room
 *.log
+# Local and editor backups must never enter the build context.
+**/*.bak
+**/*.backup
+**/*.old
+**/*.orig
+**/*~
 .deployment
 output
 tools

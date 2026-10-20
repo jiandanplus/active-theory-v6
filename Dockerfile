@@ -8,7 +8,9 @@ COPY admin-server ./admin-server
 COPY admin-ui ./admin-ui
 COPY shared ./shared
 COPY scripts ./scripts
-COPY cms ./cms
+COPY cms/contact-dev.json cms/contact-latest.json \
+    cms/metadata-dev.json cms/metadata-latest.json \
+    cms/projects-dev.json cms/projects-latest.json ./cms/
 COPY examples ./examples
 COPY server.js index.html ./
 ENV NODE_ENV=production HOST=0.0.0.0 PORT=3000 SITE_DATA_DIR=/app/data

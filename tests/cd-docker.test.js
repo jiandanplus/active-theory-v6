@@ -125,3 +125,44 @@ test("default image is writable non-root, healthchecked, and independent of orig
   assert.match(external, /NODE_ENV: production/);
   assert.doesNotMatch(external, /POSTGRES_PASSWORD|\n  db:/);
 });
+test("image packages exactly the six tracked CMS files, never the CMS directory", () => {
+  const docker = fs
+    .readFileSync(path.join(root, "Dockerfile"), "utf8")
+    .replace(/\\\r?\n/g, " ");
+  const cmsCopies = docker
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter((line) => /^COPY\s/i.test(line))
+    .map((line) => line.split(/\s+/).slice(1))
+    .filter((args) =>
+      args.some((value) => /^(?:\.\/)?cms(?:\/|$)/.test(value)),
+    );
+  assert.equal(
+    cmsCopies.length,
+    1,
+    "CMS must have one explicit COPY allowlist",
+  );
+  const [copy] = cmsCopies;
+  assert.deepEqual(copy.slice(0, -1).sort(), [
+    "cms/contact-dev.json",
+    "cms/contact-latest.json",
+    "cms/metadata-dev.json",
+    "cms/metadata-latest.json",
+    "cms/projects-dev.json",
+    "cms/projects-latest.json",
+  ]);
+  assert.equal(copy.at(-1), "./cms/");
+});
+test("Docker context excludes nested backup suffixes", () => {
+  const ignore = fs
+    .readFileSync(path.join(root, ".dockerignore"), "utf8")
+    .split(/\r?\n/)
+    .map((line) => line.trim());
+  for (const suffix of ["bak", "backup", "old", "orig"]) {
+    assert.ok(
+      ignore.includes(`**/*.${suffix}`),
+      `missing nested .${suffix} exclusion`,
+    );
+  }
+  assert.ok(ignore.includes("**/*~"), "missing editor backup exclusion");
+});
