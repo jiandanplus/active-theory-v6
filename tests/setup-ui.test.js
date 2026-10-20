@@ -198,6 +198,19 @@ async function wizard({hasAdmin = false, holdInstall = false} = {}) {
     },
   };
 }
+test('setup preserves the original frontend by default instead of selecting a different demo',async()=>{
+  const w=await wizard();
+  const select=w.root.querySelectorAll('select')[0];
+  assert.equal(select.value,'bundle');
+  const options=select.childNodes;
+  assert.match(options.find(option=>option.value==='bundle').textContent,/保留原站/);
+  assert.doesNotMatch(options.find(option=>option.value==='demo').textContent,/推荐/);
+  assert.match(options.find(option=>option.value==='demo').textContent,/不同页面|非原站/);
+  w.root.querySelectorAll('button').find(button=>button.textContent==='执行预检').events.click();
+  await settle();
+  const request=w.calls.find(call=>call.url.endsWith('/preflight'));
+  assert.equal(JSON.parse(request.init.body).mode,'bundle');
+});
 for (const code of [401, 409, 503, 500])
   test(
     "preflight HTTP " + code + " fails closed and clears unsafe continuation",

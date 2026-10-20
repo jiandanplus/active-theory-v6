@@ -8,7 +8,7 @@ function mount({ root, onInstalled }) {
   const state = {
     status: "unavailable",
     csrf: "",
-    mode: "demo",
+    mode: "bundle",
     report: null,
     digest: "",
     username: "",
@@ -258,10 +258,10 @@ function mount({ root, onInstalled }) {
     select.id = "setup-mode";
     label.htmlFor = select.id;
     for (const [value, text] of [
-      ["demo", "内置个人主页示例（推荐）"],
-      ["empty", "空白站点"],
-      ["bundle", "服务器内容包"],
+      ["bundle", "保留原站页面（服务器内容包）"],
       ["legacy", "旧站迁移（只读）"],
+      ["empty", "空白站点"],
+      ["demo", "独立示例（不同页面，非原站）"],
     ]) {
       const option = el("option", text);
       option.value = value;
@@ -275,8 +275,10 @@ function mount({ root, onInstalled }) {
       source();
     });
     card.append(label, select);
+    if (state.mode === "bundle")
+      card.append(el("p", "沿用服务器上的原前端程序和场景配置，导入作品等可管理内容，不替换为示例页面。", "muted"));
     if (state.mode === "demo")
-      card.append(el("p", "包含原创示例图形和作品文案；安装后可在后台修改，再选择内置模板并预览、发布。", "muted"));
+      card.append(el("p", "此选项使用不同的示例前端，不保留原站 3D 页面效果。仅用于另建独立示例网站；已有网站请保留原站页面。", "warning"));
     if (state.mode === "empty")
       card.append(
         el(

@@ -47,6 +47,31 @@ test('projection preserves raw source and freezes layout policy',()=>{
   const inactive=projectSnapshot(source,{type:'version',id:'43'},{...profile,policy:{inactiveLayouts:['Home']}},{runtimeFiles:new Map()});
   assert.deepEqual(inactive.geometryIds,[]);assert.notDeepEqual(inactive.snapshot,next.snapshot);
 });
+test('original UIL texture descriptors validate their source, not directory metadata',()=>{
+  const source=sourceSnapshot(),profile={policy:{inactiveLayouts:[]},programs:[]};
+  const descriptor={src:'/media/image',filename:'image.png',prefix:'assets/images',relative:'assets/images',compressed:false};
+  source.template.baseUIL['OriginalShader/Element_1_Home/_tx_tMap']=descriptor;
+  const before=JSON.stringify(source);
+  const result=projectSnapshot(source,{type:'version',id:'43'},profile);
+  assert.equal(JSON.stringify(source),before);
+  assert.deepEqual(result.snapshot.template.baseUIL['OriginalShader/Element_1_Home/_tx_tMap'],descriptor);
+  assert(result.references.some(ref=>ref.resourceId==='image'));
+  assert(!result.references.some(ref=>ref.resourceId==='assets/images'));
+});
+test('UIL descriptor directory metadata never hides an unresolved source or geometry filename',()=>{
+  const profile={policy:{inactiveLayouts:[]},programs:[]},target={type:'version',id:'43'};
+  for(const descriptor of [
+    {src:'assets/missing.png',prefix:'assets/images',relative:'assets/images'},
+    {src:'/media/image',prefix:'assets/geometry',relative:'assets/missing.bin'},
+  ]){
+    const source=sourceSnapshot();
+    source.template.baseUIL.INPUT_Config_2_Home_geometry=descriptor;
+    assert.throws(()=>projectSnapshot(source,target,profile),{status:422});
+  }
+  const source=sourceSnapshot();
+  source.template.metadata={src:'/media/image',prefix:'assets/missing.png'};
+  assert.throws(()=>projectSnapshot(source,target,profile),{status:422});
+});
 test('complete artifact is deterministic from CAS after original runtime root disappears',async t=>{
   const {buildArtifact}=require('../admin-server/delivery/builder');
   const f=await fixture(t),before=JSON.stringify(f.args.source);

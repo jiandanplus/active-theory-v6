@@ -73,7 +73,16 @@ function projectSnapshot(source,target,profile,{runtimeFiles=new Map()}={}) {
     }else if(['text','number'].includes(field.type))delete activeUIL[field.key];
     else activeUIL[field.key]=field.value;
   }
-  validateMediaTree(snapshot,activeUIL);
+  // Match render.mapUIL's actual input selection. Texture prefix/relative
+  // directories are loader metadata, not independently requested files.
+  // Geometry descriptors may instead carry the complete path in relative.
+  for(const [key,value] of Object.entries(activeUIL)) {
+    if(value&&typeof value==='object'&&!Array.isArray(value)&&typeof value.src==='string') {
+      const source=/(?:geometry|initialPositions)$/.test(key)&&value.relative?.includes('.')
+        ? value.relative : value.src;
+      requireMedia(snapshot,source);
+    } else validateMediaTree(snapshot,value);
+  }
   for(const key of ['metadata','contact'])validateMediaTree(snapshot,snapshot.template[key]);
   const references=collectReferences(snapshot,policy),assets=snapshot.assets||{};
   // Reuse collector dependency semantics without turning inventory into grants.
