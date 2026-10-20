@@ -186,10 +186,9 @@ test('historical document declared dependency cannot evade the grant ceiling',as
   await assert.rejects(buildArtifact({...f.args,kind:'legacy-render',referenceCeiling:ceiling}),{status:422});
 });
 const authorizedRoot=process.env.AUTHORIZED_RUNTIME_ROOT;
-if(authorizedRoot&&authorizedRoot!=='/Users/jiandan/Code/MyCode/active-theory-v6')throw Error('Unauthorized runtime root');
 test('fixed production profile builds original audited bytes with synthetic six-scene content',{skip:!authorizedRoot},async t=>{
-  const profile=require('../admin-server/engine/registry').get('legacy-six-scenes-v1');
-  const f=await fixture(t),files=new Map(profile.programs.map(e=>[e.key,fs.readFileSync(path.join(authorizedRoot,e.path))]));
+  const {profile,files}=await require('../scripts/authorized-runtime-input').loadAuthorizedRuntime(authorizedRoot);
+  const f=await fixture(t);
   const mime={html:'text/html',program:'text/javascript',wasm:'application/wasm',shader:'text/plain'};
   const manifest={manifestVersion:1,profileId:profile.id,templateId:profile.templateId,entryKey:'index',dependencies:structuredClone(profile.dependencies),files:[]};
   for(const entry of profile.programs){const stored=await f.cas.put(files.get(entry.key));manifest.files.push({key:entry.key,path:entry.path,role:entry.role,mime:mime[entry.role],...stored});}

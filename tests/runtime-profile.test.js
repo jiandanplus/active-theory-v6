@@ -4,16 +4,11 @@ const fs=require('node:fs');
 const path=require('node:path');
 const {sha256}=require('../admin-server/delivery/contracts');
 const root=process.env.AUTHORIZED_RUNTIME_ROOT;
-if(root&&root!=='/Users/jiandan/Code/MyCode/active-theory-v6')throw new Error('Unauthorized runtime root');
-function productionInput(){
-  const profile=require('../admin-server/engine/registry').get('legacy-six-scenes-v1');
-  const files=new Map(profile.programs.map(f=>[f.key,fs.readFileSync(path.join(root,f.path))]));
-  const mime={html:'text/html',program:'text/javascript',wasm:'application/wasm',shader:'text/plain'};
-  const manifest={manifestVersion:1,profileId:profile.id,templateId:profile.templateId,entryKey:'index',
-    files:profile.programs.map(f=>({key:f.key,path:f.path,role:f.role,mime:mime[f.role],size:files.get(f.key).length,sha256:sha256(files.get(f.key))})),
-    dependencies:structuredClone(profile.dependencies)};
-  return {profile,files,manifest};
-}
+let authorizedRuntime;
+test.before(async()=>{
+  if(root)authorizedRuntime=await require('../scripts/authorized-runtime-input').loadAuthorizedRuntime(root);
+});
+function productionInput(){return authorizedRuntime;}
 
 test('production registry contains only its fixed production profile',()=>{
   const registry=require('../admin-server/engine/registry');

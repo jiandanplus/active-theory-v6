@@ -1,9 +1,10 @@
 const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const authorizedRoot = process.env.AUTHORIZED_RUNTIME_ROOT;
-if (authorizedRoot && authorizedRoot !== '/Users/jiandan/Code/MyCode/active-theory-v6') throw Error('Unauthorized runtime root');
-const runtimeRoot = authorizedRoot || require("node:path").join(__dirname, "..");
-const licensedRuntime = authorizedRoot ? 'app.1778129964370.js' : require("../admin-server/config").appFile(runtimeRoot);
+let authorizedRuntime;
+test.before(async () => {
+  if (authorizedRoot) authorizedRuntime = await require('../scripts/authorized-runtime-input').loadAuthorizedRuntime(authorizedRoot);
+});
 const {applyAppPatch}=require('../admin-server/engine/legacy-adapter');
 const completeConfig=(input={})=>{
   const {initialConfig,validateConfig}=require('../admin-server/config');
@@ -15,10 +16,14 @@ const single=(id,source,config)=>applyAppPatch(id,source,config).source;
 const compose=(ids,source,config)=>ids.reduce((value,id)=>single(id,value,config),source);
 const viewAnchor = '_this.bind("navigate", (path => _this.navigate(path))), document.title = "AGI旅行者· AGI Voyager", _this.bind("Work/project", (data => { document.title = data ? `${data.title} · Active Theory` : "AGI旅行者· AGI Voyager" }));';
 const runtimeTest = (name, fn) => test(`authorized runtime: ${name}`, {
-  skip: !licensedRuntime && "Authorized original runtime bundle absent; engine compatibility is not verified",
+  skip: !authorizedRoot && "Authorized original runtime bundle absent; engine compatibility is not verified",
 }, fn);
-const runtimeSource = () => require("node:fs").readFileSync(
-  require("node:path").join(runtimeRoot, "assets/js", licensedRuntime), "utf8");
+const runtimeSource = () => authorizedRuntime.files.get('app').toString('utf8');
+runtimeTest('all eleven fixed program inputs match the trusted runtime profile', () => {
+  assert.equal(authorizedRuntime.files.size, 11);
+  assert.equal(require('../admin-server/engine/registry').validateRuntime(
+    authorizedRuntime.manifest, authorizedRuntime.files, authorizedRuntime.profile).files, 11);
+});
 function runtimeClass(source, name) {
   const start = source.indexOf(`Class((function ${name}(`);
   assert(start >= 0, `Missing original ${name} source anchor`);

@@ -45,6 +45,8 @@ docker compose --project-name portfolio-production --env-file .deployment/produc
 
 ## 备份与恢复（运维模板，未自动执行）
 
+历史 `archive-deploy.js`（包括 `tools/legacy/` 入口）已禁用并以状态 1 退出，不创建或覆盖归档。旧的递归整库压缩可能把 `.deployment/`、环境密钥和私有数据一并带出，不能用于发布或备份；请使用本文的 Docker 发布流程与受访问控制的独立备份。
+
 备份必须同时覆盖 PostgreSQL、站点私有数据卷（uploads、运行包 CAS、发布制品）、密钥配置及外部对象存储；只导出数据库不能恢复媒体。备份到受访问控制的异机位置并记录校验和，安装令牌和主密钥不能进入公开日志。
 
 在维护窗口停止站点写入，确认配置文件的项目名 / 卷名，保持数据库运行。以下为本地配置的命令模板；先以私有终端读取项目名赋给 `PROJECT`，勿输出整个配置文件。

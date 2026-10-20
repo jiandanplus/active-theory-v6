@@ -1,24 +1,21 @@
 #!/usr/bin/env node
-const fs = require("node:fs");
-const path = require("node:path");
 const { spawnSync } = require("node:child_process");
-const root = process.env.AUTHORIZED_RUNTIME_ROOT;
-if (
-  !root ||
-  !fs.existsSync(path.join(root, "assets/js/app.1778129964370.js"))
-) {
-  console.error(
-    "Authorized-runtime gate requires AUTHORIZED_RUNTIME_ROOT containing explicitly authorized original bytes. This is not covered by the sample tests.",
+const { loadAuthorizedRuntime } = require("./authorized-runtime-input");
+async function main() {
+  await loadAuthorizedRuntime(process.env.AUTHORIZED_RUNTIME_ROOT);
+  const result = spawnSync(
+    process.execPath,
+    [
+      "--test",
+      "--test-reporter=tap",
+      "--test-name-pattern=^authorized runtime:",
+      "tests/frontend.test.js",
+    ],
+    { stdio: "inherit", env: process.env },
   );
-  process.exit(1);
+  process.exitCode = result.status ?? 1;
 }
-const result = spawnSync(
-  process.execPath,
-  [
-    "--test",
-    "--test-name-pattern=^authorized runtime:",
-    "tests/frontend.test.js",
-  ],
-  { stdio: "inherit", env: process.env },
-);
-process.exit(result.status ?? 1);
+main().catch((error) => {
+  console.error(error.message);
+  process.exitCode = 1;
+});
