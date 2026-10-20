@@ -132,9 +132,7 @@ async function multipart(req, dir, max) {
 }
 async function commitResource(store, resource, actor, action, storage) {
   return store.transaction(async (tx) => {
-    await tx.query(
-      "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
-    );
+    await contentRepository(tx).lockSite();
     if (storage) {
       const current = await storageRepository(tx).get(storage.id);
       if (
@@ -268,9 +266,7 @@ function createResourceService({ store, options }) {
     if (typeof trashed !== "boolean") throw S.fail("必须明确指定回收状态");
     if (r.source === "bundled") throw S.fail("内置资源只读", 409);
     const resource = await store.transaction(async (tx) => {
-      await tx.query(
-        "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
-      );
+      await contentRepository(tx).lockSite();
       await contentRepository(tx).prunePreviews(new Date().toISOString());
       const value = await resourceRepository(tx).setTrashed(r.id, trashed);
       await auditRepository(tx).append("resource.trash", actor);

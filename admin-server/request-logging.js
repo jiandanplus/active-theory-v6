@@ -18,7 +18,7 @@ function requestLogging(options = {}) {
     // Capture before nested routers rewrite req.url. Never use originalUrl,
     // headers, body, or raw query strings in the emitted allowlisted record.
     const pathname = req.path.replace(
-      /^\/api\/site\/([^/]+)/,
+      /^\/api\/site\/([^/]+)/i,
       (matched, target) => {
         try {
           return decodeURIComponent(target).startsWith("preview-")

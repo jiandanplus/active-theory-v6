@@ -82,6 +82,17 @@ function contentRepository(db) {
     return composeSnapshot({ config, ...row.content });
   }
   const repo = {
+    async lockSite() {
+      return db.query(
+        "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+      );
+    },
+    async updateTemplateMedia({ template, assets, legacyMap }) {
+      await db.query(
+        "UPDATE personal_site.templates SET content=$1 WHERE id=(SELECT template_id FROM personal_site.site_settings WHERE id=true)",
+        [{ template, assets, legacyMap }],
+      );
+    },
     async getDraft({ lock = false } = {}) {
       // A waiting FOR UPDATE statement retains its pre-wait MVCC snapshot for
       // subqueries. Acquire the lock first, then read all draft parts together.

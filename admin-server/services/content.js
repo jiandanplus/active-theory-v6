@@ -92,16 +92,7 @@ async function saveDraft(store, config, revision, actor = null) {
       )
         throw fail(400, "分享图片必须引用已登记的图片资源");
     }
-    await tx.query(
-      "UPDATE personal_site.templates SET content=$1 WHERE id=(SELECT template_id FROM personal_site.site_settings WHERE id=true)",
-      [
-        {
-          template: savedTemplate.template,
-          assets: savedTemplate.assets,
-          legacyMap: savedTemplate.legacyMap,
-        },
-      ],
-    );
+    await repo.updateTemplateMedia(savedTemplate);
     const next = await repo.writeDraft(config, revision);
     await auditRepository(tx).append("config.save", actor);
     return next;

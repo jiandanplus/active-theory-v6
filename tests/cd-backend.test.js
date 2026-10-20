@@ -230,3 +230,73 @@ test("request summaries validate IDs and omit query strings, credentials, header
   await (await f.request("/api/site/preview-sensitive-bearer/config")).text();
   assert(!JSON.stringify(entries).includes("sensitive-bearer"));
 });
+
+test("request summaries redact preview bearers in case-insensitive routes and encoded targets on success and missing endpoints", async (t) => {
+  const entries = [];
+  const f = await require("./helpers/delivery").deliveryFixture(t, {
+    options: { requestLog: (entry) => entries.push(entry) },
+  });
+  const id = await f.service.preview({ revision: 3, actor: f.actor });
+  const encoded = id.replace(/^preview-/, "%70review%2D");
+  for (const prefix of ["/API/SITE/", "/aPi/sItE/", "/api/site/"]) {
+    for (const target of [id, encoded]) {
+      for (const [endpoint, status] of [["config", 200], ["missing", 404]]) {
+        const route = `${prefix}${target}/${endpoint}`;
+        const response = await f.request(route, { headers: f.headers });
+        assert.equal(response.status, status, route);
+        assert.equal(response.headers.get("cache-control"), "private, no-store", route);
+        assert.match(response.headers.get("x-robots-tag"), /noindex/, route);
+        await response.text();
+        const entry = entries.at(-1);
+        assert.equal(entry.status, status);
+        assert.equal(entry.path, `/api/site/preview-[redacted]/${endpoint}`);
+        assert(!JSON.stringify(entry).includes(id.slice("preview-".length)));
+        assert(!JSON.stringify(entry).includes(encoded));
+      }
+    }
+  }
+  const changedIdentity = "preview-" + id.slice("preview-".length).toUpperCase();
+  assert.notEqual(changedIdentity, id);
+  const wrongCase = await f.request(`/API/SITE/${changedIdentity}/config`, { headers: f.headers });
+  assert.equal(wrongCase.status, 404, "only the static prefix may ignore case; preview identity must remain exact");
+  assert.equal(wrongCase.headers.get("cache-control"), "private, no-store");
+  await wrongCase.text();
+  assert.equal(entries.at(-1).path, "/api/site/preview-[redacted]/config");
+});
+
+test("case-insensitive admin and API mounts preserve canonical privacy and admin CSP", async (t) => {
+  const f = await require("./helpers/http").httpFixture(t);
+  const canonical = await f.request("/admin/");
+  const csp = canonical.headers.get("content-security-policy");
+  assert.match(csp, /default-src 'self'/);
+  for (const route of ["/ADMIN/", "/AdMiN/admin.js", "/ADMIN/content-contract.js"]) {
+    const response = await f.request(route);
+    assert.equal(response.status, 200, route);
+    assert.equal(response.headers.get("content-security-policy"), csp, route);
+    assert.equal(response.headers.get("cache-control"), "private, no-store", route);
+    assert.match(response.headers.get("x-robots-tag"), /noindex/, route);
+    await response.text();
+  }
+  for (const [route, status] of [["/API/SETUP/status", 200], ["/aPi/AdMiN/config", 401]]) {
+    const response = await f.request(route);
+    assert.equal(response.status, status, route);
+    assert.equal(response.headers.get("cache-control"), "private, no-store", route);
+    assert.match(response.headers.get("x-robots-tag"), /noindex/, route);
+    await response.text();
+  }
+});
+
+test("public-page installation and outage maintenance cover route case and trailing slashes", async (t) => {
+  const f = await require("./helpers/http").httpFixture(t, { installed: false });
+  for (const state of ["uninstalled", "database outage"]) {
+    if (state === "database outage") await f.store.close();
+    for (const route of ["/WORK/", "/WoRk/MixedCaseProject/", "/CONTACT/", "/BASIC/", "/BaSiC/WORK/", "/BASIC/work/MixedCaseProject/", "/BASIC/CONTACT/", "/UNSUPPORTED.HTML/"]) {
+      const response = await f.request(route);
+      assert.equal(response.status, 503, `${state}: ${route}`);
+      assert.match(response.headers.get("content-type"), /text\/html/, `${state}: ${route}`);
+      assert.match(response.headers.get("cache-control"), /no-store/, route);
+      assert.match(response.headers.get("x-robots-tag"), /noindex/, route);
+      await response.text();
+    }
+  }
+});

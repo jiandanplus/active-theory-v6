@@ -74,21 +74,23 @@ function createApp(options = {}, {deliveryService} = {}) {
     res.set("X-Content-Type-Options", "nosniff");
     res.set("Referrer-Policy", "same-origin");
     res.set("X-Frame-Options", "SAMEORIGIN");
-    if (req.path.startsWith("/admin"))
+    // Static mount prefixes are case insensitive in Express; identifiers are not.
+    const adminPage = /^\/admin(?:\/|$)/i.test(req.path);
+    if (adminPage)
       res.set(
         "Content-Security-Policy",
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' https: blob: data:; media-src 'self' https: blob:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'self'",
       );
     if (options.production)
       res.set("Strict-Transport-Security", "max-age=31536000");
-    const targetSegment=/^\/api\/site\/([^/]+)\//.exec(req.path)?.[1];
+    const targetSegment=/^\/api\/site\/([^/]+)(?:\/|$)/i.exec(req.path)?.[1];
     let privateTarget=false;
     if(targetSegment) {
       try { privateTarget=decodeURIComponent(targetSegment).startsWith('preview-'); }
       catch { /* Invalid encoding remains a non-cacheable error. */ }
     }
-    const privateResponse = req.path.startsWith('/admin') || req.path.startsWith('/api/admin') ||
-      req.path.startsWith('/api/setup') || privateTarget || Object.hasOwn(req.query,'preview');
+    const privateResponse = adminPage || /^\/api\/(?:admin|setup)(?:\/|$)/i.test(req.path) ||
+      privateTarget || Object.hasOwn(req.query,'preview');
     if (privateResponse) res.set('Cache-Control','private, no-store').set('X-Robots-Tag','noindex, nofollow');
     next();
   });
@@ -115,7 +117,7 @@ function createApp(options = {}, {deliveryService} = {}) {
   );
   app.use(
     route(async (req, res, next) => {
-      const publicPage = /^(?:\/|\/work(?:\/[^/]+)?|\/contact|\/basic(?:\/(?:work(?:\/[^/]+)?|contact))?)$/.test(req.path);
+      const publicPage = /^(?:\/|\/(?:work(?:\/[^/]+)?|contact|basic(?:\/(?:work(?:\/[^/]+)?|contact))?|unsupported\.html)\/?)$/i.test(req.path);
       let state;
       try {
         state = await installationStatus(store);
