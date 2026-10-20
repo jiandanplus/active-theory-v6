@@ -4,16 +4,15 @@ const express = require("express");
 const { openPostgres } = require("./database");
 const { mountInstallation, installationStatus } = require("./installation");
 const { mountAuth } = require("./security");
-const { saveDraft, publish, restore, createPreview } = require("./config");
 const { route, publicError } = require("./http");
-const { contentRepository } = require("./repositories/content");
-const { resourceRepository } = require("./repositories/resources");
-const { storageRepository } = require("./repositories/storages");
-const { auditRepository } = require("./repositories/audit");
 const { mountFrontend } = require("./frontend");
 const { mountResources } = require("./resources");
 const { mountModels } = require("./models");
-const {mountDeliveryAdmin,versionDeliverySummaries}=require('./delivery/admin-routes');
+const {mountDeliveryAdmin}=require('./delivery/admin-routes');
+
+const {mountContentRoutes} = require('./routes/content');
+const {mountOperationalHealth} = require('./operational-health');
+const {requestLogging} = require('./request-logging');
 
 function createApp(options = {}, {deliveryService} = {}) {
   options = {
@@ -67,6 +66,7 @@ function createApp(options = {}, {deliveryService} = {}) {
   app.disable("x-powered-by");
   app.disable('etag');
   if (options.trustProxy) app.set("trust proxy", options.trustProxy);
+  app.use(requestLogging(options));
   app.use((req, res, next) => {
     // Express res.send/json must never turn a non-program response into 304.
     Object.defineProperty(req,'fresh',{get:()=>false});
@@ -92,6 +92,9 @@ function createApp(options = {}, {deliveryService} = {}) {
     if (privateResponse) res.set('Cache-Control','private, no-store').set('X-Robots-Tag','noindex, nofollow');
     next();
   });
+  mountOperationalHealth(app, {store});
+  app.get('/admin/content-contract.js', (req, res) => res.type('js').sendFile(
+    path.join(__dirname, '../shared/content-contract.js'), {cacheControl:false, etag:false, lastModified:false}));
   mountInstallation(app, { store, options });
   app.use('/admin',(req,res,next)=>{
     delete req.headers['if-none-match'];
@@ -112,7 +115,7 @@ function createApp(options = {}, {deliveryService} = {}) {
   );
   app.use(
     route(async (req, res, next) => {
-      const publicPage = /^(?:\/|\/work(?:\/[^/]+)?)$/.test(req.path);
+      const publicPage = /^(?:\/|\/work(?:\/[^/]+)?|\/contact|\/basic(?:\/(?:work(?:\/[^/]+)?|contact))?)$/.test(req.path);
       let state;
       try {
         state = await installationStatus(store);
@@ -148,91 +151,7 @@ function createApp(options = {}, {deliveryService} = {}) {
   const { requireAuth, csrfGuard } = mountAuth(app, store, options);
   const admin = express.Router();
   app.use("/api/admin", requireAuth, csrfGuard, admin);
-  admin.get(
-    "/config",
-    route(async (req, res) => {
-      const draft = await contentRepository(store).getDraft();
-      const { config, revision, published } = draft;
-      res.json({ config, revision, published });
-    }),
-  );
-  admin.put(
-    "/config",
-    route(async (req, res) =>
-      res.json({
-        revision: await saveDraft(
-          store,
-          req.body.config,
-          req.body.revision,
-          req.adminSession.username,
-        ),
-      }),
-    ),
-  );
-  admin.post(
-    "/publish",
-    route(async (req, res) => {
-      res.json(
-        await publish(
-          store,
-          req.body.revision,
-          options,
-          {id:req.adminSession.id, username:req.adminSession.username},
-          { withWarnings: true, deliveryService },
-        ),
-      );
-    }),
-  );
-  admin.post(
-    "/preview",
-    route(async (req, res) =>
-      res.json({
-        url: `/?preview=${await createPreview(store, req.body.revision, options,
-          {id:req.adminSession.id,username:req.adminSession.username}, {deliveryService})}`,
-      }),
-    ),
-  );
-  admin.get(
-    "/versions",
-    route(async (req, res) => {
-      const repo = contentRepository(store);
-      res.json({
-        published: (await repo.getDraft()).published,
-        versions: await versionDeliverySummaries(store,await repo.listVersions(),options.origin),
-      });
-    }),
-  );
-  admin.post(
-    "/versions/:id/restore",
-    route(async (req, res) =>
-      res.json({
-        revision: await restore(
-          store,
-          Number(req.params.id),
-          req.body.revision,
-          req.adminSession.username,
-        ),
-      }),
-    ),
-  );
-  admin.get(
-    "/overview",
-    route(async (req, res) => {
-      const draft = await contentRepository(store).getDraft();
-      res.json({
-        published: draft.published,
-        revision: draft.revision,
-        resources: (await resourceRepository(store).list()).length,
-        projects: draft.config.projects.length,
-        defaultStorage: await storageRepository(store).getDefault(),
-        cloudConfigured: (await storageRepository(store).list()).some(
-          (s) => s.type === "s3",
-        ),
-        masterKeyConfigured: /^[a-f\d]{64}$/i.test(options.masterKey || ""),
-        audit: await auditRepository(store).recent(10),
-      });
-    }),
-  );
+  mountContentRoutes({admin, store, options, deliveryService});
   mountResources({ app, admin, store, options });
   mountModels({ app, admin, store, options });
   mountDeliveryAdmin({admin,store,service:deliveryService});
