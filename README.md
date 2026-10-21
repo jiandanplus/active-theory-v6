@@ -6,6 +6,12 @@
 
 安装默认选择“保留原站页面（服务器内容包）”。`portfolio-v1` 只是可选的独立示例，页面与原站不同，不能用它代替原站交付或视觉验收。已有网站不要为了配置作品而切换到该示例；原模板使用 `legacy-six-scenes-v1`。相关纠偏与实际验证见 [原前端恢复记录](docs/verification/original-frontend-correction.md)。
 
+## 在线 Demo
+
+[访问在线演示：agi.drawbookai.cn](https://agi.drawbookai.cn/)
+
+演示站用于体验已部署的个人主页效果。自行部署时，仍需按下方说明准备数据库、授权素材与自己的管理员账号。
+
 ## 一条命令启动
 
 需要 Node.js 24+、npm 和带 Compose v2 的 Docker；先启动 Docker。无需先配置真实云服务。镜像不分发原站授权素材：后台能启动不代表原 3D 前台已经就绪，保留原站效果需要提供自己的完整原素材及受支持运行包，详见部署说明。
