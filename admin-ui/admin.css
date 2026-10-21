@@ -255,6 +255,15 @@ p {
   gap: 9px;
   align-items: start;
 }
+.field-label-row {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+}
+.field-label-row a {
+  font-size: 12px;
+}
 .field-row input {
   min-width: 0;
 }

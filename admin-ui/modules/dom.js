@@ -110,7 +110,15 @@ function create(context) {
       id = "field-" + crypto.randomUUID();
     const l = node("label", label);
     l.htmlFor = id;
-    wrap.append(l);
+    if (options.labelLink) {
+      const row = node("div", undefined, "field-label-row"),
+        link = node("a", options.labelLink.text);
+      link.href = options.labelLink.href;
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      row.append(l, link);
+      wrap.append(row);
+    } else wrap.append(l);
     const input = node(options.choices ? "select" : options.multiline ? "textarea" : "input");
     input.id = id;
     if (!options.choices && !options.multiline) input.type = options.type || "text";
@@ -148,6 +156,8 @@ function create(context) {
     } else wrap.append(input);
     if (options.help)
       wrap.append(node("small", options.help, options.key ? "field-key" : ""));
+    if (options.description)
+      wrap.append(node("p", options.description, "muted"));
     parent.append(wrap);
     return input;
   }

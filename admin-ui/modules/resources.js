@@ -158,7 +158,7 @@ function create(context) {
     if (kind === "geometry")
       warning(
         dialog,
-        "只有转换成功的 BIN 模型可用于此槽位。请先在资源库上传 GLB 到本地或已配置云存储并转换。",
+        "只有转换成功的 BIN 模型可用于此槽位。请先在资源库上传 GLB 到本地或已配置云存储，上传后会自动转换；失败时可手动重试。",
       );
     const grid = node("div", undefined, "resource-grid");
     for (const resource of state.resources.filter((r) => canPick(r, kind)))
@@ -212,6 +212,8 @@ function create(context) {
       "图片 ≤ 25 MB · 音频 ≤ 100 MB · GLB ≤ 200 MB · 视频 ≤ 1 GB",
       "muted",
     );
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
     bar.append(
       select,
       file,
@@ -222,7 +224,7 @@ function create(context) {
           file.disabled = true;
           select.disabled = true;
           try {
-            await uploadFile(file.files[0], select.value, (percent) => {
+            const {resource} = await uploadFile(file.files[0], select.value, (percent) => {
               if (!current()) return;
               progress.value = percent;
               status.textContent =
@@ -231,10 +233,27 @@ function create(context) {
                   : "上传完成，服务器正在验证文件…";
             });
             if (!current()) return;
-            status.textContent = "上传成功";
             file.value = "";
+            let converted = false, conversionError;
+            if (resource && canConvert(resource)) {
+              status.textContent = "GLB 上传成功，自动转换中，请稍候…";
+              try {
+                const result = await api("/resources/" + resource.id + "/convert", "POST", {size: 0.8});
+                if (!current()) return;
+                if (!result.resource || !canPick(result.resource, "geometry"))
+                  throw new Error("转换响应无效，请刷新资源库确认结果后再手动重试");
+                converted = true;
+              } catch (error) {
+                if (!current()) return;
+                conversionError = error.message || "转换未能确认完成";
+              }
+            }
+            status.textContent = conversionError ? "上传成功，自动转换失败" : converted ? "上传及自动转换完成" : "上传成功";
             if (!await refreshResources(current)) return;
-            notify("资源已上传。需在内容中选用后保存、发布。");
+            notify(conversionError
+              ? "GLB 上传成功，但自动转换失败；原始 GLB 已保留，可在资源卡片点击“转换为 BIN”手动重试。原因：" + conversionError
+              : converted ? "GLB 自动转换完成，原文件已保留。请选择生成的 BIN，预览确认后再发布。"
+              : "资源已上传。需在内容中选用后保存、发布。", !!conversionError);
             await render();
           } finally {
             file.disabled = false;
@@ -247,7 +266,7 @@ function create(context) {
     upload.append(bar, progress, status);
     warning(
       upload,
-      "文件类型由服务器校验。S3 连接成功不代表访客可访问；云存储和外链资源仍需检查公开地址。GLB 必须转换后才能用于场景模型。",
+      "文件类型由服务器校验。GLB 上传成功后会自动转换为 BIN（默认尺寸 0.8），原文件会保留；转换失败时可手动重试。仅转换网格，不保留原材质、动画与骨骼。S3 连接成功不代表访客可访问，云存储和外链仍需前台验证。",
     );
     const external = panel(context.content, "添加 HTTPS 外部链接"),
       form = node("form"),

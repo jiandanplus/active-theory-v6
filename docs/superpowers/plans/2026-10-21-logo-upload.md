@@ -17,7 +17,7 @@
 
 ### Task 1: Label and automatic upload conversion
 
-**Files:** modify `admin-ui/modules/scenes.js`, `admin-ui/modules/resources.js`; add `tests/logo-upload.test.js`. No visual asset edits.
+**Files:** modify `admin-ui/modules/scenes.js`, `admin-ui/modules/resources.js`, `admin-ui/modules/dom.js` (optional safe label link and description), `admin-ui/admin.css` (label row spacing); add `tests/logo-upload.test.js`. No visual asset edits.
 
 **Interfaces:** consume upload result `{resource}` and `canConvert(resource)`; call `api('/resources/'+resource.id+'/convert', 'POST', {size:0.8})`. Existing `captureView()` must remain valid before every follow-up call and UI update.
 

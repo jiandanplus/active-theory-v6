@@ -5,6 +5,8 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
   const { state, node, dirty, field, heading, warning, empty } = context;
+  const isTopLogo = (scene, f) => scene.id === "Home" && f.key === "INPUT_Config_8_ParticleTest_geometry";
+  const displayLabel = (scene, f) => isTopLogo(scene, f) ? "顶部 3D Logo" : f.label || f.key;
   function scenesView() {
     heading("场景编辑", "按场景查找文案、材质与模型；保留已有参数，逐项调整。");
     const search = node("input");
@@ -24,7 +26,7 @@ function create(context) {
       const q = search.value.trim().toLowerCase();
       for (const scene of state.config.scenes) {
         const fields = scene.fields.filter((f) =>
-          (f.label + " " + f.key + " " + f.value).toLowerCase().includes(q),
+          (displayLabel(scene, f) + " " + f.label + " " + f.key + " " + f.value).toLowerCase().includes(q),
         );
         if (!fields.length) continue;
         const detail = node("details");
@@ -53,7 +55,7 @@ function create(context) {
             const isObject = typeof f.value === "object";
             field(
               grid,
-              f.label || f.key,
+              displayLabel(scene, f),
               isObject ? JSON.stringify(f.value, null, 2) : f.value,
               (v) => {
                 f.value = v;
@@ -72,6 +74,13 @@ function create(context) {
                 readOnly: isObject,
                 help: f.key,
                 key: true,
+                labelLink: isTopLogo(scene, f) ? {
+                  text: "混元 3D 生成模型 ↗",
+                  href: "https://3d.hunyuan.tencent.com/",
+                } : undefined,
+                description: isTopLogo(scene, f)
+                  ? "可以在混元 3D 生成模型，下载 GLB 文件后上传到资源库；上传成功后会自动转换为 BIN。转换完成后选择模型，预览确认再发布。转换只使用模型网格，反射效果由现有场景材质控制。"
+                  : undefined,
               },
             );
           }
@@ -79,7 +88,7 @@ function create(context) {
           if (label === "3D 模型")
             warning(
               body,
-              "模型槽位使用引擎 BIN 格式。上传 GLB 后请先在资源库转换；原始 GLB 不能直接选择。外部 BIN 地址可以填写，但兼容性与公开可访问性未经验证。",
+              "模型槽位使用引擎 BIN 格式。资源库上传 GLB 后会自动转换，失败时可手动重试；原始 GLB 不能直接选择。外部 BIN 地址可以填写，但兼容性与公开可访问性未经验证。",
             );
         }
         detail.append(body);
