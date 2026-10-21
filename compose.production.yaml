@@ -1,0 +1,59 @@
+# Standalone production stack. Do not overlay compose.yaml (development).
+# Load the release image first; this file never builds from a dirty checkout.
+services:
+  site:
+    image: ${SITE_IMAGE:?Set the loaded release image tag or digest}
+    platform: ${SITE_PLATFORM:-linux/amd64}
+    init: true
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${SITE_PORT:-3302}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      SITE_ORIGIN: ${SITE_ORIGIN:?Set the public HTTPS origin}
+      DATABASE_URL: postgresql://site_app:${POSTGRES_APP_PASSWORD:?Set a URL-safe random application password}@db:5432/personal_site
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      SITE_MASTER_KEY: ${SITE_MASTER_KEY:?Set the private 64-hex master key}
+      TRUST_PROXY: ${TRUST_PROXY:-}
+      S3_ENDPOINT_ALLOWLIST: ${S3_ENDPOINT_ALLOWLIST:-}
+    volumes:
+      - site-data:/app/data
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+  db:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: site_bootstrap
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set a separate random bootstrap password}
+      POSTGRES_DB: personal_site
+      POSTGRES_APP_USER: site_app
+      POSTGRES_APP_PASSWORD: ${POSTGRES_APP_PASSWORD:?Set a separate random application password}
+    volumes:
+      - pg-data:/var/lib/postgresql
+      - type: bind
+        source: ./docker/postgres-init.sh
+        target: /docker-entrypoint-initdb.d/10-app-role.sh
+        read_only: true
+        bind:
+          create_host_path: false
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+volumes:
+  site-data:
+  pg-data:

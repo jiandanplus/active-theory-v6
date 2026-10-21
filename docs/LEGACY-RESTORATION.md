@@ -4,14 +4,14 @@
 
 基于现有 3D 前台的个人网站项目，提供中文管理后台、受保护的首次安装、PostgreSQL 内容管理，以及本地 / 通用 S3 兼容资源存储。面向单站点、单管理员、单应用实例自托管，不提供公开注册。
 
-> 当前后台与 PostgreSQL 实现在 `feat/authenticated-resource-admin` 分支。下方克隆命令明确选择该分支，不假定已合并到 `main`。
+> 当前发布入口是 `main`。本文件保留历史还原过程；生产部署以 [最新生产指南](PRODUCTION.md) 为准。
 >
 > **代码与素材分开提供。** `assets/` 不在 Git 中；全新克隆可启动管理后台并安装空白站点，但完整 3D 页面需要自行提供有权使用的运行包、字体、模型和媒体。没有运行资源时，公开页显示未配置提示，不会自动从原站下载。
 
 ## 功能
 
 - 首次访问 `/admin/`：安装令牌授权 → 数据库检查 → 选择空白内容、服务器内容包或旧站迁移 → 创建或保留管理员 → 手动登录。
-- 中文后台管理网站信息、作品、音乐，以及六个场景中已识别的文案、资源和参数。
+- 中文后台管理网站信息、作品、音乐、场景文案和顶部 3D Logo；材质、贴图、反射、灯光、粒子和内部模型不向用户开放修改。
 - “网站设置 → 搜索与分享”支持描述、页面语言和默认分享图片；保存草稿、认证预览、发布后生效。语言不会自动翻译内容，作品描述与 image 优先，canonical 域名只来自服务器 `SITE_ORIGIN`。详见[后台说明](docs/ADMIN.md#网站描述语言与分享图片)。
 - 资源库支持本地上传、S3 兼容对象存储、HTTPS 外链；静态 GLB 可转换为当前引擎使用的 BIN。
 - 草稿、认证预览、不可变发布快照及恢复为草稿；匿名访客只能读取已发布内容及获准资源。
@@ -34,12 +34,12 @@ SQLite 仅作为旧站迁移的只读来源，不是运行时数据库。项目�
 ### 1. 获取代码与依赖
 
 ```sh
-git clone --branch feat/authenticated-resource-admin https://github.com/jiandanplus/active-theory-v6.git
+git clone --branch main https://github.com/jiandanplus/active-theory-v6.git
 cd active-theory-v6
 npm ci
 ```
 
-已有检出目录先检查 `git status`，保留本地修改，不要重克隆覆盖。阶段 B 在隔离的 `feat/engine-delivery` 工作区实施，尚不代表上述远程分支已经包含本轮变更；集成、推送和部署需另行确认。程序输入在服务器通过明确清单登记，媒体仍通过资源库管理，不能仅把新 app 文件放进 `assets/` 就切换发布。
+已有检出目录先检查 `git status`，保留本地修改，不要重克隆覆盖。阶段 B 与后续本地 Docker 交付已集成，生产上线仍是独立操作。程序输入在服务器通过明确清单登记，媒体仍通过资源库管理，不能仅把新 app 文件放进 `assets/` 就切换发布。
 
 ### 2. 配置数据库和本地环境
 
@@ -100,7 +100,8 @@ npm run runtime:register -- --root /srv/authorized-runtime --manifest /srv/runti
 
 | 方式 | 文件 | 说明 |
 | --- | --- | --- |
-| 自带 PostgreSQL | `compose.yaml` | 独立数据库卷、非超级用户应用角色、健康依赖；数据库不映射宿主机端口 |
+| 自带 PostgreSQL（生产） | `compose.production.yaml` | 预构建镜像、HTTPS 生产模式、独立持久卷；数据库不映射宿主机端口 |
+| 本机开发 | `compose.yaml` | 开发 cookie，仅限 loopback 演示，不能直接公开 |
 | 外部 PostgreSQL | `compose.external.yaml` | 独立使用，不与前一个模板叠加，不启动内置 db |
 | 原生 Node.js | `npm start` | 自行准备 PG18、进程管理、私有持久目录与 HTTPS 代理 |
 
@@ -140,7 +141,7 @@ docker compose -p site-pg-test -f compose.test.yaml down
 
 测试默认使用回环端口 55432 和 UUID 临时数据库，不回退生产 `DATABASE_URL`。如显式指定 `TEST_DATABASE_URL`，需确认专用目标后设置 `TEST_DATABASE_CONFIRMED=yes`。有授权运行包时执行对应引擎测试；缺包时七项引擎集成检查明确跳过，不代表完整 3D 已验收。
 
-2026-10-13 的 199 项结果属于此前 PostgreSQL 安装阶段，见[历史验证记录](docs/verification/postgresql-installation.md)。阶段 A 见[身份升级验证](docs/verification/site-identity-upgrade.md)，阶段 B 的实际执行范围、门禁和限制见[运行包交付验证](docs/verification/engine-delivery.md)。C/D 尚未实施；自动测试及合成协议夹具不代表原六场景视觉、真实 S3/CDN/CORS 或生产服务已验收。
+2026-10-13 的 199 项结果属于此前 PostgreSQL 安装阶段，见[历史验证记录](verification/postgresql-installation.md)。阶段 A 见[身份升级验证](verification/site-identity-upgrade.md)，阶段 B 见[运行包交付验证](verification/engine-delivery.md)，后续 C/D 见[本地 Docker 交付记录](verification/modular-docker-delivery.md)。这些分阶段记录不能代替当前版本重测；自动测试及合成协议夹具不代表原六场景视觉、真实 S3/CDN/CORS 或生产服务已验收。
 
 ## 常见问题
 

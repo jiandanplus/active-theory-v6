@@ -11,8 +11,8 @@
 需要 Node.js 24+、npm 和带 Compose v2 的 Docker；先启动 Docker。无需先配置真实云服务。镜像不分发原站授权素材：后台能启动不代表原 3D 前台已经就绪，保留原站效果需要提供自己的完整原素材及受支持运行包，详见部署说明。
 
 ```sh
-git clone <YOUR_REPOSITORY_URL>
-cd <YOUR_CHECKOUT>
+git clone --branch main https://github.com/jiandanplus/active-theory-v6.git
+cd active-theory-v6
 npm run docker:up
 ```
 
@@ -41,6 +41,12 @@ npm run docker:up -- --port 3400 --directory .deployment/another-local
 应用入口是 `server.js`，HTTP 组合位于 `admin-server/app.js`；后台浏览器模块位于 `admin-ui/modules/`；内容校验由 `shared/content-contract.js` 共享；示例位于 `examples/portfolio/`。PostgreSQL 保存业务记录、账号、资源引用和发布版本；私有 Docker 数据卷保存上传文件、运行包和发布制品；S3 为可选资源存储。公开请求不能读取草稿或任意服务器路径。
 
 `GET /health/live` 检查进程，`GET /health/ready` 检查数据库与兼容安装状态；尚未安装但数据库可用也是就绪。生产入口必须 HTTPS；本地 HTTP 仅用于 loopback 演示，不能把开发模式配置作为公网部署。
+
+## Docker 镜像与生产部署
+
+自带 PostgreSQL 18 的生产部署使用独立 [compose.production.yaml](compose.production.yaml)，通过 `SITE_IMAGE` 选择已导入的镜像，不从当前工作目录自动构建；环境变量模板见 [docker/production.env.example](docker/production.env.example)。数据库不暴露宿主机端口，应用只监听 loopback，由现有 HTTPS 代理接入。
+
+镜像打包、离线导入、1Panel 域名 / 证书、管理员初始化，以及将本机已发布 v5 内容迁移到新域名的步骤，见 [手动生产部署指南](docs/PRODUCTION.md)。镜像不包含本机账号、数据库、上传或授权原素材，也不等于已经上线。已有云 PostgreSQL 可使用 `compose.external.yaml`；不要将本地开发用 Compose 直接暴露公网。
 
 ## 开发与验证
 

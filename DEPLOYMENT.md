@@ -1,5 +1,7 @@
 # 部署、升级与恢复
 
+预构建镜像、Linux amd64 离线交付、自带 PostgreSQL 的生产 Compose，以及 1Panel 手动绑定域名和 HTTPS 的完整步骤见 [手动生产部署指南](docs/PRODUCTION.md)。生产入口是独立 `compose.production.yaml`，变量模板是 `docker/production.env.example`；本文的 `compose.yaml` 仍仅用于本机开发。源码 / 镜像不携带个人数据库与授权素材，当前站点的 v5 内容需按指南单独迁移，不能把预览草稿误发布。
+
 ## 本地一条命令
 
 Node.js 24+、Docker Compose v2 和正在运行的 Docker daemon 是主机前提；镜像中使用 Node.js 24 与 PostgreSQL 18。在仓库根目录执行：
@@ -30,7 +32,7 @@ npm run docker:down   # 保留 PostgreSQL 与站点数据卷
 
 ## 生产与外部 PostgreSQL
 
-本地 Compose 使用开发 cookie 设置，**只能用于本机演示**。公网部署使用独立 `compose.external.yaml`，不与本地文件叠加。它固定 `NODE_ENV=production`，应用仍拒绝 HTTP `SITE_ORIGIN`；宿主端口仍只监听 loopback，由可信 HTTPS 反向代理转发。此仓库不自动申请证书或配置公网 DNS。
+本地 Compose 使用开发 cookie 设置，**只能用于本机演示**。公网使用已有外部 PostgreSQL 时使用独立 `compose.external.yaml`，不与本地文件叠加；希望同时启动专用 PG18 时使用独立 `compose.production.yaml`。两者固定 `NODE_ENV=production`，应用仍拒绝 HTTP `SITE_ORIGIN`；宿主端口仍只监听 loopback，由可信 HTTPS 反向代理转发。此仓库不自动申请证书或配置公网 DNS。
 
 1. 由数据库管理员创建专用 PostgreSQL 18 数据库与非超级用户应用角色，赋予该库 CONNECT、CREATE；撤销 public schema 的公共 CREATE。不要预建 `personal_site` schema，不要把数据库超级用户 URL 交给应用。数据库初始化参考 `docker/postgres-init.sh`；脚本不是可对既有生产库盲目重复执行的修复脚本。
 2. 在秘密管理系统或 `.deployment/production.env` 准备 `SITE_ORIGIN=https://your-owned-domain.example`、`DATABASE_URL`、`SITE_MASTER_KEY`、首次 `SETUP_TOKEN`、`SITE_PORT`；生成至少 32 随机字节的 hex 密钥。密码需按 URL 规则编码。不要将文件提交 Git；文件权限 600。云数据库按供应商要求使用验证证书的 TLS 连接串，不要关闭证书验证。
