@@ -3,8 +3,8 @@
 const quote=value=>JSON.stringify(value);
 function pageAppRules(site={}) {
   const rules=[];
-  const add=(id,scope,find,replace,key)=>rules.push({id,scope,find,replace,count:1,
-    optional:true,applicable:typeof site[key]==='string'&&!!site[key]});
+  const add=(id,scope,find,replace,key,active=true)=>rules.push({id,scope,find,replace,count:1,
+    optional:true,applicable:active&&typeof site[key]==='string'&&!!site[key]});
   add('page.hero-video','ViewController','"assets/video/reel.mp4"',()=>quote(site.heroVideo),'heroVideo');
   add('page.hero-poster','ViewController','"assets/video/reel-frame.jpg"',()=>quote(site.heroPoster),'heroPoster');
   add('page.reel-video','WorkDetailContent','"assets/video/reel.mp4"',()=>quote(site.heroVideo),'heroVideo');
@@ -26,7 +26,8 @@ function pageAppRules(site={}) {
     add(id+'-url','ContactUI',new RegExp(`(_this\\.${ref}\\.interact\\(hover, \\(_ => window\\.open\\()"[^"]*"`),
       (_,a)=>a+quote(site[prefix+'URL']),prefix+'URL');
     add(id+'-name','ContactUI',new RegExp(`(_this\\.${ref}\\.interact\\([\\s\\S]*?"#", )"[^"]*"`),
-      (_,a)=>a+quote(site[prefix+'Text']),prefix+'Text');
+      // Legacy removal hides socials without either a lab or independent URL.
+      (_,a)=>a+quote(site[prefix+'Text']),prefix+'Text',!!(site.labUrl||site[prefix+'URL']));
     add(id+'-icon','ContactUI',`bg: "assets/images/ui/${file}.png"`,
       ()=>`bg: ${quote(site[prefix+'Icon'])}`,prefix+'Icon');
   }

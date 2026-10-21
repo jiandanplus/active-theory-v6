@@ -89,3 +89,71 @@ test('authorized runtime: independent contact URLs retain inherited captions and
   });
  }
 });
+for(const [name,ref] of [['Instagram','ig'],['Linkedin','in'],['X','tw']]){
+ test(`authorized runtime: standalone ${name} text with no lab or social URL preserves legacy hiding`,{
+  skip:!process.env.AUTHORIZED_RUNTIME_ROOT,
+ },()=>{
+  const source=fs.readFileSync(path.join(process.env.AUTHORIZED_RUNTIME_ROOT,'assets/js/app.1778129964370.js'),'utf8');
+  const {classBody}=require('../admin-server/engine/patches');
+  const config={site:{labUrl:'',['contact'+name+'Text']:'Independent social label'},songs:[],scenes:[]};
+  const before=structuredClone(config),output=adapter.patchAppSource(source,config);
+  new vm.Script(output.source);
+  assert.deepEqual(config,before,'transformation must not add URLs or change stored fields');
+  assert.deepEqual(output.report.find(p=>p.id==='page.social-'+name.toLowerCase()+'-name'),{
+   id:'page.social-'+name.toLowerCase()+'-name',status:'not-applicable',
+  });
+  classBody(output.source,'ContactUI',body=>{
+   assert.ok(!body.includes(`_this.${ref}.interact(`),'no link means no interaction');
+   const hidden=JSON.parse(/(\[[^\]]*\])\.forEach\(key => _this\[key\]\.hide\(\)\)/.exec(body)[1]);
+   assert.ok(hidden.includes(ref),'no link retains legacy hiding');
+   return body;
+  });
+ });
+ for(const [mode,links] of [
+  ['independent URL',{labUrl:'',['contact'+name+'URL']:'https://example.test/social'}],
+  ['inherited interaction',{labUrl:'https://example.test/lab'}],
+ ]){
+  test(`authorized runtime: ${name} text still applies with ${mode}`,{
+   skip:!process.env.AUTHORIZED_RUNTIME_ROOT,
+  },()=>{
+   const source=fs.readFileSync(path.join(process.env.AUTHORIZED_RUNTIME_ROOT,'assets/js/app.1778129964370.js'),'utf8');
+   const {classBody}=require('../admin-server/engine/patches');
+   const config={site:{...links,['contact'+name+'Text']:'Independent social label'},songs:[],scenes:[]};
+   const before=structuredClone(config),output=adapter.patchAppSource(source,config);
+   new vm.Script(output.source);
+   assert.deepEqual(config,before);
+   assert.deepEqual(output.report.find(p=>p.id==='page.social-'+name.toLowerCase()+'-name'),{
+    id:'page.social-'+name.toLowerCase()+'-name',status:'applied',matches:1,expected:1,
+   });
+   classBody(output.source,'ContactUI',body=>{
+    assert.match(body,new RegExp(`_this\\.${ref}\\.interact\\([^;]*?"#", "Independent social label"`));
+    if(!links.labUrl){
+     const hidden=JSON.parse(/(\[[^\]]*\])\.forEach\(key => _this\[key\]\.hide\(\)\)/.exec(body)[1]);
+     assert.ok(!hidden.includes(ref),'independent URL keeps the social link visible');
+     assert.ok(body.includes('https://example.test/social'));
+    }
+    return body;
+   });
+  });
+ }
+}
+const {TEXT_FIELDS,LINK_FIELDS,PAGE_KEYS}=require('../shared/page-content');
+const independentFields={...fields,
+ ...Object.fromEntries(Object.keys(TEXT_FIELDS).map(key=>[key,'Independent '+key])),
+ ...Object.fromEntries(Object.keys(LINK_FIELDS).map(key=>[key,'https://example.test/'+key])),
+};
+for(const labUrl of ['', 'https://example.test/lab']){
+ for(const [key,value] of Object.entries(independentFields)){
+  test(`authorized runtime: single optional ${key} parses with ${labUrl?'nonblank':'blank'} lab URL`,{
+   skip:!process.env.AUTHORIZED_RUNTIME_ROOT,
+  },()=>{
+   assert.equal(PAGE_KEYS.length,20);
+   assert.deepEqual(Object.keys(independentFields),PAGE_KEYS);
+   const source=fs.readFileSync(path.join(process.env.AUTHORIZED_RUNTIME_ROOT,'assets/js/app.1778129964370.js'),'utf8');
+   const config={site:{labUrl,[key]:value},songs:[],scenes:[]},before=structuredClone(config);
+   const output=adapter.patchAppSource(source,config);
+   new vm.Script(output.source);
+   assert.deepEqual(config,before,'single-field overrides must not materialize unrelated defaults');
+  });
+ }
+}
