@@ -95,6 +95,8 @@ function createApp(options = {}, {deliveryService} = {}) {
     next();
   });
   mountOperationalHealth(app, {store});
+  app.get('/admin/page-content.js', (req, res) => res.type('js').sendFile(
+    path.join(__dirname, '../shared/page-content.js'), {cacheControl:false, etag:false, lastModified:false}));
   app.get('/admin/content-contract.js', (req, res) => res.type('js').sendFile(
     path.join(__dirname, '../shared/content-contract.js'), {cacheControl:false, etag:false, lastModified:false}));
   mountInstallation(app, { store, options });

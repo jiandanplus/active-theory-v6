@@ -1,6 +1,7 @@
 const path=require('node:path').posix;
 const {fail}=require('../security');
 const {normalizeSite}=require('../../shared/site-identity');
+const {MEDIA_FIELDS}=require('../../shared/page-content');
 const {canonicalJSON,sourcePath,normalizeReferences}=require('./contracts');
 const {inactiveUIL,collectReferences,publicSnapshot,resourceAsset,mapResourceURL}=require('../snapshots');
 const {runtimeURL}=require('../engine/program-paths');
@@ -63,6 +64,7 @@ function projectSnapshot(source,target,profile,{runtimeFiles=new Map()}={}) {
   }
   for(const scene of snapshot.config.scenes)scene.fields=scene.fields.filter(f=>!inactiveUIL(originalTemplate,f.key,policy));
   requireMedia(snapshot,snapshot.config.site.socialImage);
+  for(const key of Object.keys(MEDIA_FIELDS))requireMedia(snapshot,snapshot.config.site[key]);
   for(const project of snapshot.config.projects)for(const key of ['video','image','projectLogo'])validateMediaTree(snapshot,project[key]);
   for(const scene of snapshot.config.scenes)for(const field of scene.fields)if(['resource','geometry'].includes(field.type))requireMedia(snapshot,field.value);
   for(const song of snapshot.config.songs)requireMedia(snapshot,song.src);

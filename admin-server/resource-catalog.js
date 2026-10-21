@@ -3,6 +3,7 @@ const path = require("node:path");
 const { createHash } = require("node:crypto");
 const defaultManifest = require("./engine-assets.json");
 const { inactiveUIL } = require("./snapshots");
+const { MEDIA_FIELDS } = require('../shared/page-content');
 const EPOCH = "1970-01-01T00:00:00.000Z";
 const conflict = (message) =>
   Object.assign(new Error(message), { status: 409 });
@@ -240,6 +241,9 @@ async function inventoryResources({
     return id;
   }
   for (const entry of manifest.assets || manifest) await register(entry);
+  for (const [key, field] of Object.entries(MEDIA_FIELDS))
+    if (config.site?.[key]) await register({owner:'site', slot:`site:${key}:${digest(config.site[key]).slice(0,24)}`,
+      url:config.site[key], type:field.kind, required:false});
   for (const url of new Set([config.site?.socialImage, ...siteImages].filter(Boolean)))
     await register({owner:'site', slot:`site:socialImage:${digest(url).slice(0,24)}`,
       url, type:'image', required:false});

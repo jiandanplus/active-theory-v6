@@ -9,6 +9,7 @@ const {
 } = require("./snapshots");
 const { resourceRepository } = require("./repositories/resources");
 const { storageRepository } = require("./repositories/storages");
+const { MEDIA_FIELDS } = require('../shared/page-content');
 function resourceId(snapshot, url) {
   const direct =
     /^\/media\/([^/?#]+)(?:[?#]|$)/.exec(url)?.[1] ||
@@ -56,6 +57,13 @@ async function checkPublicationState(store, snapshot, {references, geometryIds, 
     if (!rows.some(row => row.id === id && row.kind === 'image'))
       throw fail(422, '分享图片必须引用可用的图片资源');
   }
+  for (const [key, field] of Object.entries(MEDIA_FIELDS)) {
+    const url=snapshot.config.site?.[key];
+    if (!url) continue;
+    const id=resourceId(snapshot,url);
+    if (!rows.some(row=>row.id===id&&row.kind===field.kind))
+      throw fail(422, `${field.label}必须引用可用的${field.kind==='video'?'视频':'图片'}资源`);
+  }
   if (snapshot.template.readiness?.missingRequired?.length)
     throw fail(422, "缺少前台运行所需资源");
   return rows;
@@ -64,7 +72,8 @@ async function checkPublicationState(store, snapshot, {references, geometryIds, 
 async function validatePublication(store, options = {}, snapshot, context) {
   const rows = await checkPublicationState(store, snapshot, context),
     warnings = new Set();
-  const media = [snapshot.config.site?.socialImage].filter(Boolean);
+  const media = [snapshot.config.site?.socialImage,
+    ...Object.keys(MEDIA_FIELDS).map(key=>snapshot.config.site?.[key])].filter(Boolean);
   for (const p of snapshot.config.projects)
     for (const kind of ["video", "image", "projectLogo"])
       for (const key of ["url", "thumbnail"])
@@ -152,6 +161,17 @@ async function validatePublication(store, options = {}, snapshot, context) {
           `字体 ${name} 缺少字形：${missing.slice(0, 20).join("")}。请先重新生成字体图集。`,
         );
     }
+  const pageLabels=['contactHomeText','contactJoinText','contactAboutText','contactQrText']
+    .map(key=>snapshot.config.site?.[key]).filter(Boolean);
+  if(pageLabels.length){
+    const font='NBArchitektStd-Bold',url=`assets/fonts/${font}.json`;
+    const asset=resourceAsset(snapshot,url);
+    const chars=snapshot.template.fontCoverage?.[asset?.resourceId];
+    if(typeof chars!=='string')throw fail(422,`缺少字体图集：${font}`);
+    const available=new Set([...chars]);
+    const missing=[...new Set(pageLabels.flatMap(text=>[...text].filter(c=>!/[\s]/u.test(c)&&!available.has(c))))];
+    if(missing.length)throw fail(422,`字体 ${font} 缺少字形：${missing.slice(0,20).join('')}。请使用现有字体支持的文字。`);
+  }
   return [...warnings];
 }
 module.exports = { validatePublication, checkPublicationState };

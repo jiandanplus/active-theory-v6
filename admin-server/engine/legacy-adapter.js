@@ -1,5 +1,6 @@
 const {exactReplace,classBody,incompatible}=require('./patches');
 const quote=value=>JSON.stringify(value??'');
+const {pageAppRules}=require('./page-content-adapter');
 const viewAnchor='_this.bind("navigate", (path => _this.navigate(path))), document.title = "AGI旅行者· AGI Voyager", _this.bind("Work/project", (data => { document.title = data ? `${data.title} · Active Theory` : "AGI旅行者· AGI Voyager" }));';
 // These are the legacy source's exact transformations, not a general JS parser.
 function appRules(config) {
@@ -24,24 +25,29 @@ function appRules(config) {
   add('nav.link','NavUIItem','_this.params.text.toLowerCase()','(_this.params.link || _this.params.text.toLowerCase())');
   add('contact.single-character','ContactUI','function replaceRandomLetters(str, numReplacements) {','function replaceRandomLetters(str, numReplacements) { if (str.length < 2) return str;');
   add('contact.loaded','ContactUI',/await _this\.wait\(\(_ => _this\.(\w+)\.dimensions\.width\)\)/g,(_,ref)=>`await _this.${ref}.loaded()`,10);
+  const contactKeys={subscribe:'contactJoinURL',privacy:'contactHomeURL',careers:'contactAboutURL',ig:'contactInstagramURL',in:'contactLinkedinURL',tw:'contactXURL'};
   for(const [ref,key] of Object.entries({contact:'contactTitle',lax:'cityLax',nyc:'cityNyc',ams:'cityAms',email:'email',subscribe:null,privacy:null,careers:null,sync:null})) {
-    const applicable=key!==null || !site.labUrl;
+    const hasIndependentContent=ref==='sync'?site.contactQrImage:site[contactKeys[ref]];
+    const applicable=key!==null || (!site.labUrl&&!hasIndependentContent);
     add(`contact.${ref}.inner-text`,'ContactUI',new RegExp(`(_innerText: )"(?:[^"\\\\]|\\\\.)*"(, refName: "${ref}")`),(_,a,b)=>a+quote(site[key])+b,1,applicable);
     if(ref==='sync')continue;
     add(`contact.${ref}.set-text`,'ContactUI',new RegExp(`(_this\\.${ref}\\.setText\\(replaceRandomLetters\\()"(?:[^"\\\\]|\\\\.)*"`),(_,a)=>a+quote(site[key]),1,applicable);
     add(`contact.${ref}.a11y`,'ContactUI',new RegExp(`GLA11y\\.textNode\\(_this\\.${ref}\\.group, "[^"]*"\\)`),()=>`GLA11y.textNode(_this.${ref}.group, ${quote(site[key])})`,1,applicable);
   }
   add('contact.remove-email','ContactUI',/_this\.email\.interact\(hover, \(_ => window\.open\("mailto:[^"]*"\)\), "#"\), /,'',1,!site.emailLink);
-  for(const ref of ['subscribe','privacy','careers','ig','in','tw'])add(`contact.remove-${ref}`,'ContactUI',new RegExp(`_this\\.${ref}\\.interact\\(hover, \\(_ => window\\.open\\("[^"]*", "_blank"\\)\\), "#"(?:, "[^"]*")?\\), `),'',1,!site.labUrl);
-  add('contact.remove-mobile-sync','ContactUI','_this.ref_MobileSync980 = _this.initClass(MobileSync), _this.ref_MobileSync980.isFragment && _promises.push(_this.wait(_this.ref_MobileSync980, "__ready")), ','',1,!site.labUrl);
-  add('contact.hide-links','ContactUI','_this.bind("ViewController/contact",','["ig", "in", "tw", "subscribe", "privacy", "careers", "sync", "line2", "line3", "line4"].forEach(key => _this[key].hide()), _this.bind("ViewController/contact",',1,!site.labUrl);
+  for(const ref of Object.keys(contactKeys))add(`contact.remove-${ref}`,'ContactUI',new RegExp(`_this\\.${ref}\\.interact\\(hover, \\(_ => window\\.open\\("[^"]*", "_blank"\\)\\), "#"(?:, "[^"]*")?\\), `),'',1,!site.labUrl&&!site[contactKeys[ref]]);
+  add('contact.remove-mobile-sync','ContactUI','_this.ref_MobileSync980 = _this.initClass(MobileSync), _this.ref_MobileSync980.isFragment && _promises.push(_this.wait(_this.ref_MobileSync980, "__ready")), ','',1,!site.labUrl&&!site.contactQrImage);
+  const hidden=['ig','in','tw','subscribe','privacy','careers','sync','line2','line3','line4'].filter(ref=>ref==='sync'?!site.contactQrImage:ref==='line2'?!site.contactHomeURL:ref==='line3'?!site.contactJoinURL:ref==='line4'?!site.contactAboutURL:!site[contactKeys[ref]]);
+  add('contact.hide-links','ContactUI','_this.bind("ViewController/contact",',JSON.stringify(hidden)+'.forEach(key => _this[key].hide()), _this.bind("ViewController/contact",',1,!site.labUrl);
   add('contact.mailto','ContactUI',/"mailto:[^"\s]*"/g,()=>quote(`mailto:${site.emailLink}`),1,!!site.emailLink);
   add('clean-room.url','CleanRoom',/let url = "[^"]*";/,()=>`let url = ${quote(site.labUrl)};`);
   add('songs.list',null,/let SONGS = \[[\s\S]*?\];/,()=>`let SONGS = ${JSON.stringify(config.songs)};`);
   add('songs.empty',null,'let SONGS = []; SONGS = SONGS.shuffle()','let SONGS = []; if (!SONGS.length) { _this.wrapper?.hide?.(); _this.set("Global/audioEnabled", false); _this.flag?.("__ready", true); _this.onInit?.(); return; } SONGS = SONGS.shuffle()',1,config.songs?.length===0);
+  rules.push(...pageAppRules(site));
   return rules;
 }
 function applyRule(source,rule) {
+  if(rule.optional&&!rule.applicable)return {source,report:{id:rule.id,status:'not-applicable'}};
   // Required classes remain required even when a configuration branch is inactive.
   let report;
   const transform=code=>{
@@ -69,7 +75,7 @@ function patchAppSource(source,config,contract) {
   const report=[];
   for(const rule of appRules(config)){const result=applyRule(source,rule);source=result.source;report.push(result.report);}
   classBody(source,'ViewController',code=>{if(/document\.title\s*=/.test(code))throw incompatible('view.identity');return code;});
-  classBody(source,'ContactUI',code=>{if(/await _this\.wait\(\(_ => _this\.\w+\.dimensions\.width\)\)/.test(code)||(!config.site.emailLink&&code.includes('mailto:'))||(!config.site.labUrl&&code.includes('_this.initClass(MobileSync)')))throw incompatible('contact.postcondition');return code;});
+  classBody(source,'ContactUI',code=>{if(/await _this\.wait\(\(_ => _this\.\w+\.dimensions\.width\)\)/.test(code)||(!config.site.emailLink&&code.includes('mailto:'))||(!config.site.labUrl&&!config.site.contactQrImage&&code.includes('_this.initClass(MobileSync)')))throw incompatible('contact.postcondition');return code;});
   return {source,report};
 }
 function patchShaders(source,config,contract) {

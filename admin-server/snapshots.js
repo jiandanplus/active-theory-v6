@@ -1,5 +1,7 @@
 const {normalizeSite} = require('../shared/site-identity');
+const {PAGE_KEYS, MEDIA_FIELDS} = require('../shared/page-content');
 const SITE_KEYS = [
+  ...PAGE_KEYS,
   "description", "language", "socialImage",
   "title",
   "navWork",
@@ -163,6 +165,8 @@ function collectReferences(snapshot, policy) {
   };
   if (snapshot.config.site?.socialImage)
     resolve(snapshot.config.site.socialImage, 'config.site.socialImage');
+  for (const key of Object.keys(MEDIA_FIELDS))
+    if (snapshot.config.site?.[key]) resolve(snapshot.config.site[key], `config.site.${key}`);
   const walk = (value, slot) => {
     if (typeof value === "string") resolve(value, slot);
     else if (value && typeof value === "object")
@@ -248,6 +252,8 @@ function publicSnapshot(snapshot, versionId) {
   });
   const media = (value) => mapResourceURL(snapshot, versionId, value);
   publicConfig.site.socialImage = media(publicConfig.site.socialImage);
+  for (const key of Object.keys(MEDIA_FIELDS))
+    if (Object.hasOwn(publicConfig.site, key)) publicConfig.site[key] = media(publicConfig.site[key]);
   for (const p of publicConfig.projects)
     for (const kind of ["video", "image", "projectLogo"])
       if (p[kind])

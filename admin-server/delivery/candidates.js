@@ -51,7 +51,8 @@ async function prepareCapturedCandidate({store,options,registry,cas,captured,tar
   for(const entry of bundle.manifest.files)runtimeFiles.set(entry.key,await cas.read(entry));
   validateRuntime(bundle.manifest,runtimeFiles,profile);
   profile.validateSnapshot(source);
-  if(template)require('../config').validateConfig(source.config,template.schema);
+  if(template)require('../config').validateConfig(source.config,
+    require('../../shared/page-content').lockSchema(template.schema,source.config));
   const projected=projectSnapshot(source,target,profile,{runtimeFiles});
   if(referenceCeiling!==undefined){
     const references=normalizeReferences(referenceCeiling),allowed=new Set(references.map(ref=>ref.resourceId));
