@@ -35,7 +35,7 @@ function pageAppRules(site={}) {
     (_,a,b)=>a+quote(site.contactQrText)+b,'contactQrText');
   add('page.qr-container','ContactUI',
     '_this.ref_MobileSync980 = _this.initClass(MobileSync), _this.ref_MobileSync980.isFragment && _promises.push(_this.wait(_this.ref_MobileSync980, "__ready")), ',
-    '_this.ref_MobileSync980 = _this.initClass(QRCode, { size: 110 }), ','contactQrImage');
+    '!Device.mobile && (_this.ref_MobileSync980 = _this.initClass(QRCode, { size: 110 })), ','contactQrImage');
   add('page.qr-lookup','ContactUI','_this.qrcode = _this.get("MobileSync/qrcode", !0)',
     '_this.qrcode = _this.ref_MobileSync980','contactQrImage');
   add('page.qr-blending','ContactUI','_this.qrcode.glui.shader.blending = Shader.ADDITIVE_BLENDING',

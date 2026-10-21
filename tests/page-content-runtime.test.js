@@ -58,6 +58,41 @@ test('custom QR image uses the given image instead of website or workids payload
  assert.match(result.source,/crossOrigin/);
  assert.equal(result.report.matches,1);
 });
+for(const mobile of [true,false]){
+ test(`custom QR container ${mobile?'does not create an unpositioned mobile QR':'creates the desktop QR at size 110'}`,()=>{
+  const original='Class((function ContactUI() { const _this = this, _promises = []; _this.ref_MobileSync980 = _this.initClass(MobileSync), _this.ref_MobileSync980.isFragment && _promises.push(_this.wait(_this.ref_MobileSync980, "__ready")), _this.qrcode = _this.get("MobileSync/qrcode", !0); }));';
+  const config={site:{contactQrImage:'/media/image'}};
+  let output=adapter.applyAppPatch('page.qr-container',original,config).source;
+  output=adapter.applyAppPatch('page.qr-lookup',output,config).source;
+  new vm.Script(output);
+  const calls=[],qrcode={},QRCode=function QRCode(){};
+  const instance={initClass(type,options){calls.push({type,options});return qrcode;}};
+  vm.runInNewContext(output,{Device:{mobile},QRCode,Class:constructor=>constructor.call(instance)});
+  assert.equal(calls.length,mobile?0:1);
+  assert.equal(instance.qrcode,mobile?undefined:qrcode);
+  assert.equal(instance.ref_MobileSync980,mobile?undefined:qrcode);
+  if(!mobile){
+   assert.equal(calls[0].type,QRCode);
+   assert.equal(calls[0].options.size,110);
+   assert.deepEqual(Object.keys(calls[0].options),['size']);
+  }
+ });
+}
+test('authorized runtime: custom QR retains desktop-only creation and original MobileSync bytes',{
+ skip:!process.env.AUTHORIZED_RUNTIME_ROOT,
+},()=>{
+ const source=fs.readFileSync(path.join(process.env.AUTHORIZED_RUNTIME_ROOT,'assets/js/app.1778129964370.js'),'utf8');
+ const {classBody}=require('../admin-server/engine/patches');
+ const output=adapter.patchAppSource(source,{site:{contactQrImage:'/media/image'},songs:[],scenes:[]});
+ new vm.Script(output.source);
+ classBody(output.source,'ContactUI',body=>{
+  assert.ok(/!Device\.mobile && \(_this\.ref_MobileSync980 = _this\.initClass\(QRCode, \{ size: 110 \}\)\)/.test(body),'custom QR creation remains desktop-only');
+  return body;
+ });
+ let originalMobileSync;
+ classBody(source,'MobileSync',body=>{originalMobileSync=body;return body;});
+ classBody(output.source,'MobileSync',body=>{assert.equal(body,originalMobileSync);return body;});
+});
 test('authorized runtime: content overrides preserve original runtime syntax and named visual classes',{
  skip:!process.env.AUTHORIZED_RUNTIME_ROOT,
 },()=>{
