@@ -129,3 +129,7 @@ npm test
 ```
 
 测试请使用专用数据库，不要连接已有站点的生产数据库。详细开发规范与测试范围见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+
+## 致谢
+
+感谢 [LinuxDo 社区](https://linux.do/)。
