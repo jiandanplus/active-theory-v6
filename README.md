@@ -6,6 +6,12 @@
 
 安装默认选择“保留原站页面（服务器内容包）”。`portfolio-v1` 只是可选的独立示例，页面与原站不同，不能用它代替原站交付或视觉验收。已有网站不要为了配置作品而切换到该示例；原模板使用 `legacy-six-scenes-v1`。相关纠偏与实际验证见 [原前端恢复记录](docs/verification/original-frontend-correction.md)。
 
+## 项目来源与致谢
+
+本项目参考 [Active Theory v6](https://v6.activetheory.net/)，在原有网站页面、视觉与交互效果的基础上进行修改，增加个人网站的后台内容管理、登录认证、资源配置及 Docker 部署能力，并重新打包发布。感谢 Active Theory 团队提供的设计与交互参考。
+
+本项目并非 Active Theory 官方项目，也不代表其背书或授权。原站品牌及相关设计、程序和素材的权利归相应权利人所有；注明来源不等于取得使用或再分发许可。代码与素材的许可边界请参阅 [PROVENANCE.md](PROVENANCE.md)、[THIRD_PARTY.md](THIRD_PARTY.md) 和本文的“许可状态”。
+
 ## 在线 Demo
 
 [访问在线演示：agi.drawbookai.cn](https://agi.drawbookai.cn/)
