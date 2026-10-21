@@ -40,11 +40,12 @@ function startAdmin(environment = globalThis) {
     cityAms: "地点三",
     email: "邮箱显示文字",
     emailLink: "联系邮箱",
-    labUrl: "实验室链接",
+    labUrl: "底部展示区跳转链接",
   };
   let services;
   const context = {
     state, sections, labels, document,
+    pageContent: environment.SitePageContent || (typeof require === "function" ? require("../shared/page-content.js") : null),
     app: document.getElementById("app"),
     window: environment, fetch: environment.fetch.bind(environment), crypto: environment.crypto,
     content: null, saveStatus: null,

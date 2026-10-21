@@ -350,9 +350,9 @@ test('save snapshot retains edits made while request is pending', async () => {
 });
 function validationConfig() {
   return {site: {title: 'Fixture', description: '', language: 'zh-CN', socialImage: ''}, projects: [], songs: [],
-    scenes: [{id: 'Home', label: 'Home', fields: [{key: 'image', label: 'Image', type: 'resource', value: 'http://legacy.invalid/image.png'}]}]};
+    scenes: [{id: 'Home', label: 'Home', fields: [{key: 'INPUT_Config_8_ParticleTest_geometry', label: 'Logo', type: 'geometry', value: 'http://legacy.invalid/logo.bin'}]}]};
 }
-async function validationAdmin(schemaResponse, currentURL = 'https://new.invalid/image.png') {
+async function validationAdmin(schemaResponse, currentURL = 'https://new.invalid/logo.bin') {
   const {document, walk} = require('./helpers/admin-dom')();
   const canonical = validationConfig(), current = structuredClone(canonical), calls = [];
   current.scenes[0].fields[0].value = currentURL;
@@ -392,7 +392,7 @@ test('restoring canonical legacy HTTP after loading a newer HTTPS draft allows u
   const request = restore.dispatch('click');
   await app.walk().find(element => element.textContent === '确认继续').dispatch('click');
   await request;
-  assert.equal(app.state.config.scenes[0].fields[0].value, 'http://legacy.invalid/image.png');
+  assert.equal(app.state.config.scenes[0].fields[0].value, 'http://legacy.invalid/logo.bin');
   app.state.config.site.title = 'An unrelated edit'; app.state.dirty = true;
   await app.actions.save();
   assert.equal(app.state.revision, 6);
@@ -402,7 +402,7 @@ test('restoring canonical legacy HTTP after loading a newer HTTPS draft allows u
   assert.notEqual(app.state.validationSchema, app.canonical);
 });
 test('unknown legacy HTTP is rejected even if unchanged from the loaded draft', async () => {
-  const app = await validationAdmin(undefined, 'http://unknown.invalid/image.png');
+  const app = await validationAdmin(undefined, 'http://unknown.invalid/logo.bin');
   await assert.rejects(app.actions.save(), /HTTPS/);
   assert.equal(app.calls.filter(call => call.options?.method === 'PUT').length, 0);
 });

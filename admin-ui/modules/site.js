@@ -5,13 +5,14 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
   const { state, window, labels, node, button, dirty, field, panel, heading, warning, render } = context;
+  const pageContent = context.pageContent || (typeof require === "function" ? require("../../shared/page-content.js") : window.SitePageContent);
   function siteView() {
     heading("网站设置", "维护网站标题、导航与联系信息。");
     const p = panel(context.content, "基本信息"),
       grid = node("div", undefined, "grid");
     p.append(grid);
     for (const [key, value] of Object.entries(state.config.site).filter(([key]) =>
-      !["description", "language", "socialImage"].includes(key)))
+      !["description", "language", "socialImage", "labUrl", ...pageContent.PAGE_KEYS].includes(key)))
       field(
         grid,
         labels[key] || key,
@@ -21,16 +22,38 @@ function create(context) {
           dirty();
         },
         {
-          help:
-            key === "labUrl"
-              ? "使用 HTTPS 链接"
-              : key === "emailLink"
-                ? "只填写邮箱地址，不需要 mailto:"
-                : undefined,
+          help: key === "emailLink" ? "只填写邮箱地址，不需要 mailto:" : undefined,
         },
       );
-    const identity = panel(context.content, "搜索与分享");
+    const definitions = { ...pageContent.MEDIA_FIELDS, ...pageContent.TEXT_FIELDS, ...pageContent.LINK_FIELDS };
     const update = (key, value) => { state.config.site[key] = value; dirty(); };
+    const groups = [
+      ["开场与底部展示", ["heroVideo", "heroPoster", "labBackground"]],
+      ["联系页面链接", ["contactHomeText", "contactHomeURL", "contactJoinText", "contactJoinURL", "contactAboutText", "contactAboutURL"]],
+      ["社交媒体", ["contactInstagramText", "contactInstagramURL", "contactInstagramIcon", "contactLinkedinText", "contactLinkedinURL", "contactLinkedinIcon", "contactXText", "contactXURL", "contactXIcon"]],
+      ["微信二维码", ["contactQrImage", "contactQrText"]],
+    ];
+    for (const [title, keys] of groups) {
+      const section = panel(context.content, title), rows = node("div", undefined, "grid");
+      section.append(rows);
+      warning(section, "可选内容留空则继承原版展示。修改后先保存草稿并前台预览，确认效果后再发布。");
+      for (const key of keys) {
+        const definition = definitions[key];
+        field(rows, definition.label, state.config.site[key], value => update(key, value), {
+          pick: definition.kind,
+          help: definition.kind
+            ? "选择资源或填写 HTTPS 地址；外部资源须允许跨域 CORS，公开可访问性仍需前台验证。"
+            : "留空继承原版。3D 文字受原有字体字形覆盖限制，请在前台预览检查。",
+        });
+      }
+      if (title === "开场与底部展示")
+        field(rows, "底部展示区跳转链接", state.config.site.labUrl, value => update("labUrl", value), {help: "使用 HTTPS 链接"});
+      if (title === "社交媒体")
+        section.append(node("p", "图标建议使用 PNG / WebP 透明背景图片，保持清晰边缘与一致尺寸。", "muted"));
+      if (title === "微信二维码")
+        section.append(node("p", "请上传方形微信二维码原图，保留完整边距与清晰度；在前台预览确认可识别后再发布。", "muted"));
+    }
+    const identity = panel(context.content, "搜索与分享");
     field(identity, "网站描述", state.config.site.description, v => update("description", v), {
       multiline: true, maxLength: 500,
       help: "最多 500 字符。用于搜索和分享介绍，不改变 3D 场景文字。",

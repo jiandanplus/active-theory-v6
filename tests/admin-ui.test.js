@@ -162,15 +162,12 @@ test("identity fields provide controlled language choices and description limits
   assert.equal(description.maxLength,500);
 });
 test('site identity interactions update the existing draft and dirty state', () => {
-  const source=adminSource();
-  const start=source.indexOf('  function siteView(');
-  const end=source.indexOf('\n  function ',start+4);
   const controls=[]; const buttons=[]; const panels=[]; let changes=0;
   const state={config:{site:{title:'Fixture',description:'Draft',language:'en',socialImage:'https://example.test/old.png'},songs:[]}};
   const node=()=>({append(){}});
   const context={state,content:node(),labels:{},node,heading(){},warning(){},dirty(){changes++;},window:{SiteIdentity:require('../shared/site-identity')},panel(parent,title){panels.push(title);return node();},field(parent,label,value,onChange,options){const control={label,value,onChange,options};controls.push(control);return control;},button(label,action){buttons.push({label,action});return node();}};
-  require('node:vm').runInNewContext(source.slice(start,end)+'\nsiteView();',context);
-  assert.deepEqual(panels,['基本信息','搜索与分享','背景音乐']);
+  require('../admin-ui/modules/site').create(context).siteView();
+  assert.deepEqual(panels,['基本信息','开场与底部展示','联系页面链接','社交媒体','微信二维码','搜索与分享','背景音乐']);
   assert.equal(controls.filter(c=>c.label==='网站描述').length,1);
   controls.find(c=>c.label==='网站描述').onChange('New description');
   const language=controls.find(c=>c.label==='页面语言');

@@ -21,6 +21,7 @@ function fixture(settings = {}) {
   let live = true, renders = 0, resources, available = [];
   const content = document.createElement('main'); document.body.append(content);
   const context = {state, document, crypto: require('node:crypto').webcrypto, content, ...helpers,
+    pageContent: require('../shared/page-content'),
     captureView() {const epoch = state.sessionEpoch; return () => live && epoch === state.sessionEpoch;},
     notify: (message, error) => messages.push({message, error}),
     async api(route, method = 'GET', body) {

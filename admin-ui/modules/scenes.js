@@ -5,10 +5,11 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
   const { state, node, dirty, field, heading, warning, empty } = context;
+  const pageContent = context.pageContent || (typeof require === "function" ? require("../../shared/page-content.js") : context.window.SitePageContent);
   const isTopLogo = (scene, f) => scene.id === "Home" && f.key === "INPUT_Config_8_ParticleTest_geometry";
   const displayLabel = (scene, f) => isTopLogo(scene, f) ? "顶部 3D Logo" : f.label || f.key;
   function scenesView() {
-    heading("场景编辑", "按场景查找文案、材质与模型；保留已有参数，逐项调整。");
+    heading("场景编辑", "维护场景文案与顶部 3D Logo；固定表现参数和场景材质保持原版。");
     const search = node("input");
     search.placeholder = "搜索文案、资源名或技术字段";
     search.setAttribute("aria-label", "搜索场景字段");
@@ -25,7 +26,7 @@ function create(context) {
       list.replaceChildren();
       const q = search.value.trim().toLowerCase();
       for (const scene of state.config.scenes) {
-        const fields = scene.fields.filter((f) =>
+        const fields = scene.fields.filter((f) => pageContent.isEditableSceneField(scene, f)).filter((f) =>
           (displayLabel(scene, f) + " " + f.label + " " + f.key + " " + f.value).toLowerCase().includes(q),
         );
         if (!fields.length) continue;

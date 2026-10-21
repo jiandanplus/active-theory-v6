@@ -5,6 +5,7 @@
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
   const { state, document, node, button, notify, confirmAction, api, field, panel, heading, warning, empty, load, preview, render, canPick, canConvert, resourcePreviewURL } = context;
+  const pageContent = context.pageContent || (typeof require === "function" ? require("../../shared/page-content.js") : context.window.SitePageContent);
   let resourceRequestSequence = 0;
   async function refreshResources(current = context.captureView?.() || (() => true)) {
     const sequence = ++resourceRequestSequence, epoch = state.sessionEpoch;
@@ -161,7 +162,7 @@ function create(context) {
         "只有转换成功的 BIN 模型可用于此槽位。请先在资源库上传 GLB 到本地或已配置云存储，上传后会自动转换；失败时可手动重试。",
       );
     const grid = node("div", undefined, "resource-grid");
-    for (const resource of state.resources.filter((r) => canPick(r, kind)))
+    for (const resource of state.resources.filter((r) => !pageContent.isSystemResource(r, state.config) && canPick(r, kind)))
       grid.append(
         resourceCard(resource, (r) => {
           if (!current()) return;
@@ -322,6 +323,7 @@ function create(context) {
       cards.replaceChildren();
       for (const r of state.resources.filter(
         (r) =>
+          !pageContent.isSystemResource(r, state.config) &&
           !!r.trashed === (filter.value === "trash") &&
           r.name.toLowerCase().includes(search.value.toLowerCase()),
       ))
