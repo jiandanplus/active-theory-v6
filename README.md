@@ -1,4 +1,18 @@
-# Personal Portfolio CMS
+<h1 align="center">Personal Portfolio CMS</h1>
+
+<h3 align="center">3D 个人主页与作品集管理系统</h3>
+
+<p align="center">
+  <a href="https://v6.activetheory.net/">
+    <img src="https://img.shields.io/badge/%E5%8E%9F%E7%BD%91%E7%AB%99-Active%20Theory%20v6-64748B?style=flat-square" alt="原网站：Active Theory v6" height="24" />
+  </a>
+  &nbsp;
+  <a href="https://agi.drawbookai.cn/">
+    <img src="https://img.shields.io/badge/%E5%9C%A8%E7%BA%BF%20Demo-AGI%20Voyager-0EA5E9?style=flat-square" alt="在线 Demo：AGI Voyager" height="24" />
+  </a>
+</p>
+
+---
 
 ## 项目介绍
 
