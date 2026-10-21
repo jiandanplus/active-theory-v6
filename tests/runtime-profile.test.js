@@ -142,7 +142,11 @@ test('full adapter requires all audited classes including ES6 GLUIText',{skip:!r
     assert.throws(()=>profile.transformApp(code,config),{status:422});
   const required = profile.patches.filter(patch => !patch.id.startsWith('page.'));
   const optional = profile.patches.filter(patch => patch.id.startsWith('page.'));
-  assert.equal(required.length,61,'the original audited patch contract remains intact');
+  // Frozen independently from b31fae6:admin-server/engine/legacy-adapter.js
+  // patchContracts(); never regenerate expected contracts from the live rules.
+  const legacyContracts = require('./fixtures/legacy-patches.json');
+  assert.equal(legacyContracts.length,61);
+  assert.deepEqual(required,legacyContracts,'legacy IDs, order and anchor counts must match the audited baseline');
   const pageIds = [
     'page.hero-video','page.hero-poster','page.reel-video','page.lab-background',
     ...['home','join','about'].flatMap(name => ['text','glitch','a11y','url'].map(suffix => `page.contact-${name}-${suffix}`)),
