@@ -68,6 +68,7 @@ test("shared contract runs the same validation in CommonJS and browser without N
     fs.readFileSync(path.join(root, "shared/site-identity.js"), "utf8"),
     browser,
   );
+  vm.runInContext(fs.readFileSync(path.join(root, 'shared/page-content.js'), 'utf8'), browser);
   vm.runInContext(fs.readFileSync(file, "utf8"), browser);
   const schema = require("../admin-server/config").initialConfig(
     "/nonexistent",

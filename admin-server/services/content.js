@@ -1,5 +1,6 @@
 const { fail } = require("../security");
 const { normalizeConfig } = require("../../shared/site-identity");
+const { lockSchema, MEDIA_FIELDS } = require("../../shared/page-content");
 const { initialConfig, appFile, baseUIL } = require("../importers/disk");
 const { contentRepository } = require("../repositories/content");
 const { auditRepository } = require("../repositories/audit");
@@ -9,14 +10,21 @@ function assertRevision(draft, revision) {
   if (!draft || revision !== draft.revision)
     throw fail(409, "配置版本冲突，请刷新后重新编辑");
 }
-async function saveDraft(store, config, revision, actor = null) {
+async function saveDraft(
+  store,
+  config,
+  revision,
+  actor = null,
+  preserveFixed = false,
+) {
   config = structuredClone(config);
   return store.transaction(async (tx) => {
     const repo = contentRepository(tx);
     const draft = await repo.getDraft({ lock: true });
     assertRevision(draft, revision);
     const savedTemplate = await repo.getTemplate();
-    validateConfig(config, savedTemplate.schema);
+    if (preserveFixed) config = lockSchema(config, draft.config);
+    validateConfig(config, lockSchema(savedTemplate.schema, draft.config));
     // Freeze the media identities chosen by this save into the next snapshot.
     // The catalogue may contain unrelated rows; only selected media enters here.
     const resources = require("../repositories/resources").resourceRepository(
@@ -25,6 +33,7 @@ async function saveDraft(store, config, revision, actor = null) {
     const rows = await resources.list();
     const urls = [
       config.site.socialImage,
+      ...Object.keys(MEDIA_FIELDS).map((key) => config.site[key]),
       ...config.projects.flatMap((p) =>
         ["video", "image", "projectLogo"].flatMap((k) => [
           p[k]?.url,
@@ -50,17 +59,22 @@ async function saveDraft(store, config, revision, actor = null) {
       if (!row && /^https:\/\//.test(url)) {
         const resourceId =
           "external-" + require("../resource-catalog").digest(url).slice(0, 32);
-        const kind = config.songs.some((s) => s.src === url)
-          ? "audio"
-          : config.projects.some((p) => p.video?.url === url)
-            ? "video"
-            : config.scenes.some((s) =>
-                  s.fields.some(
-                    (f) => f.type === "geometry" && f.value === url,
-                  ),
-                )
-              ? "model"
-              : "image";
+        const pageKind = Object.entries(MEDIA_FIELDS).find(
+          ([key]) => config.site[key] === url,
+        )?.[1].kind;
+        const kind =
+          pageKind ||
+          (config.songs.some((s) => s.src === url)
+            ? "audio"
+            : config.projects.some((p) => p.video?.url === url)
+              ? "video"
+              : config.scenes.some((s) =>
+                    s.fields.some(
+                      (f) => f.type === "geometry" && f.value === url,
+                    ),
+                  )
+                ? "model"
+                : "image");
         row = await resources.insert({
           id: resourceId,
           source: "external",
@@ -83,6 +97,17 @@ async function saveDraft(store, config, revision, actor = null) {
       };
       savedTemplate.legacyMap[url] = slot;
     }
+    for (const [key, field] of Object.entries(MEDIA_FIELDS)) {
+      const url = config.site[key];
+      if (!url) continue;
+      const asset = resourceAsset(savedTemplate, url);
+      const row = rows.find((row) => row.id === asset?.resourceId);
+      if (!row || row.kind !== field.kind)
+        throw fail(
+          400,
+          `${field.label}资源类型须为${field.kind === "video" ? "视频" : "图片"}`,
+        );
+    }
     if (config.site.socialImage) {
       const asset = resourceAsset(savedTemplate, config.site.socialImage);
       if (
@@ -102,7 +127,10 @@ async function validatedDraft(store, revision, options) {
   const repo = contentRepository(store),
     draft = await repo.getDraft();
   assertRevision(draft, revision);
-  validateConfig(draft.config, (await repo.getTemplate()).schema);
+  validateConfig(
+    draft.config,
+    lockSchema((await repo.getTemplate()).schema, draft.config),
+  );
   const warnings = await require("../publication").validatePublication(
     store,
     options,
@@ -131,6 +159,7 @@ async function restore(store, id, revision, actor = null) {
     normalizeConfig(row.snapshot.config),
     revision,
     actor,
+    true,
   );
 }
 async function createPreview(

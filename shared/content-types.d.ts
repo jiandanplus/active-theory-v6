@@ -39,3 +39,26 @@ export interface ContentContract {
   ): T;
   validateConfig<T extends SiteContent>(config: T, schema: SiteContent): T;
 }
+export interface PageField {
+  label: string;
+  default: string;
+  kind?: "image" | "video";
+}
+export interface ContentResource {
+  id?: string;
+  source: string;
+  url: string;
+  path?: string;
+}
+export interface PageContentPolicy {
+  MEDIA_FIELDS: Readonly<Record<string, Readonly<PageField>>>;
+  TEXT_FIELDS: Readonly<Record<string, Readonly<PageField>>>;
+  LINK_FIELDS: Readonly<Record<string, Readonly<PageField>>>;
+  PAGE_KEYS: readonly string[];
+  isEditableSceneField(
+    scene: { id: string },
+    field: { key: string; type: string },
+  ): boolean;
+  lockSchema<T extends SiteContent>(schema: T, current: SiteContent): T;
+  isSystemResource(resource: ContentResource, config: SiteContent): boolean;
+}

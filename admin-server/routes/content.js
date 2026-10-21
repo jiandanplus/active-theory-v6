@@ -10,13 +10,15 @@ const { resourceRepository } = require("../repositories/resources");
 const { storageRepository } = require("../repositories/storages");
 const { auditRepository } = require("../repositories/audit");
 const { versionDeliverySummaries } = require("../delivery/admin-routes");
+const { lockSchema } = require("../../shared/page-content");
 
 function mountContentRoutes({ admin, store, options, deliveryService }) {
   admin.get(
     "/config/schema",
     route(async (req, res) => {
       const { schema } = await contentRepository(store).getTemplate();
-      res.json({ schema });
+      const draft = await contentRepository(store).getDraft();
+      res.json({ schema: lockSchema(schema, draft.config) });
     }),
   );
   admin.get(

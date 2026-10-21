@@ -1,22 +1,30 @@
 "use strict";
 
 /** @typedef {{validateIdentity: (site: import('./content-types').SiteContent['site']) => unknown}} IdentityContract */
-/** @typedef {{SiteIdentity: IdentityContract, SiteContentContract?: import('./content-types').ContentContract}} ContractGlobal */
+/** @typedef {{SiteIdentity: IdentityContract, SitePageContent: import('./content-types').PageContentPolicy, SiteContentContract?: import('./content-types').ContentContract}} ContractGlobal */
 /**
  * @param {ContractGlobal} root
- * @param {(identity: IdentityContract) => import('./content-types').ContentContract} factory
+ * @param {(identity: IdentityContract, page: import('./content-types').PageContentPolicy) => import('./content-types').ContentContract} factory
  */
 (function (root, factory) {
   const identityModule = "./site-identity";
   if (typeof module === "object" && module.exports)
-    module.exports = factory(require(identityModule));
-  else root.SiteContentContract = factory(root.SiteIdentity);
+    module.exports = factory(
+      require(identityModule),
+      require("./page-content"),
+    );
+  else
+    root.SiteContentContract = factory(root.SiteIdentity, root.SitePageContent);
 })(
   /** @type {ContractGlobal} */ (/** @type {unknown} */ (globalThis)),
-  /** @param {IdentityContract} identity */ function (identity) {
+  /** @param {IdentityContract} identity @param {import('./content-types').PageContentPolicy} page */ function (
+    identity,
+    page,
+  ) {
     "use strict";
     /** @import {SiteContent as ContentShape, SceneContent as SceneShape} from './content-types' */
     const { validateIdentity } = identity;
+    const { MEDIA_FIELDS, LINK_FIELDS, PAGE_KEYS, isEditableSceneField } = page;
     /** @param {number} status @param {string} message */
     const fail = (status, message) =>
       Object.assign(new Error(message), { status });
@@ -26,11 +34,19 @@
       if (!value && empty) return;
       if (value.length > 4096 || /[<>\x00-\x1f\\]/.test(value))
         throw fail(400, "资源地址包含无效字符");
+      let decoded;
+      try {
+        decoded = decodeURIComponent(value.split(/[?#]/)[0]);
+      } catch {
+        throw fail(400, "资源地址编码无效");
+      }
       if (
         /^(?:\/?assets\/|\/media\/|\/models\/|room\/|bush\.bin\/)/.test(
           value,
         ) &&
-        !value.split(/[/?#]/).includes("..")
+        !decoded.split("/").some((part) => part === "." || part === "..") &&
+        !/%(?:2f|5c|00)/i.test(value) &&
+        !/[\\\x00-\x1f]/.test(decoded)
       )
         return;
       let url;
@@ -51,6 +67,17 @@
       )
         throw fail(400, "文字内容不能包含 HTML 标签，且不能超过长度限制");
     }
+    /** @param {unknown} value */
+    function navigationURL(value) {
+      safeURL(value);
+      if (
+        value !== "" &&
+        (typeof value !== "string" ||
+          value.trim() !== value ||
+          !/^https:\/\//i.test(value))
+      )
+        throw fail(400, "跳转链接须使用 HTTPS");
+    }
     /** @template {ContentShape} T @param {T} config @param {ContentShape} schema @returns {T} */
     function validateContent(config, schema) {
       if (
@@ -62,19 +89,28 @@
         throw fail(400, "不支持的配置字段");
       if (
         !config.site ||
-        Object.keys(config.site).length !== Object.keys(schema.site).length ||
-        Object.keys(config.site).some((key) => !Object.hasOwn(schema.site, key))
+        typeof config.site !== "object" ||
+        Array.isArray(config.site) ||
+        Object.keys(schema.site).some(
+          (key) => !PAGE_KEYS.includes(key) && !Object.hasOwn(config.site, key),
+        ) ||
+        Object.keys(config.site).some(
+          (key) => !Object.hasOwn(schema.site, key) && !PAGE_KEYS.includes(key),
+        )
       )
         throw fail(400, "网站配置字段无效");
       validateIdentity(config.site);
       for (const [key, value] of Object.entries(config.site)) {
         if (key === "description" || key === "language") continue;
-        if (key === "socialImage") {
+        if (key === "socialImage" || Object.hasOwn(MEDIA_FIELDS, key)) {
           safeURL(value);
           continue;
         }
+        if (key === "labUrl" || Object.hasOwn(LINK_FIELDS, key)) {
+          navigationURL(value);
+          continue;
+        }
         plain(value, 1000);
-        if (key === "labUrl") safeURL(value);
       }
       if (
         config.site.emailLink &&
@@ -181,16 +217,9 @@
           )
             throw fail(400, "不支持的场景字段");
           seenFields.add(field.key);
-          if (field.type === "number") {
-            if (
-              typeof field.value !== "number" ||
-              !Number.isFinite(field.value) ||
-              field.value < 0 ||
-              field.value > (field.key.startsWith("__blackhole_") ? 3 : 10)
-            )
-              throw fail(400, "参数超出允许范围");
-            if (field.key === "__blackhole_size" && field.value < 0.2)
-              throw fail(400, "黑洞尺寸不能小于 0.2");
+          if (!isEditableSceneField(scene, field)) {
+            if (field.value !== base.value)
+              throw fail(400, "固定视觉参数不可修改");
           } else if (field.type === "text") plain(field.value);
           else if (field.value !== base.value) {
             safeURL(field.value, { empty: false });
