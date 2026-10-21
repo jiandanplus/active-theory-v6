@@ -1,4 +1,4 @@
-<h1 align="center">Personal Portfolio CMS</h1>
+<h1 align="center">Active Theory</h1>
 
 <h3 align="center">3D 个人主页与作品集管理系统</h3>
 
