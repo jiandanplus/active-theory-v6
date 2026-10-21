@@ -2,8 +2,9 @@ const { DatabaseSync } = require("node:sqlite");
 const fs = require("node:fs");
 const path = require("node:path");
 const { baseline, complete } = require("./bundle");
-const { validateConfig } = require("../config");
+const { validateConfig, safeURL } = require("../config");
 const {normalizeConfig} = require('../../shared/site-identity');
+const { lockSchema } = require('../../shared/page-content');
 const { decryptCredentials, localFile } = require("../storage");
 const { conflict, checksum } = require("../resource-catalog");
 const KEYS = new Set([
@@ -33,7 +34,32 @@ function validate(config, schema) {
         Object.keys(schema.site).map((k) => [k, config.site[k]]),
       ),
     };
-    validateConfig(ordered, schema);
+    // Explicit operator migration preserves historical visuals, unlike public
+    // draft saves. Validate their legacy value contract BEFORE locking the
+    // comparison baseline, so preservation cannot hide malformed/unsafe data.
+    for (const scene of ordered.scenes) {
+      const original = schema.scenes.find((item) => item.id === scene.id);
+      for (const field of scene.fields) {
+        const base = original?.fields.find((item) => item.key === field.key);
+        if (field.type === "number") {
+          if (
+            typeof field.value !== "number" ||
+            !Number.isFinite(field.value) ||
+            field.value < 0 ||
+            field.value > (field.key.startsWith("__blackhole_") ? 3 : 10) ||
+            (field.key === "__blackhole_size" && field.value < 0.2)
+          ) throw Error();
+        } else if (["resource", "geometry"].includes(field.type)) {
+          if (typeof field.value !== "string") throw Error();
+          if (field.value !== base?.value) {
+            safeURL(field.value, { empty: false });
+            if (field.type === "geometry" && !/\.bin(?:[?#]|$)|^\/media\//.test(field.value))
+              throw Error();
+          }
+        } else if (field.type !== "text") throw Error();
+      }
+    }
+    validateConfig(ordered, lockSchema(schema, ordered));
   } catch {
     throw conflict("Invalid legacy configuration or schema");
   }

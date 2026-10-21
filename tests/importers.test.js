@@ -26,6 +26,60 @@ const sourceHashes = (root) =>
       }),
   );
 
+test("trusted legacy import preserves varied fixed visuals across draft and history", async (t) => {
+  const f = importFixture(t);
+  const db = new DatabaseSync(f.legacyPath);
+  const base = structuredClone(f.config);
+  base.scenes[0].fields.push(
+    { key: "Home/uBrightness", label: "Brightness", type: "number", value: 1 },
+    { key: "Home_texture", label: "Texture", type: "resource", value: "assets/images/image.png" },
+  );
+  const draft = structuredClone(base), historical = structuredClone(base);
+  draft.scenes[0].fields[0].value = "assets/geometry/draft.bin";
+  draft.scenes[0].fields[1].value = 2;
+  draft.scenes[0].fields[2].value = "https://legacy.invalid/draft.png";
+  historical.scenes[0].fields[0].value = "assets/geometry/history.bin";
+  historical.scenes[0].fields[1].value = 0.5;
+  historical.scenes[0].fields[2].value = "https://legacy.invalid/history.png";
+  try {
+    for (const [key, value] of [["schema", base], ["draft", draft]])
+      db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(value), key);
+    db.prepare("UPDATE versions SET config=?").run(JSON.stringify(historical));
+  } finally { db.close(); }
+  const before = sourceHashes(f.root), bundle = await readLegacy(f);
+  assert.deepEqual(bundle.draft.config.scenes, draft.scenes);
+  assert(bundle.versions.every(v => JSON.stringify(v.snapshot.config.scenes) === JSON.stringify(historical.scenes)));
+  assert.deepEqual(sourceHashes(f.root), before);
+});
+
+test("legacy visual preservation still rejects invalid field shapes, types and unsafe URLs", async (t) => {
+  const cases = [
+    ["unsafe scheme", config => { config.scenes[0].fields[0].value = "javascript:alert(1)"; }],
+    ["encoded traversal", config => { config.scenes[0].fields[0].value = "assets/%2e%2e/private.bin"; }],
+    ["unconverted geometry", config => { config.scenes[0].fields[0].value = "https://legacy.invalid/model.glb"; }],
+    ["nonstring geometry", config => { config.scenes[0].fields[0].value = 42; }],
+    ["changed type", config => { config.scenes[0].fields[0].type = "resource"; }],
+    ["extra field property", config => { config.scenes[0].fields[0].unexpected = true; }],
+    ["nonnumber parameter", config => { config.scenes[0].fields[1].value = "2"; }],
+    ["parameter above legacy range", config => { config.scenes[0].fields[1].value = 11; }],
+    ["negative parameter", config => { config.scenes[0].fields[1].value = -1; }],
+  ];
+  for (const target of ["draft", "version"])
+    for (const [name, mutate] of cases) await t.test(`${target}: ${name}`, async t => {
+    const f = importFixture(t), db = new DatabaseSync(f.legacyPath);
+    const schema = structuredClone(f.config);
+    schema.scenes[0].fields.push({ key: "Home/uBrightness", label: "Brightness", type: "number", value: 1 });
+    const config = structuredClone(schema);
+    mutate(config);
+    try {
+      db.prepare("UPDATE settings SET value=? WHERE key='schema'").run(JSON.stringify(schema));
+      db.prepare("UPDATE settings SET value=? WHERE key='draft'").run(JSON.stringify(target === "draft" ? config : schema));
+      db.prepare("UPDATE versions SET config=?").run(JSON.stringify(target === "version" ? config : schema));
+    } finally { db.close(); }
+    await assert.rejects(readLegacy(f), { status: 409 });
+  });
+});
+
 test('legacy historical-only site image is inventoried without draft grants or source mutation',async t=>{
   const f=importFixture(t), url='https://historical.invalid/share.png';
   const db=new DatabaseSync(f.legacyPath);

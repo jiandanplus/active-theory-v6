@@ -13,10 +13,10 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
   const f = await httpFixture(t, { installed: false, serviceFactory });
   const bundle = structuredClone(f.bundle);
   bundle.admin = null;
-  bundle.schema.scenes[0].fields[0].type = "geometry";
-  bundle.draft.config.scenes[0].fields[0].type = "geometry";
-  for (const version of bundle.versions)
-    version.snapshot.config.scenes[0].fields[0].type = "geometry";
+  const geometryKey = "INPUT_Config_8_ParticleTest_geometry";
+  for (const config of [bundle.schema, bundle.draft.config, ...bundle.versions.map(v => v.snapshot.config)]) {
+    config.scenes[0].fields.push({key:geometryKey, type:"geometry", value:"/media/image"});
+  }
   await f.store.transaction(async (tx) => {
     await require("../admin-server/repositories/content")
       .contentRepository(tx)
@@ -103,8 +103,15 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
   );
   assert.equal((await fetch(base + resource.url)).status, 404);
   const { config, revision } = await api("/config", undefined, "GET");
+  const forbidden = structuredClone(config);
+  forbidden.scenes[0].fields[0].value = resource.url;
+  const rejected = await fetch(base + "/api/admin/config", {
+    method:"PUT", headers, body:JSON.stringify({config:forbidden, revision}),
+  });
+  assert.equal(rejected.status,400);
+  assert.match((await rejected.json()).error,/固定视觉参数不可修改/);
   config.site.title = "Published title";
-  config.scenes[0].fields[0].value = resource.url;
+  config.scenes[0].fields.find(field => field.key===geometryKey).value = resource.url;
   const saved = await api("/config", { config, revision }, "PUT");
   assert.match(
     await (await fetch(base + "/")).text(),
@@ -120,7 +127,7 @@ test("HTTP workflow keeps drafts private and publishes uploaded converted models
   const uil = await (
     await fetch(base + `/api/site/${published.version}/uil.json`)
   ).json();
-  const url = uil.image.src;
+  const url = uil[geometryKey].src;
   assert.match(
     url,
     new RegExp(

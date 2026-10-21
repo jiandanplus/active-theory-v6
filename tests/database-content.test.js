@@ -222,19 +222,42 @@ test("external query revisions and simultaneous signed URLs retain exact publish
   assert.equal(original.headers.get("location"), urls[0]);
 });
 test("publishing a canonical local alias with query uses the registered resource", async (t) => {
-  const f = await require('./helpers/delivery').deliveryFixture(t);
+  const runtime = require('./helpers/runtime').testRuntime(t);
+  const serviceFactory = ({store, options}) => require('../admin-server/delivery/service').createDeliveryService({store, options, registry:runtime.registry});
+  const f = await httpFixture(t, {installed:false, serviceFactory});
+  const bundle = structuredClone(f.bundle);
+  const geometryKey = "INPUT_Config_8_ParticleTest_geometry";
+  bundle.admin = null;
+  for (const config of [bundle.schema, bundle.draft.config, ...bundle.versions.map(v => v.snapshot.config)])
+    config.scenes[0].fields.push({key:geometryKey, type:"geometry", value:"/media/image"});
+  const modelPath = "assets/geometry/local.bin";
+  fs.mkdirSync(path.join(f.root, "assets/geometry"));
+  fs.writeFileSync(path.join(f.root, modelPath), "fixture-model-bytes");
+  bundle.resources.push({id:"local-model", source:"bundled", url:"/media/local-model", name:"local.bin", kind:"model", status:"ready", path:modelPath, created:"2026-01-01T00:00:00.000Z"});
+  bundle.draft.assets.model = {resourceId:"local-model", fileName:"local.bin"};
+  bundle.draft.legacyMap[modelPath] = "model";
+  await f.store.transaction(async tx => {
+    await contentRepository(tx).importBundle(bundle);
+    await tx.query("INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',$1)", [require('../admin-server/migrations').currentSchemaVersion]);
+  });
+  await f.createAdmin();
+  await f.login();
+  const actor = (await f.store.query('SELECT id,username FROM personal_site.sessions')).rows[0];
+  const service = f.app.locals.deliveryService;
+  const registered = await service.register({root:runtime.root, manifest:runtime.manifest, actor});
+  await service.select({digest:registered.digest, expectedGeneration:0, actor});
   const { saveDraft, publish } = require("../admin-server/config");
   const draft = await contentRepository(f.store).getDraft();
-  draft.config.scenes[0].fields[0].value = "/assets/font.png?cache=2";
+  draft.config.scenes[0].fields.find(field => field.key===geometryKey).value = "/assets/geometry/local.bin?cache=2";
   const revision = await saveDraft(f.store, draft.config, draft.revision);
   const version = await publish(f.store, revision, {
     root: f.root,
     dataDir: path.join(f.root, "data"),
-  }, f.actor, {deliveryService:f.service});
+  }, actor, {deliveryService:service});
   const config = await (await f.request(`/api/site/${version}/config`)).json();
   assert.equal(
-    config.scenes[0].fields[0].value,
-    `/api/site/${version}/resources/font/font.png?cache=2`,
+    config.scenes[0].fields.find(field => field.key===geometryKey).value,
+    `/api/site/${version}/resources/local-model/local.bin?cache=2`,
   );
 });
 test("expired preview and another owner cannot authorize resource bytes", async (t) => {

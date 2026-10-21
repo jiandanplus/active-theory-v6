@@ -140,7 +140,20 @@ test('full adapter requires all audited classes including ES6 GLUIText',{skip:!r
   }
   for(const code of [source.replace('class GLUIText {','class MissingText {'),source+' class GLUIText {}'])
     assert.throws(()=>profile.transformApp(code,config),{status:422});
-  assert.equal(profile.patches.length,61);
+  const required = profile.patches.filter(patch => !patch.id.startsWith('page.'));
+  const optional = profile.patches.filter(patch => patch.id.startsWith('page.'));
+  assert.equal(required.length,61,'the original audited patch contract remains intact');
+  const pageIds = [
+    'page.hero-video','page.hero-poster','page.reel-video','page.lab-background',
+    ...['home','join','about'].flatMap(name => ['text','glitch','a11y','url'].map(suffix => `page.contact-${name}-${suffix}`)),
+    ...['instagram','linkedin','x'].flatMap(name => ['url','name','icon'].map(suffix => `page.social-${name}-${suffix}`)),
+    ...['text','container','lookup','blending','image'].map(suffix => `page.qr-${suffix}`),
+  ];
+  assert.deepEqual(optional.map(patch => patch.id),pageIds);
+  assert(optional.every(patch => patch.expected===1));
+  const report = profile.transformApp(source,config).report;
+  assert.deepEqual(report.filter(patch => patch.id.startsWith('page.')),pageIds.map(id => ({id,status:'not-applicable'})));
+  assert.equal(new Set(profile.patches.map(patch => patch.id)).size,91);
 });
 
 test('actual transformed wrapper locators and Thread ingestion work in independent realms',{skip:!root},async()=>{
