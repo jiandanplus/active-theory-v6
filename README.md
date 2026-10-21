@@ -30,6 +30,16 @@
 
 [访问在线演示：agi.drawbookai.cn](https://agi.drawbookai.cn/)
 
+### 页面效果
+
+以下截图来自在线 Demo，展示定制后的前台效果；仓库和默认镜像不包含画面中的完整原站 3D 素材。
+
+| 首页 · 3D Logo 与粒子 | 作品集 · 立体卡片 |
+| :---: | :---: |
+| ![首页的反射材质 3D Logo 与粒子场景](docs/screenshots/home.webp) | ![作品集的 3D 卡片与空间展示](docs/screenshots/work.webp) |
+| **黑洞 · 罐体场景** | **展示屏 · 蜂巢光影** |
+| ![罐体中的黑洞、吸积盘与反射场景](docs/screenshots/black-hole.webp) | ![下方展示屏的蜂巢结构与彩色光影](docs/screenshots/lab.webp) |
+
 ## 一条命令启动
 
 需要 Node.js 24+ 和 Docker Compose v2，并确保 Docker 已启动。

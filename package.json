@@ -4,9 +4,6 @@
   "description": "Self-hosted personal portfolio CMS with traceable PostgreSQL publishing",
   "main": "server.js",
   "scripts": {
-    "download:core": "node tools/legacy/download-core.js",
-    "download:assets": "node tools/legacy/download-assets.js",
-    "download:cms": "node tools/legacy/download-cms.js",
     "dev": "node server.js",
     "start": "node server.js",
     "test": "node scripts/test-postgres.js",
@@ -46,7 +43,6 @@
     "busboy": "^1.6.0",
     "draco3d": "^1.5.7",
     "express": "^4.19.2",
-    "express-http-proxy": "^2.0.0",
     "file-type": "^22.1.1",
     "pg": "^8.23.1"
   }

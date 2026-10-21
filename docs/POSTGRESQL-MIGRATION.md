@@ -1,6 +1,6 @@
 # PostgreSQL 18 部署、升级与旧站切换
 
-这是操作指南，不是对任何真实实例已迁移的声明。2026-10-13 的隔离验收与已知边界见 [实际验证记录](verification/postgresql-installation.md)。将代码推送到 GitHub 不会初始化数据库、重启当前服务或完成生产切换。
+这是操作指南，不是对任何真实实例已迁移的声明。将代码推送到 GitHub 不会初始化数据库、重启当前服务或完成生产切换；生产部署请同时参阅 [生产部署指南](PRODUCTION.md)。
 
 ## 从哪里开始
 
@@ -94,7 +94,7 @@ docker compose --env-file .env.external -p personal-site -f compose.external.yam
 
 ## 显式升级
 
-`npm run db:migrate` 支持已安装数据库结构 1/2→3。它使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹和迁移 checksum，再顺序迁移；结构 3 重复运行是验证式 no-op。001/002 均不可修改。历史阶段 A 的 1→2 证据见[站点身份验证](verification/site-identity-upgrade.md)，本轮见[阶段 B 验证](verification/engine-delivery.md)，均不代表真实站点已升级。
+`npm run db:migrate` 支持已安装数据库结构 1/2→3。它使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹和迁移 checksum，再顺序迁移；结构 3 重复运行是验证式 no-op。001/002 均不可修改。升级完成后仍需在目标实例验证账号、历史版本、资源和页面读取。
 
 ### 从结构 1/2 升级到 3
 

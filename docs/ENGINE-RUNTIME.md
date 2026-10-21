@@ -114,4 +114,4 @@ npm run delivery:audit
 - HTTP 200、WASM 编译或 Worker 请求成功不等于实际模型解码/六场景视觉保真。原视觉需同素材基线/候选截图与网络/GPU 检查。
 - S3 签名 URL、外链公网可读性/CORS、真实 CDN/生产 HTTPS 必须在授权目标另验，本地协议测试不能替代。
 
-本轮执行证据及未验证项见[交付验证记录](verification/engine-delivery.md)。阶段 C/D、生产部署、全量媒体归档、云产物库及自动 GC 不在本轮实施范围。
+生产环境部署与检查步骤见 [生产部署指南](PRODUCTION.md)，日常备份与恢复见 [部署、升级与恢复](../DEPLOYMENT.md)。全量媒体归档、云产物库及自动 GC 不能由运行包登记自动完成。
