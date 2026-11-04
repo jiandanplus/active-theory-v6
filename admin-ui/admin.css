@@ -763,3 +763,33 @@ code {
     display: none;
   }
 }
+.project-item {
+  position: relative;
+}
+.project-move {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.project-move button {
+  padding: 4px 10px;
+  font-size: 12px;
+}
+.project-item > details > summary {
+  padding-right: 210px;
+}
+@media (max-width: 700px) {
+  .project-move {
+    position: static;
+    justify-content: flex-end;
+    margin: 4px 0;
+  }
+  .project-item > details > summary {
+    padding-right: 0;
+  }
+}

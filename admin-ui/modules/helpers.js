@@ -55,3 +55,38 @@ export function resourcePreviewURL(resource) {
     ? "/media/" + encodeURIComponent(resource.id)
     : resource.url;
 }
+
+// Project order on the site: higher `priority` first (0–100); equal values
+// keep their stored order. The admin list shows exactly this order.
+const priorityOf = (project) =>
+  Number.isFinite(project.priority) ? project.priority : 0;
+export function projectsByPriority(projects) {
+  return projects
+    .map((project, index) => ({ project, index }))
+    .sort(
+      (a, b) =>
+        priorityOf(b.project) - priorityOf(a.project) || a.index - b.index,
+    )
+    .map(({ project }) => project);
+}
+// Priority for a new project so it is listed first.
+export function topPriority(projects) {
+  return Math.min(100, Math.max(-1, ...projects.map(priorityOf)) + 1);
+}
+// Move one place up (delta -1) or down (+1) in site order. The array is
+// rewritten in that order and priorities become strictly descending, so the
+// original runtime (sorted by priority) and array-order renderers agree.
+// Returns false when the project is already at that end.
+export function moveProject(projects, project, delta) {
+  const order = projectsByPriority(projects);
+  const from = order.indexOf(project),
+    to = from + delta;
+  if (from < 0 || to < 0 || to >= order.length) return false;
+  [order[from], order[to]] = [order[to], order[from]];
+  const top = Math.min(100, order.length - 1);
+  order.forEach((item, rank) => {
+    item.priority = Math.max(0, top - rank);
+  });
+  projects.splice(0, projects.length, ...order);
+  return true;
+}

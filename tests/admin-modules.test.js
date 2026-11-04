@@ -1291,3 +1291,98 @@ test("editing a field updates in place without redrawing the view", async () => 
   assert.equal(f.app.state.config.projects[1].name, "renamed");
   assert.equal(f.app.state.dirty, true);
 });
+test("project order follows priority, highest first, and moves keep it strict", () => {
+  const {
+    projectsByPriority,
+    moveProject,
+    topPriority,
+  } = require("../admin-ui/modules/helpers.js");
+  const make = (slug, priority) => ({ slug, priority });
+  // Ties keep stored order; a missing priority counts as 0.
+  const projects = [make("a", 5), make("b", 8), make("c", 5), { slug: "d" }];
+  assert.deepEqual(
+    projectsByPriority(projects).map((p) => p.slug),
+    ["b", "a", "c", "d"],
+  );
+  assert.equal(topPriority(projects), 9);
+  assert.equal(topPriority([make("x", 100)]), 100);
+  assert.equal(topPriority([]), 0);
+  // Moving "c" up swaps it with "a" and rewrites array and priorities.
+  assert.equal(moveProject(projects, projects[2], -1), true);
+  assert.deepEqual(
+    projects.map((p) => [p.slug, p.priority]),
+    [
+      ["b", 3],
+      ["c", 2],
+      ["a", 1],
+      ["d", 0],
+    ],
+  );
+  assert.equal(moveProject(projects, projects[0], -1), false, "already first");
+  assert.equal(moveProject(projects, projects[3], 1), false, "already last");
+  // Large lists stay inside the 0–100 contract.
+  const many = Array.from({ length: 120 }, (_, i) => make("p" + i, 0));
+  moveProject(many, many[5], -1);
+  assert.ok(many.every((p) => p.priority >= 0 && p.priority <= 100));
+  assert.equal(many[0].priority, 100);
+  assert.deepEqual(
+    many.slice(0, 7).map((p) => p.slug),
+    ["p0", "p1", "p2", "p3", "p5", "p4", "p6"],
+  );
+});
+test("move buttons reorder cards by priority and keep keyboard focus", async () => {
+  const f = await lifecycleAdmin();
+  const make = (id, priority) => ({
+    ...require("../admin-ui/modules/helpers.js").newProject(id),
+    id,
+    slug: id,
+    name: id,
+    priority,
+  });
+  // Stored order differs from site order on purpose.
+  f.app.state.config.projects = [
+    make("low", 1),
+    make("high", 9),
+    make("mid", 5),
+  ];
+  await f.navigate("projects");
+  const titles = () =>
+    f
+      .walk()
+      .filter((element) => element.tagName === "DETAILS")
+      .map((card) => card.children[0].textContent);
+  assert.deepEqual(titles(), ["high", "mid", "low"]);
+  const button = (label) =>
+    f.walk().find((element) => element.attributes?.["aria-label"] === label);
+  assert.equal(button("上移「high」").disabled, true);
+  assert.equal(button("下移「low」").disabled, true);
+  await button("上移「low」").dispatch("click");
+  assert.deepEqual(titles(), ["high", "low", "mid"]);
+  assert.equal(f.document.activeElement, button("上移「low」"));
+  assert.deepEqual(
+    f.app.state.config.projects.map((p) => [p.id, p.priority]),
+    [
+      ["high", 2],
+      ["low", 1],
+      ["mid", 0],
+    ],
+  );
+  assert.equal(f.app.state.dirty, true);
+  // Moving to the top disables 上移; focus stays on the card via 下移.
+  await button("上移「low」").dispatch("click");
+  assert.deepEqual(titles(), ["low", "high", "mid"]);
+  assert.equal(button("上移「low」").disabled, true);
+  assert.equal(f.document.activeElement, button("下移「low」"));
+  await button("下移「low」").dispatch("click");
+  assert.deepEqual(titles(), ["high", "low", "mid"]);
+  await f
+    .walk()
+    .find((element) => element.textContent === "＋ 新建作品")
+    .dispatch("click");
+  assert.equal(titles()[0], "新作品");
+  assert.equal(f.app.state.config.projects[0].priority, 3);
+  const search = f.walk().find((element) => element.type === "search");
+  search.value = "mid";
+  await search.dispatch("input");
+  assert.equal(button("上移「mid」").disabled, true, "no moves while filtered");
+});
