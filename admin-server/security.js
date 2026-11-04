@@ -1,6 +1,17 @@
 const crypto = require("node:crypto");
-const { promisify } = require("node:util");
-const scrypt = promisify(crypto.scrypt);
+/**
+ * @param {string} password
+ * @param {string} salt
+ * @param {number} length
+ * @param {import("node:crypto").ScryptOptions} options
+ * @returns {Promise<Buffer>}
+ */
+const scrypt = (password, salt, length, options) =>
+  new Promise((resolve, reject) =>
+    crypto.scrypt(password, salt, length, options, (error, key) =>
+      error ? reject(error) : resolve(key),
+    ),
+  );
 const { route } = require("./http");
 const { authRepository } = require("./repositories/auth");
 const { auditRepository } = require("./repositories/audit");
@@ -86,6 +97,15 @@ async function createAccount(
     );
   });
 }
+const { PUBLIC_PAGE } = require("./middleware/request-policy");
+function sessionFree(req) {
+  if (Object.hasOwn(req.query || {}, "preview")) return false;
+  return (
+    PUBLIC_PAGE.test(req.path) ||
+    /^\/api\/site\/[1-9][0-9]*\//.test(req.path) ||
+    /^\/(?:assets|room|bush\.bin)\//i.test(req.path)
+  );
+}
 function mountAuth(app, store, options) {
   const cookieName = options.production ? "__Host-site_admin" : "site_admin";
   const cookieOptions = {
@@ -104,6 +124,9 @@ function mountAuth(app, store, options) {
   }
   app.use(
     route(async (req, res, next) => {
+      // Published pages, versioned program files and legacy media aliases only
+      // consult the session to authorize previews; skip the lookup otherwise.
+      if (sessionFree(req)) return next();
       const cookies = (req.headers.cookie || "")
         .split(";")
         .map((v) => v.trim().split("="));

@@ -1,6 +1,11 @@
 const { createHash } = require("node:crypto");
-const {migrations,currentSchemaVersion,checksum,schemaSignature} = require('./migration-registry');
-const {validateIdentity} = require('../shared/site-identity');
+const {
+  migrations,
+  currentSchemaVersion,
+  checksum,
+  schemaSignature,
+} = require("./migration-registry");
+const { validateIdentity } = require("../shared/site-identity");
 const digest = (value) => createHash("sha256").update(value).digest("hex");
 
 // Catalog definitions, not row data or object OIDs, detect structural drift.
@@ -41,25 +46,40 @@ async function supportedPostgresVersion(store) {
 }
 
 function knownPrefix(rows) {
-  return rows.length > 0 && rows.length <= migrations.length && rows.every((row,index)=>
-    row.version===migrations[index].version && row.checksum===migrations[index].checksum);
-}
-async function inspectInstallation(store,{verifyStructure=true}={}) {
-  if (store.configured === false) return {state:'unconfigured',schemaVersion:null};
-  if (!(await supportedPostgresVersion(store)))
-    return { state: "incompatible", schemaVersion: null };
-  const exists = (
-    await store.query(
-      "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
+  return (
+    rows.length > 0 &&
+    rows.length <= migrations.length &&
+    rows.every(
+      (row, index) =>
+        row.version === migrations[index].version &&
+        row.checksum === migrations[index].checksum,
     )
-  ).rows[0].present;
-  if (!exists) return { state: "uninstalled", schemaVersion: null };
+  );
+}
+async function inspectInstallation(store, { verifyStructure = true } = {}) {
+  if (store.configured === false)
+    return { state: "unconfigured", schemaVersion: null };
+  // One round trip for both probes; this runs on every public request.
+  const probe = (
+    await store.query(
+      "SELECT current_setting('server_version_num')::int AS server_version, EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
+    )
+  ).rows[0];
+  if (!(probe.server_version >= 180000 && probe.server_version < 190000))
+    return { state: "incompatible", schemaVersion: null };
+  if (!probe.present) return { state: "uninstalled", schemaVersion: null };
   // Check catalog before reading tables: missing tables are incompatible here,
   // while the lightweight request guard still lets query failures propagate.
   let catalogSignature;
   if (verifyStructure) {
-    catalogSignature = digest(JSON.stringify((await store.query(signatureQuery)).rows));
-    if (!migrations.some(migration=>migration.schemaSignature===catalogSignature))
+    catalogSignature = digest(
+      JSON.stringify((await store.query(signatureQuery)).rows),
+    );
+    if (
+      !migrations.some(
+        (migration) => migration.schemaSignature === catalogSignature,
+      )
+    )
       return { state: "incompatible", schemaVersion: null };
   }
   const versions = (
@@ -70,14 +90,27 @@ async function inspectInstallation(store,{verifyStructure=true}={}) {
   if (!knownPrefix(versions))
     return { state: "incompatible", schemaVersion: null };
   const schemaVersion = versions.at(-1).version;
-  if (verifyStructure && catalogSignature !== migrations[schemaVersion-1].schemaSignature)
+  if (
+    verifyStructure &&
+    catalogSignature !== migrations[schemaVersion - 1].schemaSignature
+  )
     return { state: "incompatible", schemaVersion: null };
   const rows = (
     await store.query("SELECT schema_version FROM personal_site.installation")
   ).rows;
-  if (rows.length > 1 || rows.some(row=>row.schema_version !== schemaVersion))
+  if (
+    rows.length > 1 ||
+    rows.some((row) => row.schema_version !== schemaVersion)
+  )
     return { state: "incompatible", schemaVersion };
-  return { state: !rows.length ? "uninstalled" : schemaVersion < currentSchemaVersion ? "upgrade_required" : "installed", schemaVersion };
+  return {
+    state: !rows.length
+      ? "uninstalled"
+      : schemaVersion < currentSchemaVersion
+        ? "upgrade_required"
+        : "installed",
+    schemaVersion,
+  };
 }
 async function migrate(tx) {
   await tx.query("SELECT pg_advisory_xact_lock($1)", [734216901]);
@@ -86,17 +119,32 @@ async function migrate(tx) {
       status: 503,
     });
   const state = await inspectInstallation(tx);
-  if (!['uninstalled','upgrade_required','installed'].includes(state.state))
+  if (!["uninstalled", "upgrade_required", "installed"].includes(state.state))
     throw new Error("Incompatible personal_site schema");
-  for (const migration of migrations.filter(m=>m.version>(state.schemaVersion||0))) {
+  for (const migration of migrations.filter(
+    (m) => m.version > (state.schemaVersion || 0),
+  )) {
     await tx.query(migration.sql);
-    await tx.query('INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)',[migration.version,migration.checksum]);
-    await tx.query('UPDATE personal_site.installation SET schema_version=$1',[migration.version]);
+    await tx.query(
+      "INSERT INTO personal_site.schema_migrations(version,checksum) VALUES($1,$2)",
+      [migration.version, migration.checksum],
+    );
+    await tx.query("UPDATE personal_site.installation SET schema_version=$1", [
+      migration.version,
+    ]);
     const after = await inspectInstallation(tx);
-    if (after.state==='incompatible' || after.schemaVersion!==migration.version) throw Error('Migration validation failed');
+    if (
+      after.state === "incompatible" ||
+      after.schemaVersion !== migration.version
+    )
+      throw Error("Migration validation failed");
   }
-  const identities=(await tx.query("SELECT site FROM personal_site.site_settings UNION ALL SELECT schema_config->'site' AS site FROM personal_site.templates")).rows;
-  for(const row of identities) validateIdentity(row.site);
+  const identities = (
+    await tx.query(
+      "SELECT site FROM personal_site.site_settings UNION ALL SELECT schema_config->'site' AS site FROM personal_site.templates",
+    )
+  ).rows;
+  for (const row of identities) validateIdentity(row.site);
 }
 module.exports = {
   migrate,

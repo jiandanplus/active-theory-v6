@@ -10,21 +10,17 @@ function mountResourceRoutes({ admin, store, options }) {
   admin.post(
     "/resources/link",
     route(async (req, res) =>
-      res
-        .status(201)
-        .json({
-          resource: await service.link(req.body, req.adminSession.username),
-        }),
+      res.status(201).json({
+        resource: await service.link(req.body, req.adminSession.username),
+      }),
     ),
   );
   admin.post(
     "/resources/upload",
     route(async (req, res) =>
-      res
-        .status(201)
-        .json({
-          resource: await service.upload(req, req.adminSession.username),
-        }),
+      res.status(201).json({
+        resource: await service.upload(req, req.adminSession.username),
+      }),
     ),
   );
   admin.patch(

@@ -82,7 +82,7 @@ async function convert(source, { size = 0.8 } = {}) {
     "模型尺寸应在 0.1–5 之间",
   );
   let document, binary;
-  for (let at = 12; at < source.length; ) {
+  for (let at = 12; at < source.length;) {
     assert(at + 8 <= source.length, "GLB 分块损坏");
     const length = source.readUInt32LE(at),
       type = source.readUInt32LE(at + 4);

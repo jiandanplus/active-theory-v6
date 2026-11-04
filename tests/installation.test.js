@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const { postgresFixture } = require("./helpers/postgres");
 const { contentFixture } = require("./helpers/content");
 const { openPostgres } = require("../admin-server/postgres");
-const {currentSchemaVersion} = require('../admin-server/migrations');
+const { currentSchemaVersion } = require("../admin-server/migrations");
 const input = (bundle) => ({
   bundle,
   mode: "bundle",
@@ -62,10 +62,21 @@ test("legacy staged bytes affect fresh setup digest and survive actual HTTP deli
   );
   fs.writeFileSync(file, "converted-logo-bytes");
   assert.equal((await install((await check()).digest)).status, 201);
-  assert.deepEqual(await require('../admin-server/installation').installationStatus(store),
-    {state:'installed',schemaVersion:currentSchemaVersion});
-  assert.deepEqual((await store.query('SELECT version_id,mode,artifact_digest FROM personal_site.delivery_bindings ORDER BY version_id')).rows,
-    [{version_id:'41',mode:'legacy',artifact_digest:null},{version_id:'42',mode:'legacy',artifact_digest:null}]);
+  assert.deepEqual(
+    await require("../admin-server/installation").installationStatus(store),
+    { state: "installed", schemaVersion: currentSchemaVersion },
+  );
+  assert.deepEqual(
+    (
+      await store.query(
+        "SELECT version_id,mode,artifact_digest FROM personal_site.delivery_bindings ORDER BY version_id",
+      )
+    ).rows,
+    [
+      { version_id: "41", mode: "legacy", artifact_digest: null },
+      { version_id: "42", mode: "legacy", artifact_digest: null },
+    ],
+  );
   for (const restarted of [false, true]) {
     if (restarted) await f.restart();
     for (const [id, name, bytes] of [

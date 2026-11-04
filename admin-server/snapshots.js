@@ -1,8 +1,10 @@
-const {normalizeSite} = require('../shared/site-identity');
-const {PAGE_KEYS, MEDIA_FIELDS} = require('../shared/page-content');
+const { normalizeSite } = require("../shared/site-identity");
+const { PAGE_KEYS, MEDIA_FIELDS } = require("../shared/page-content");
 const SITE_KEYS = [
   ...PAGE_KEYS,
-  "description", "language", "socialImage",
+  "description",
+  "language",
+  "socialImage",
   "title",
   "navWork",
   "navContact",
@@ -16,7 +18,13 @@ const SITE_KEYS = [
 ];
 // Deleted means SceneLayout skips construction; invisible layers still load.
 // Explicit dormant layouts come from the checked-in runtime scene manifest.
-function inactiveUIL(template, key, policy = {inactiveLayouts: require('./engine-assets.json').inactiveLayouts || []}) {
+function inactiveUIL(
+  template,
+  key,
+  policy = {
+    inactiveLayouts: require("./engine-assets.json").inactiveLayouts || [],
+  },
+) {
   const match = /(?:Config|Element)_(\d+)_([A-Za-z][A-Za-z0-9]*)/.exec(key);
   if (!match) return false;
   const [, index, scene] = match;
@@ -164,9 +172,10 @@ function collectReferences(snapshot, policy) {
     }
   };
   if (snapshot.config.site?.socialImage)
-    resolve(snapshot.config.site.socialImage, 'config.site.socialImage');
+    resolve(snapshot.config.site.socialImage, "config.site.socialImage");
   for (const key of Object.keys(MEDIA_FIELDS))
-    if (snapshot.config.site?.[key]) resolve(snapshot.config.site[key], `config.site.${key}`);
+    if (snapshot.config.site?.[key])
+      resolve(snapshot.config.site[key], `config.site.${key}`);
   const walk = (value, slot) => {
     if (typeof value === "string") resolve(value, slot);
     else if (value && typeof value === "object")
@@ -215,7 +224,9 @@ function collectReferences(snapshot, policy) {
   delete template.readiness;
   delete template.fontCoverage;
   walk(template, "template");
-  return require('./delivery/contracts').normalizeReferences([...result.values()]);
+  return require("./delivery/contracts").normalizeReferences([
+    ...result.values(),
+  ]);
 }
 function publicSnapshot(snapshot, versionId) {
   const { config } = snapshot;
@@ -245,7 +256,7 @@ function publicSnapshot(snapshot, versionId) {
       ),
     })),
     scenes: config.scenes.map((s) => ({
-      ...pick(s, ['id', 'label']),
+      ...pick(s, ["id", "label"]),
       fields: s.fields.map((f) => pick(f, ["key", "label", "type", "value"])),
     })),
     songs: config.songs.map((s) => pick(s, ["title", "src"])),
@@ -253,7 +264,8 @@ function publicSnapshot(snapshot, versionId) {
   const media = (value) => mapResourceURL(snapshot, versionId, value);
   publicConfig.site.socialImage = media(publicConfig.site.socialImage);
   for (const key of Object.keys(MEDIA_FIELDS))
-    if (Object.hasOwn(publicConfig.site, key)) publicConfig.site[key] = media(publicConfig.site[key]);
+    if (Object.hasOwn(publicConfig.site, key))
+      publicConfig.site[key] = media(publicConfig.site[key]);
   for (const p of publicConfig.projects)
     for (const kind of ["video", "image", "projectLogo"])
       if (p[kind])

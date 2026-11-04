@@ -94,36 +94,66 @@ test("initialization cannot replace account without explicit local reset", async
 });
 
 module.exports = { fixture };
-test('admin identity contract is self-hosted and read-only',async t=>{
-  const f=await fixture(t);
-  const script=await f.request('/admin/site-identity.js');
-  assert.equal(script.status,200);
-  assert.equal(script.headers.get('cache-control'),'private, no-store');
-  assert.match(script.headers.get('x-robots-tag'),/noindex/);
-  const html=await (await f.request('/admin/')).text();
-  assert(html.indexOf('/admin/site-identity.js')<html.indexOf('/admin/admin.js'));
-  assert.equal((await f.request('/shared/site-identity.js')).status,404);
+test("admin identity contract is self-hosted and read-only", async (t) => {
+  const f = await fixture(t);
+  const script = await f.request("/admin/site-identity.js");
+  assert.equal(script.status, 200);
+  assert.equal(script.headers.get("cache-control"), "private, no-store");
+  assert.match(script.headers.get("x-robots-tag"), /noindex/);
+  const html = await (await f.request("/admin/")).text();
+  assert(
+    html.indexOf("/admin/site-identity.js") < html.indexOf("/admin/admin.js"),
+  );
+  assert.equal((await f.request("/shared/site-identity.js")).status, 404);
 });
-test('identity fields save in one draft revision and change public config only on publication',async t=>{
-  const f=await require('./helpers/delivery').deliveryFixture(t,{publish:true}); const headers=f.headers;
-  const draft=await (await f.request('/api/admin/config',{headers})).json();
-  const publicURL=`/api/site/${draft.published}/config`;
-  const before=await (await f.request(publicURL)).json();
-  const identity={description:'网站介绍',language:'zh-CN',socialImage:'https://example.test/share.png'};
-  Object.assign(draft.config.site,identity);
-  const saved=await f.request('/api/admin/config',{method:'PUT',headers,body:JSON.stringify({config:draft.config,revision:draft.revision})});
-  assert.equal(saved.status,200);
-  const {revision}=await saved.json(); assert.equal(revision,draft.revision+1);
-  const next=await (await f.request('/api/admin/config',{headers})).json();
-  for(const [key,value] of Object.entries(identity)) assert.equal(next.config.site[key],value);
-  assert.deepEqual(await (await f.request(publicURL)).json(),before);
-  const published=await f.request('/api/admin/publish',{method:'POST',headers,body:JSON.stringify({revision})});
-  assert.equal(published.status,200);
-  const after=await (await f.request('/api/admin/config',{headers})).json();
-  const publicConfig=await (await f.request(`/api/site/${after.published}/config`)).json();
-  assert.equal(publicConfig.site.description,identity.description);
-  assert.equal(publicConfig.site.language,identity.language);
-  assert.match(publicConfig.site.socialImage,new RegExp(`^/api/site/${after.published}/resources/external-[a-f0-9]+/share\\.png$`));
+test("identity fields save in one draft revision and change public config only on publication", async (t) => {
+  const f = await require("./helpers/delivery").deliveryFixture(t, {
+    publish: true,
+  });
+  const headers = f.headers;
+  const draft = await (
+    await f.request("/api/admin/config", { headers })
+  ).json();
+  const publicURL = `/api/site/${draft.published}/config`;
+  const before = await (await f.request(publicURL)).json();
+  const identity = {
+    description: "网站介绍",
+    language: "zh-CN",
+    socialImage: "https://example.test/share.png",
+  };
+  Object.assign(draft.config.site, identity);
+  const saved = await f.request("/api/admin/config", {
+    method: "PUT",
+    headers,
+    body: JSON.stringify({ config: draft.config, revision: draft.revision }),
+  });
+  assert.equal(saved.status, 200);
+  const { revision } = await saved.json();
+  assert.equal(revision, draft.revision + 1);
+  const next = await (await f.request("/api/admin/config", { headers })).json();
+  for (const [key, value] of Object.entries(identity))
+    assert.equal(next.config.site[key], value);
+  assert.deepEqual(await (await f.request(publicURL)).json(), before);
+  const published = await f.request("/api/admin/publish", {
+    method: "POST",
+    headers,
+    body: JSON.stringify({ revision }),
+  });
+  assert.equal(published.status, 200);
+  const after = await (
+    await f.request("/api/admin/config", { headers })
+  ).json();
+  const publicConfig = await (
+    await f.request(`/api/site/${after.published}/config`)
+  ).json();
+  assert.equal(publicConfig.site.description, identity.description);
+  assert.equal(publicConfig.site.language, identity.language);
+  assert.match(
+    publicConfig.site.socialImage,
+    new RegExp(
+      `^/api/site/${after.published}/resources/external-[a-f0-9]+/share\\.png$`,
+    ),
+  );
 });
 test("sessions are hashed, idle/absolute expiry and password change invalidate sessions", async (t) => {
   const f = await fixture(t);
@@ -170,27 +200,71 @@ test("sessions are hashed, idle/absolute expiry and password change invalidate s
     0,
   );
 });
-test('pinned preview access rejects logged-out/reset sessions and reset cascades its binding',async t=>{
-  const f=await require('./helpers/delivery').deliveryFixture(t);
-  const response=await f.request('/api/admin/preview',{method:'POST',headers:f.headers,body:JSON.stringify({revision:3})});
-  assert.equal(response.status,200);
-  const url=(await response.json()).url,id=url.split('=')[1];
-  const {deliveryRepository}=require('../admin-server/repositories/deliveries');
-  const binding=await deliveryRepository(f.store).getBinding({type:'preview',id});
-  const artifact=await deliveryRepository(f.store).getArtifact(binding.artifactDigest);
-  assert.equal((await f.request(url,{headers:f.headers})).status,200);
-  assert.equal((await f.request('/api/admin/logout',{method:'POST',headers:f.headers})).status,200);
-  const denied=await f.request(url,{headers:f.headers});
-  assert.equal(denied.status,401);
-  assert.equal(denied.headers.get('cache-control'),'private, no-store');
-  const headers=await f.login();
-  await require('../admin-server/security').createAccount(f.store,'owner','a-valid-long-password-2026',{reset:true});
-  assert.equal((await f.request(url,{headers})).status,401);
-  assert.equal(await deliveryRepository(f.store).getBinding({type:'preview',id}),null);
-  assert.equal((await f.store.query("SELECT id FROM personal_site.previews WHERE id=$1",[id])).rowCount,0);
-  assert.equal((await f.store.query("SELECT * FROM personal_site.resource_references WHERE owner_type='preview' AND owner_id=$1",[id])).rowCount,0);
+test("pinned preview access rejects logged-out/reset sessions and reset cascades its binding", async (t) => {
+  const f = await require("./helpers/delivery").deliveryFixture(t);
+  const response = await f.request("/api/admin/preview", {
+    method: "POST",
+    headers: f.headers,
+    body: JSON.stringify({ revision: 3 }),
+  });
+  assert.equal(response.status, 200);
+  const url = (await response.json()).url,
+    id = url.split("=")[1];
+  const {
+    deliveryRepository,
+  } = require("../admin-server/repositories/deliveries");
+  const binding = await deliveryRepository(f.store).getBinding({
+    type: "preview",
+    id,
+  });
+  const artifact = await deliveryRepository(f.store).getArtifact(
+    binding.artifactDigest,
+  );
+  assert.equal((await f.request(url, { headers: f.headers })).status, 200);
+  assert.equal(
+    (
+      await f.request("/api/admin/logout", {
+        method: "POST",
+        headers: f.headers,
+      })
+    ).status,
+    200,
+  );
+  const denied = await f.request(url, { headers: f.headers });
+  assert.equal(denied.status, 401);
+  assert.equal(denied.headers.get("cache-control"), "private, no-store");
+  const headers = await f.login();
+  await require("../admin-server/security").createAccount(
+    f.store,
+    "owner",
+    "a-valid-long-password-2026",
+    { reset: true },
+  );
+  assert.equal((await f.request(url, { headers })).status, 401);
+  assert.equal(
+    await deliveryRepository(f.store).getBinding({ type: "preview", id }),
+    null,
+  );
+  assert.equal(
+    (
+      await f.store.query("SELECT id FROM personal_site.previews WHERE id=$1", [
+        id,
+      ])
+    ).rowCount,
+    0,
+  );
+  assert.equal(
+    (
+      await f.store.query(
+        "SELECT * FROM personal_site.resource_references WHERE owner_type='preview' AND owner_id=$1",
+        [id],
+      )
+    ).rowCount,
+    0,
+  );
   // Reset revokes authorization, not shared content-addressed bytes.
-  for(const file of artifact.manifest.files)assert.equal((await f.cas.read(file)).length,file.size);
+  for (const file of artifact.manifest.files)
+    assert.equal((await f.cas.read(file)).length, file.size);
 });
 test("login attempts persist across restart and database errors are maintenance errors", async (t) => {
   const f = await fixture(t);
@@ -259,7 +333,7 @@ test("reset cannot initialize uninstalled content and account audit failures rol
   );
   await f.store.query(
     "INSERT INTO personal_site.installation(id,source,schema_version) VALUES(true,'fixture',$1)",
-    [require('../admin-server/migrations').currentSchemaVersion],
+    [require("../admin-server/migrations").currentSchemaVersion],
   );
   const headers = await f.login();
   await f.store.query(

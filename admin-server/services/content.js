@@ -123,21 +123,13 @@ async function saveDraft(
     return next;
   });
 }
-async function validatedDraft(store, revision, options) {
-  const repo = contentRepository(store),
-    draft = await repo.getDraft();
-  assertRevision(draft, revision);
-  validateConfig(
-    draft.config,
-    lockSchema((await repo.getTemplate()).schema, draft.config),
-  );
-  const warnings = await require("../publication").validatePublication(
-    store,
-    options,
-    draft.snapshot,
-  );
-  return { draft, warnings };
-}
+/**
+ * @param {any} store
+ * @param {number} revision
+ * @param {any} [options]
+ * @param {any} [actor]
+ * @param {{withWarnings?: boolean, deliveryService?: any}} [services]
+ */
 async function publish(
   store,
   revision,
@@ -162,6 +154,13 @@ async function restore(store, id, revision, actor = null) {
     true,
   );
 }
+/**
+ * @param {any} store
+ * @param {number} revision
+ * @param {any} options
+ * @param {any} actor
+ * @param {{deliveryService?: any}} [services]
+ */
 async function createPreview(
   store,
   revision,

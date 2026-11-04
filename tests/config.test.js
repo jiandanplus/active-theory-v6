@@ -3,15 +3,23 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs"),
   os = require("node:os"),
   path = require("node:path");
-test('identity fields use their own limits and safe image URL validation',()=>{
-  const {initialConfig,validateConfig}=require('../admin-server/config');
-  const schema=initialConfig('/nonexistent'), config=structuredClone(schema);
-  config.site.description='文'.repeat(500); config.site.language='zh-TW';
-  config.site.socialImage='https://image.invalid/'+ 'x'.repeat(1500);
-  assert.doesNotThrow(()=>validateConfig(config,schema));
-  for (const [key,value] of [['description','文'.repeat(501)],['description','<script>'],['language','fr'],['socialImage','javascript:alert(1)']]) {
-    const invalid=structuredClone(config); invalid.site[key]=value;
-    assert.throws(()=>validateConfig(invalid,schema),{status:400});
+test("identity fields use their own limits and safe image URL validation", () => {
+  const { initialConfig, validateConfig } = require("../admin-server/config");
+  const schema = initialConfig("/nonexistent"),
+    config = structuredClone(schema);
+  config.site.description = "文".repeat(500);
+  config.site.language = "zh-TW";
+  config.site.socialImage = "https://image.invalid/" + "x".repeat(1500);
+  assert.doesNotThrow(() => validateConfig(config, schema));
+  for (const [key, value] of [
+    ["description", "文".repeat(501)],
+    ["description", "<script>"],
+    ["language", "fr"],
+    ["socialImage", "javascript:alert(1)"],
+  ]) {
+    const invalid = structuredClone(config);
+    invalid.site[key] = value;
+    assert.throws(() => validateConfig(invalid, schema), { status: 400 });
   }
 });
 test("imports current values and rejects unknown fields or unsafe resource URLs", () => {
@@ -87,7 +95,7 @@ test("requires the CMS fields consumed by the rendering engine", () => {
 
 test("configuration versions save atomically, conflict and restore only to draft", async (t) => {
   const { saveDraft, publish, restore } = require("../admin-server/config");
-  const f = await require('./helpers/delivery').deliveryFixture(t);
+  const f = await require("./helpers/delivery").deliveryFixture(t);
   const { store, root } = f;
   const repo =
     require("../admin-server/repositories/content").contentRepository(store);
@@ -100,10 +108,16 @@ test("configuration versions save atomically, conflict and restore only to draft
   assert.equal(next, draft.revision + 1);
   assert.equal((await repo.getDraft()).published, v1);
   await assert.rejects(saveDraft(store, original, draft.revision), /冲突/);
-  const v2 = await publish(store, next, {
-    root,
-    dataDir: path.join(root, "data"),
-  }, f.actor, {deliveryService:f.service});
+  const v2 = await publish(
+    store,
+    next,
+    {
+      root,
+      dataDir: path.join(root, "data"),
+    },
+    f.actor,
+    { deliveryService: f.service },
+  );
   assert.notEqual(v1, v2);
   assert.equal(
     (await repo.getVersion(v1)).snapshot.config.site.title,
@@ -113,11 +127,16 @@ test("configuration versions save atomically, conflict and restore only to draft
   assert.equal((await repo.getDraft()).config.site.title, original.site.title);
   assert.equal((await repo.getDraft()).published, v2);
   assert.equal((await repo.getDraft()).config.site.language, "en");
-  assert.equal(Object.hasOwn((await repo.getVersion(v1)).snapshot.config.site, "language"), false);
+  assert.equal(
+    Object.hasOwn((await repo.getVersion(v1)).snapshot.config.site, "language"),
+    false,
+  );
 });
 
 test("JSONB object key order does not invalidate site config", (t) => {
-  const schema = require('../shared/site-identity').normalizeConfig(require("./helpers/content").contentFixture(t).bundle.schema);
+  const schema = require("../shared/site-identity").normalizeConfig(
+    require("./helpers/content").contentFixture(t).bundle.schema,
+  );
   const config = structuredClone(schema);
   config.site = Object.fromEntries(Object.entries(config.site).reverse());
   assert.doesNotThrow(() =>
@@ -125,7 +144,9 @@ test("JSONB object key order does not invalidate site config", (t) => {
   );
 });
 test("scene and field identities are checked independently from ordering", (t) => {
-  const config = require('../shared/site-identity').normalizeConfig(require("./helpers/content").contentFixture(t).bundle.schema);
+  const config = require("../shared/site-identity").normalizeConfig(
+    require("./helpers/content").contentFixture(t).bundle.schema,
+  );
   config.scenes.push({
     id: "Other",
     label: "Other",

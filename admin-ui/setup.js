@@ -4,6 +4,58 @@ function setupView(status, authorized) {
   if (status !== "uninstalled") return "maintenance";
   return authorized ? "database" : "authorize";
 }
+// Preflight warnings arrive as English internal keys; group them by prefix and
+// translate the group titles so the first screen stays short and readable.
+const WARNING_GROUPS = [
+  [
+    "External resource is unverified (not fetched): ",
+    "外部资源未验证（安装时不抓取）",
+  ],
+  ["Optional resource unavailable: ", "可选资源缺失"],
+  ["Unsupported resource URL: ", "不支持的资源地址"],
+];
+const COUNT_LABELS = {
+  resources: "资源记录",
+  assets: "素材文件",
+  versions: "历史版本",
+  projects: "作品",
+  songs: "音乐",
+  storages: "存储配置",
+  audit: "审计记录",
+};
+function summarizeReport(report = {}) {
+  const groups = [
+    {
+      title: "缺少必需资源",
+      items: (report.missingRequired || []).map(String),
+      open: true,
+      severity: "error",
+    },
+  ];
+  const byTitle = new Map(
+    WARNING_GROUPS.map(([, title]) => [
+      title,
+      { title, items: [], open: false },
+    ]),
+  );
+  const other = { title: "其他警告", items: [], open: false };
+  for (const warning of (report.warnings || []).map(String)) {
+    const match = WARNING_GROUPS.find(([prefix]) => warning.startsWith(prefix));
+    if (match) byTitle.get(match[1]).items.push(warning.slice(match[0].length));
+    else other.items.push(warning);
+  }
+  groups.push(...byTitle.values(), other, {
+    title: "不可用的存储凭证",
+    items: (report.credentialsUnavailable || []).map(String),
+    open: true,
+    severity: "error",
+  });
+  const counts = Object.entries(report.counts || {}).map(([key, value]) => [
+    COUNT_LABELS[key] || key,
+    value,
+  ]);
+  return { groups: groups.filter((group) => group.items.length), counts };
+}
 function mount({ root, onInstalled }) {
   const state = {
     status: "unavailable",
@@ -89,13 +141,29 @@ function mount({ root, onInstalled }) {
     parent.append(wrap);
     return n;
   }
-  function form(text, action) {
+  function form(text, action, busyText = "正在处理…") {
     const f = el("form"),
       b = el("button", text, "primary");
     b.type = "submit";
     f.addEventListener("submit", (event) => {
       event.preventDefault();
-      run(() => action(f));
+      run(async () => {
+        // Visible progress while the request runs; the label is restored
+        // whether it succeeds, fails or the page moves on.
+        b.textContent = busyText;
+        b.setAttribute("aria-busy", "true");
+        message(busyText);
+        try {
+          await action(f);
+        } catch (error) {
+          // Let the person retry straight away from the same field.
+          if (f.isConnected) f.querySelector("input")?.focus();
+          throw error;
+        } finally {
+          b.textContent = text;
+          b.removeAttribute("aria-busy");
+        }
+      });
     });
     f.append(b);
     card.append(f);
@@ -200,13 +268,17 @@ function mount({ root, onInstalled }) {
       ),
     );
     let token;
-    const f = form("验证安装令牌", async () => {
-      const value = token.value;
-      token.value = "";
-      const data = await request("/authorize", { token: value });
-      state.csrf = data.csrfToken;
-      await database();
-    });
+    const f = form(
+      "验证安装令牌",
+      async () => {
+        const value = token.value;
+        token.value = "";
+        const data = await request("/authorize", { token: value });
+        state.csrf = data.csrfToken;
+        await database();
+      },
+      "正在验证…",
+    );
     token = input(f, "安装令牌", { secret: true });
     f.append(f.firstChild);
     token.focus();
@@ -276,9 +348,21 @@ function mount({ root, onInstalled }) {
     });
     card.append(label, select);
     if (state.mode === "bundle")
-      card.append(el("p", "沿用服务器上的原前端程序和场景配置，导入作品等可管理内容，不替换为示例页面。", "muted"));
+      card.append(
+        el(
+          "p",
+          "沿用服务器上的原前端程序和场景配置，导入作品等可管理内容，不替换为示例页面。",
+          "muted",
+        ),
+      );
     if (state.mode === "demo")
-      card.append(el("p", "此选项使用不同的示例前端，不保留原站 3D 页面效果。仅用于另建独立示例网站；已有网站请保留原站页面。", "warning"));
+      card.append(
+        el(
+          "p",
+          "此选项使用不同的示例前端，不保留原站 3D 页面效果。仅用于另建独立示例网站；已有网站请保留原站页面。",
+          "warning",
+        ),
+      );
     if (state.mode === "empty")
       card.append(
         el(
@@ -300,25 +384,36 @@ function mount({ root, onInstalled }) {
     );
     if (state.report) {
       const report = state.report;
+      const summary = summarizeReport(report);
       card.append(el("h2", "预检报告"));
-      for (const [key, title] of [
-        ["missingRequired", "缺少必需资源"],
-        ["warnings", "警告"],
-        ["credentialsUnavailable", "不可用的存储凭证"],
-      ]) {
-        card.append(el("h3", title));
+      const overview = el("ul", undefined, "preflight-summary");
+      for (const group of summary.groups)
+        overview.append(
+          el(
+            "li",
+            group.title + "：" + group.items.length + " 项",
+            group.severity === "error" ? "preflight-error" : "",
+          ),
+        );
+      if (!summary.groups.length) overview.append(el("li", "未发现问题"));
+      card.append(overview);
+      for (const group of summary.groups) {
+        const details = el("details", undefined, "preflight-group");
+        details.open = group.open;
+        details.append(
+          el("summary", group.title + "（" + group.items.length + "）"),
+        );
         const list = el("ul");
-        for (const item of report[key] || [])
-          list.append(el("li", String(item)));
-        if (!list.childNodes.length) list.append(el("li", "无"));
-        card.append(list);
+        for (const item of group.items) list.append(el("li", item));
+        details.append(list);
+        card.append(details);
       }
       card.append(
         el(
           "p",
           "导入数量：" +
-            Object.entries(report.counts || {})
-              .map(([key, value]) => key + " " + value)
+            summary.counts
+              .map(([label, value]) => label + " " + value)
               .join("，"),
         ),
       );
@@ -415,5 +510,6 @@ function mount({ root, onInstalled }) {
   }
   run(refresh);
 }
-if (typeof module !== "undefined") module.exports = { setupView, mount };
+if (typeof module !== "undefined")
+  module.exports = { setupView, mount, summarizeReport };
 if (typeof window !== "undefined") window.SiteSetup = { mount };

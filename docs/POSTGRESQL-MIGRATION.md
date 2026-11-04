@@ -94,7 +94,7 @@ docker compose --env-file .env.external -p personal-site -f compose.external.yam
 
 ## 显式升级
 
-`npm run db:migrate` 支持已安装数据库结构 1/2→3。它使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹和迁移 checksum，再顺序迁移；结构 3 重复运行是验证式 no-op。001/002 均不可修改。升级完成后仍需在目标实例验证账号、历史版本、资源和页面读取。
+`npm run db:migrate` 支持已安装数据库结构 1/2/3→4。它使用与安装相同的事务级 advisory lock `734216901`，锁内校验 PG18、schema 指纹和迁移 checksum，再顺序迁移；当前结构重复运行是验证式 no-op。001/002 均不可修改。升级完成后仍需在目标实例验证账号、历史版本、资源和页面读取。
 
 ### 从结构 1/2 升级到 3
 
@@ -103,6 +103,12 @@ docker compose --env-file .env.external -p personal-site -f compose.external.yam
 迁移保留历史内容和公开指针，将旧版本标记为 legacy。未生成兼容交付前网页返回维护 503；之后登记/选择包，在后台为当前旧版本执行“生成兼容交付”，或恢复为草稿后新发布。完成前台验证再恢复流量。数据库迁移成功不等于 3D 网站已经恢复可用。
 
 兼容交付只生成一次，不代表当年原样重放。需改变包、内容或 SITE_ORIGIN 时发布新版本，不原地覆盖旧交付。schema 3 不承诺旧程序直接回滚；回退应恢复已验证的整套备份。迁移命令仍使用下方 stop → run db:migrate → up 流程，但必须等交付和浏览器门禁通过才恢复公开流量。
+
+### 从结构 3 升级到 4（document_assets）
+
+004 只新增 `personal_site.document_assets` 表及索引，并从现有 versions/previews 快照回填“哪些资源是派生文档”。它不修改任何快照、交付制品、引用或账号；公开页面字节不变。作用是让公开 `/media/:id` 不再在每次请求时展开所有历史快照（300 个真实大小版本实测 25 ms → 0.014 ms）。
+
+部署新镜像后、执行迁移前，站点会显示“网站需要维护升级”，这是预期行为。流程与上文相同：维护窗口停止写入 → 备份 PostgreSQL 与私有 `data` → `npm run db:migrate` → 启动。004 回滚即恢复备份；不要手工删除该表。
 
 ### 历史迁移 1→2 的行为（当前命令继续升级到 3）
 

@@ -1,6 +1,6 @@
 const fs = require("node:fs"),
   path = require("node:path");
-const {normalizeSite} = require('../../shared/site-identity');
+const { normalizeSite } = require("../../shared/site-identity");
 const SCENES = {
   Home: "开场 · Logo",
   About: "个人介绍",
@@ -118,7 +118,7 @@ function initialConfig(root) {
           value,
         });
   }
-  const inner = (ref, otherwise = "") =>
+  const inner = (ref) =>
     source.match(
       new RegExp(`_innerText: ("(?:[^"\\\\]|\\\\.)*"), refName: "${ref}"`),
     )?.[1];

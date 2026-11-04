@@ -3,8 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { baseline, complete } = require("./bundle");
 const { validateConfig, safeURL } = require("../config");
-const {normalizeConfig} = require('../../shared/site-identity');
-const { lockSchema } = require('../../shared/page-content');
+const { normalizeConfig } = require("../../shared/site-identity");
+const { lockSchema } = require("../../shared/page-content");
 const { decryptCredentials, localFile } = require("../storage");
 const { conflict, checksum } = require("../resource-catalog");
 const KEYS = new Set([
@@ -48,12 +48,16 @@ function validate(config, schema) {
             field.value < 0 ||
             field.value > (field.key.startsWith("__blackhole_") ? 3 : 10) ||
             (field.key === "__blackhole_size" && field.value < 0.2)
-          ) throw Error();
+          )
+            throw Error();
         } else if (["resource", "geometry"].includes(field.type)) {
           if (typeof field.value !== "string") throw Error();
           if (field.value !== base?.value) {
             safeURL(field.value, { empty: false });
-            if (field.type === "geometry" && !/\.bin(?:[?#]|$)|^\/media\//.test(field.value))
+            if (
+              field.type === "geometry" &&
+              !/\.bin(?:[?#]|$)|^\/media\//.test(field.value)
+            )
               throw Error();
           }
         } else if (field.type !== "text") throw Error();
@@ -72,14 +76,21 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
   // schema creation or writable legacy connection is permitted here.
   const actual = await fs.promises.realpath(legacyPath);
   const db = new DatabaseSync(actual, { readOnly: true });
-  let settings, versions, admins, audit;
+  /** @type {any} */
+  let settings;
+  /** @type {any[]} */
+  let versions;
+  /** @type {any[]} */
+  let admins;
+  /** @type {any[]} */
+  let audit;
   try {
     db.exec("BEGIN");
     settings = {};
     for (const row of db.prepare("SELECT key,value FROM settings").all())
-      if (KEYS.has(row.key)) {
+      if (typeof row.key === "string" && KEYS.has(row.key)) {
         try {
-          settings[row.key] = JSON.parse(row.value);
+          settings[String(row.key)] = JSON.parse(String(row.value));
         } catch {
           throw conflict(`Invalid legacy setting: ${row.key}`);
         }
@@ -89,7 +100,7 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
       .all()
       .map((row) => {
         try {
-          return { ...row, config: JSON.parse(row.config) };
+          return { ...row, config: JSON.parse(String(row.config)) };
         } catch {
           throw conflict("Invalid legacy version JSON");
         }
@@ -104,7 +115,9 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
   } catch (error) {
     try {
       db.exec("ROLLBACK");
-    } catch {}
+    } catch {
+      // The original import error below is the one worth reporting.
+    }
     if (error.status) throw error;
     throw conflict("Legacy database format cannot be imported");
   } finally {
@@ -167,7 +180,9 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
         try {
           const value = decryptCredentials(storage.credentials, { masterKey });
           storage.available = !!(value.accessKeyId && value.secretAccessKey);
-        } catch {}
+        } catch {
+          // Undecryptable credentials are reported as unavailable below.
+        }
       if (!storage.available) credentialsUnavailable.push(storage.id);
       // Plain credentials are never migrated as configuration or printed.
       if (

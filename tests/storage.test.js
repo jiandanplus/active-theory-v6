@@ -337,7 +337,9 @@ test("unexpired preview blocks trash, expired preview is pruned and bundled reso
       owner: "admin",
       expires: new Date(Date.now() + 60000).toISOString(),
       snapshot: draft.snapshot,
-      references: require('../admin-server/snapshots').collectReferences(draft.snapshot),
+      references: require("../admin-server/snapshots").collectReferences(
+        draft.snapshot,
+      ),
     }),
   );
   const trash = (id) =>
@@ -415,7 +417,7 @@ test("public object base rejects query and fragment instead of corrupting keys",
     "https://cdn.example/media/folder/a%20b.png",
   );
 });
-test("S3 virtual-hosted DNS requests use validated pinned bucket host", async (t) => {
+test("S3 virtual-hosted DNS requests use validated pinned bucket host", async () => {
   const dns = require("node:dns/promises"),
     original = dns.lookup;
   const hosts = [];
@@ -526,7 +528,7 @@ async function fixture(t, options = {}) {
     store,
     options: { dataDir: dir, ...options },
   });
-  app.use((err, req, res, next) => {
+  app.use((err, req, res, _next) => {
     const e = require("../admin-server/http").publicError(err);
     res.status(e.status).json({ error: e.message });
   });

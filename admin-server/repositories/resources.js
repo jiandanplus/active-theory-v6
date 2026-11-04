@@ -1,5 +1,5 @@
 const { toSafeInteger } = require("../postgres");
-const {normalizeReferences}=require('../delivery/contracts');
+const { normalizeReferences } = require("../delivery/contracts");
 const fail = (status, message) => Object.assign(new Error(message), { status });
 const map = (r) =>
   r
@@ -29,6 +29,35 @@ function resourceRepository(db) {
           "SELECT * FROM personal_site.resources ORDER BY created,id",
         )
       ).rows.map(map);
+    },
+    /**
+     * A resource together with its storage row in one statement.
+     * @param {string} id
+     */
+    async getLive(id) {
+      const row = (
+        await db.query(
+          `SELECT r.*, s.id AS s_id, s.type AS s_type, s.config AS s_config,
+            s.credentials AS s_credentials, s.available AS s_available
+          FROM personal_site.resources r
+          LEFT JOIN personal_site.storages s ON s.id = r.storage_id
+          WHERE r.id=$1`,
+          [id],
+        )
+      ).rows[0];
+      if (!row) return { resource: null, storage: null };
+      return {
+        resource: map(row),
+        storage: row.s_id
+          ? require("./storages").mapStorage({
+              id: row.s_id,
+              type: row.s_type,
+              config: row.s_config,
+              credentials: row.s_credentials,
+              available: row.s_available,
+            })
+          : null,
+      };
     },
     async get(id) {
       return map(
@@ -178,10 +207,18 @@ function resourceRepository(db) {
         );
     },
     // Owner-scoped frozen grants; references(id) below is the inverse lookup.
-    async referencesForOwner({ownerType,ownerId}) {
-      if(!['version','preview'].includes(ownerType))throw fail(400,'Invalid reference owner');
-      const rows=(await db.query('SELECT resource_id,slot FROM personal_site.resource_references WHERE owner_type=$1 AND owner_id=$2',[ownerType,String(ownerId)])).rows;
-      return normalizeReferences(rows.map(r=>({resourceId:r.resource_id,slot:r.slot})));
+    async referencesForOwner({ ownerType, ownerId }) {
+      if (!["version", "preview"].includes(ownerType))
+        throw fail(400, "Invalid reference owner");
+      const rows = (
+        await db.query(
+          "SELECT resource_id,slot FROM personal_site.resource_references WHERE owner_type=$1 AND owner_id=$2",
+          [ownerType, String(ownerId)],
+        )
+      ).rows;
+      return normalizeReferences(
+        rows.map((r) => ({ resourceId: r.resource_id, slot: r.slot })),
+      );
     },
     async references(id) {
       return (

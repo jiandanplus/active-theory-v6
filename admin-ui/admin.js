@@ -1,22 +1,26 @@
 "use strict";
 // Composition root only. Modules own their focused behavior; session state is created once.
 function startAdmin(environment = globalThis) {
-  const modules = environment.SiteAdminModules || (typeof require === "function" ? {
-    helpers: require("./modules/helpers.js"),
-    state: require("./modules/state.js"),
-    api: require("./modules/api.js"),
-    dom: require("./modules/dom.js"),
-    session: require("./modules/session.js"),
-    actions: require("./modules/actions.js"),
-    overview: require("./modules/overview.js"),
-    site: require("./modules/site.js"),
-    scenes: require("./modules/scenes.js"),
-    projects: require("./modules/projects.js"),
-    resources: require("./modules/resources.js"),
-    storage: require("./modules/storage.js"),
-    versions: require("./modules/versions.js"),
-    security: require("./modules/security.js"),
-  } : null);
+  const modules =
+    environment.SiteAdminModules ||
+    (typeof require === "function"
+      ? {
+          helpers: require("./modules/helpers.js"),
+          state: require("./modules/state.js"),
+          api: require("./modules/api.js"),
+          dom: require("./modules/dom.js"),
+          session: require("./modules/session.js"),
+          actions: require("./modules/actions.js"),
+          overview: require("./modules/overview.js"),
+          site: require("./modules/site.js"),
+          scenes: require("./modules/scenes.js"),
+          projects: require("./modules/projects.js"),
+          resources: require("./modules/resources.js"),
+          storage: require("./modules/storage.js"),
+          versions: require("./modules/versions.js"),
+          security: require("./modules/security.js"),
+        }
+      : null);
   if (!modules) throw new Error("管理模块加载失败，请刷新页面");
   const document = environment.document;
   const state = modules.state.createState();
@@ -30,30 +34,42 @@ function startAdmin(environment = globalThis) {
     ["versions", "↶", "发布版本"],
     ["security", "⊙", "账号安全"],
   ];
+  // Display order of the basic site fields; stored jsonb key order is not used.
   const labels = {
     title: "网站标题",
     navWork: "作品导航文字",
     navContact: "联系导航文字",
     contactTitle: "联系页标题",
-    cityLax: "地点一",
-    cityNyc: "地点二",
-    cityAms: "地点三",
     email: "邮箱显示文字",
     emailLink: "联系邮箱",
+    cityLax: "联系页地点一（原 LA）",
+    cityNyc: "联系页地点二（原 NY）",
+    cityAms: "联系页地点三（原 AMS）",
     labUrl: "底部展示区跳转链接",
   };
   let services;
   const context = {
-    state, sections, labels, document,
-    pageContent: environment.SitePageContent || (typeof require === "function" ? require("../shared/page-content.js") : null),
+    state,
+    sections,
+    labels,
+    document,
+    pageContent:
+      environment.SitePageContent ||
+      (typeof require === "function"
+        ? require("../shared/page-content.js")
+        : null),
     app: document.getElementById("app"),
-    window: environment, fetch: environment.fetch.bind(environment), crypto: environment.crypto,
-    content: null, saveStatus: null,
+    window: environment,
+    fetch: environment.fetch.bind(environment),
+    crypto: environment.crypto,
+    content: null,
+    saveStatus: null,
     newProject: modules.helpers.newProject,
     canPick: modules.helpers.canPick,
     storageBody: modules.helpers.storageBody,
     canConvert: modules.helpers.canConvert,
     resourcePreviewURL: modules.helpers.resourcePreviewURL,
+    orderedSiteKeys: modules.helpers.orderedSiteKeys,
     dirty: (...args) => services.state.dirty(...args),
     updateStatus: (...args) => services.state.updateStatus(...args),
     building: (...args) => services.state.building(...args),
@@ -118,7 +134,12 @@ function startAdmin(environment = globalThis) {
     security: modules.security.create(context),
   };
   const ready = services.session.init();
-  return { state, ready, actions: services.actions, render: services.session.render };
+  return {
+    state,
+    ready,
+    actions: services.actions,
+    render: services.session.render,
+  };
 }
 if (typeof module !== "undefined")
   module.exports = { ...require("./modules/helpers.js"), startAdmin };

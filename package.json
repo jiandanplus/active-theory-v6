@@ -14,10 +14,10 @@
     "docker:status": "node scripts/docker-local.js status",
     "docker:down": "node scripts/docker-local.js down",
     "docker:token": "node scripts/docker-local.js token",
-    "lint": "eslint scripts/docker-local.js scripts/test-postgres.js scripts/test-authorized-runtime.js tests/cd-docker.test.js shared/content-contract.js admin-ui/modules/*.js",
-    "format": "prettier --write scripts/docker-local.js scripts/test-authorized-runtime.js scripts/test-postgres.js tests/cd-docker.test.js eslint.config.js tsconfig.json",
-    "format:check": "prettier --check scripts/docker-local.js scripts/test-authorized-runtime.js scripts/test-postgres.js tests/cd-docker.test.js eslint.config.js tsconfig.json",
-    "typecheck": "tsc --project tsconfig.json",
+    "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.server.json",
     "db:migrate": "node scripts/db-migrate.js",
     "runtime:register": "node scripts/runtime-bundle.js",
     "delivery:audit": "node scripts/delivery-audit.js",
@@ -30,8 +30,10 @@
     "node": ">=24.0.0"
   },
   "devDependencies": {
+    "@eslint/js": "^10.0.1",
     "@types/node": "^24.10.0",
     "eslint": "^10.0.0",
+    "globals": "^17.13.0",
     "prettier": "^3.6.2",
     "typescript": "^5.9.3"
   },
