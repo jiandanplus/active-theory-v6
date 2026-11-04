@@ -3,7 +3,7 @@ const assert = require('node:assert/strict');
 const {httpFixture} = require('./helpers/http');
 const {contentRepository} = require('../admin-server/repositories/content');
 
-test('first-party demo installs as private draft without original assets', async t => {
+test('first-party demo installs as private draft without original assets', async () => {
   const bundle = await require('../admin-server/portfolio/sample').demoBundle();
   assert.equal(bundle.published, null);
   assert.equal(bundle.draft.config.site.language, 'zh-CN');
@@ -121,8 +121,8 @@ test('built-in runtime registration is authenticated, explicit and publishes imm
     assert.equal((await f.request(url)).status, 401);
   }
   for(const path of [
-    /href="([^\"]*\/work\?preview=[^\"]+)"/.exec(previewHTML)?.[1],
-    /href="(\/basic\?preview=[^\"]+)"/.exec(previewHTML)?.[1],
+    /href="([^"]*\/work\?preview=[^"]+)"/.exec(previewHTML)?.[1],
+    /href="(\/basic\?preview=[^"]+)"/.exec(previewHTML)?.[1],
   ]){
     assert.ok(path,'preview exposes work and ordinary-page navigation');
     const response=await f.request(path,{headers});

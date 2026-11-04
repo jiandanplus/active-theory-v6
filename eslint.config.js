@@ -1,29 +1,43 @@
+const js = require("@eslint/js");
+const globals = require("globals");
+
+const rules = {
+  ...js.configs.recommended.rules,
+  eqeqeq: ["error", "always"],
+  // Input validators deliberately match and reject control characters.
+  "no-control-regex": "off",
+  "no-unused-vars": [
+    "error",
+    { argsIgnorePattern: "^_", caughtErrors: "none" },
+  ],
+};
+
 module.exports = [
   {
-    files: [
-      "scripts/docker-local.js",
-      "scripts/test-postgres.js",
-      "scripts/test-authorized-runtime.js",
-      "tests/cd-docker.test.js",
-      "shared/content-contract.js",
-      "admin-ui/modules/*.js",
+    // Historical operator tools are pending owner review (optimization plan R4).
+    ignores: [
+      "tools/legacy/**",
+      "*.js",
+      "!server.js",
+      "!eslint.config.js",
+      ".deployment/**",
+      "data/**",
     ],
-    ignores: [],
+  },
+  {
+    files: ["**/*.js"],
     languageOptions: {
       ecmaVersion: 2024,
       sourceType: "commonjs",
-      globals: {
-        process: "readonly",
-        console: "readonly",
-        __dirname: "readonly",
-        URL: "readonly",
-      },
+      globals: { ...globals.node },
     },
-    rules: {
-      "no-constant-condition": "error",
-      "no-unreachable": "error",
-      "valid-typeof": "error",
-      eqeqeq: ["error", "always"],
+    rules,
+  },
+  {
+    // UMD modules load in the browser and under Node tests.
+    files: ["admin-ui/**/*.js", "shared/**/*.js", "examples/**/*.js"],
+    languageOptions: {
+      globals: { ...globals.browser, ...globals.node },
     },
   },
 ];

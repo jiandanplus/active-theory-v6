@@ -123,7 +123,7 @@ test("default image is writable non-root, healthchecked, and independent of orig
     "utf8",
   );
   assert.match(external, /NODE_ENV: production/);
-  assert.doesNotMatch(external, /POSTGRES_PASSWORD|\n  db:/);
+  assert.doesNotMatch(external, /POSTGRES_PASSWORD|\n {2}db:/);
 });
 test("image packages exactly the six tracked CMS files, never the CMS directory", () => {
   const docker = fs

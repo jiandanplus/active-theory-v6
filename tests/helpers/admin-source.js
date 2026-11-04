@@ -6,7 +6,7 @@ module.exports = function adminSource() {
   const sources = modules.map(name => fs.readFileSync(path.join(__dirname, '../../admin-ui/modules', name + '.js'), 'utf8'));
   const functions = new Map();
   for (const source of sources) {
-    const matches = [...source.matchAll(/^  (?:async )?function (\w+)\(/gm)];
+    const matches = [...source.matchAll(/^ {2}(?:async )?function (\w+)\(/gm)];
     for (let index = 0; index < matches.length; index++) {
       const match = matches[index];
       const end = index + 1 < matches.length ? matches[index + 1].index : source.indexOf('  return {', match.index);

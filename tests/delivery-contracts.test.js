@@ -15,6 +15,7 @@ test('canonical identity rejects non-JSON and hidden state without invoking toJS
   const extra = [1]; extra.foo = 2;
   const hidden = {}; Object.defineProperty(hidden, 'secret', { value: 1 });
   for (const v of [undefined, NaN, Infinity, -Infinity, new Date(), { a: undefined }, 1n, () => 1,
+    // eslint-disable-next-line no-sparse-arrays -- a hole must be rejected
     Symbol('x'), cycle, [, 1], extra, { [Symbol('x')]: 1 }, hidden,
     { toJSON() { throw new Error('must not invoke'); } }]) rejects(() => c.canonicalJSON(v));
 });

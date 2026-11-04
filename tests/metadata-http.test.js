@@ -2,7 +2,6 @@ const {test}=require('node:test');
 const assert=require('node:assert/strict');
 const fs=require('node:fs');
 const path=require('node:path');
-const {httpFixture}=require('./helpers/http');
 test('server identity ignores hostile host/query and unknown projects are 404',async t=>{
   const f=await require('./helpers/delivery').deliveryFixture(t,{publish:true});
   const response=await f.request('/work/one?source=https://evil.example',{headers:{Host:'evil.example'}});

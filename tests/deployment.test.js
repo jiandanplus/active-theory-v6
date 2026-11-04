@@ -70,7 +70,7 @@ test('deployment includes non-superuser init, PG18 parent volume and all install
     'admin-server/delivery/builder.js','admin-server/engine/profiles/legacy-six-scenes-v1.js',
     'scripts/runtime-bundle.js','scripts/delivery-audit.js']) assert.ok(readFileSync(file).length>0,file);
   const external = readFileSync('compose.external.yaml','utf8');
-  assert.doesNotMatch(external, /POSTGRES_PASSWORD|depends_on|\n  db:/);
+  assert.doesNotMatch(external, /POSTGRES_PASSWORD|depends_on|\n {2}db:/);
   const scripts = JSON.parse(readFileSync('package.json')).scripts;
   assert.equal(scripts['db:migrate'], 'node scripts/db-migrate.js');
   assert.equal(scripts['import:check'], 'node scripts/import-site.js --check');
@@ -123,7 +123,6 @@ test('bundled admin media is authenticated, status-gated and confined to the own
   const f = await httpFixture(t);
   await f.createAdmin();
   const headers = await f.login();
-  const repo = require('../admin-server/repositories/resources').resourceRepository(f.store);
   const resource = {id:'private-bundle',source:'bundled',url:'assets/images/image.png',path:'assets/images/image.png',name:'image.png',kind:'image',mime:'image/png',status:'ready'};
   await f.store.transaction(tx => require('../admin-server/repositories/resources').resourceRepository(tx).insert(resource));
   assert.equal((await f.request('/media/private-bundle')).status,404);
