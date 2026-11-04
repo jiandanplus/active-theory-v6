@@ -206,7 +206,12 @@ test("shared page-content policy loads before content-contract and admin modules
   );
 });
 
-for (const injected of [true, false])
+test("admin refuses to start without the shared page-content policy", async () => {
+  // page-content.js is a classic script that must run before the module entry.
+  await assert.rejects(fixture({ injected: false }), /页面内容策略加载失败/);
+});
+
+for (const injected of [true])
   test(`optional page fields render once without default writes (injected=${injected})`, async () => {
     const f = await fixture({ injected }),
       before = JSON.stringify(f.config);

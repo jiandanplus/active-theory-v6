@@ -1,146 +1,147 @@
-"use strict";
-(function (root, factory) {
-  if (typeof module === "object" && module.exports) module.exports = factory();
-  else (root.SiteAdminModules ||= {})["state"] = factory();
-})(
-  /** @type {typeof globalThis & {SiteAdminModules?: Record<string, object>}} */ (
-    globalThis
-  ),
-  function () {
-    function createState() {
-      return {
-        csrf: "",
-        config: null,
-        validationSchema: null,
-        revision: 0,
-        dirty: false,
-        busy: false,
-        sessionEpoch: 0,
-        runtime: { selection: { digest: null, generation: 0 }, bundles: [] },
-        section: "overview",
-        resources: [],
-        storages: [],
-        defaultStorage: "local",
-        overview: {},
-      };
+export function createState() {
+  return {
+    csrf: "",
+    config: null,
+    validationSchema: null,
+    revision: 0,
+    dirty: false,
+    busy: false,
+    sessionEpoch: 0,
+    runtime: { selection: { digest: null, generation: 0 }, bundles: [] },
+    section: "overview",
+    resources: [],
+    storages: [],
+    defaultStorage: "local",
+    overview: {},
+  };
+}
+// Functions this module adds to the shared context (see registry.js).
+export const provides = [
+  "dirty",
+  "updateStatus",
+  "building",
+  "validRevision",
+  "validRuntime",
+  "refreshRuntime",
+  "invalidateRuntime",
+  "captureView",
+  "invalidateView",
+];
+
+export function create(context) {
+  const { state, document, window, node, api } = context;
+  let runtimeRequestSequence = 0;
+  let viewSequence = 0;
+  // A continuation belongs to one session, render, section and content mount.
+  // Capturing only the section is insufficient when a user leaves and returns.
+  function captureView() {
+    const epoch = state.sessionEpoch,
+      sequence = viewSequence;
+    const section = state.section,
+      content = context.content;
+    return () =>
+      epoch === state.sessionEpoch &&
+      sequence === viewSequence &&
+      section === state.section &&
+      content === context.content;
+  }
+  function invalidateView() {
+    viewSequence++;
+    invalidateRuntime();
+    context.closeDialogs?.();
+  }
+  function invalidateRuntime() {
+    runtimeRequestSequence++;
+  }
+  function dirty() {
+    state.dirty = true;
+    updateStatus();
+  }
+  function updateStatus() {
+    if (!context.saveStatus) return;
+    context.saveStatus.replaceChildren(
+      node("span", "", "status-dot"),
+      node(
+        "span",
+        state.busy
+          ? "正在处理，请稍后"
+          : state.dirty
+            ? "有未保存的修改"
+            : "草稿已保存 · 修订 " + state.revision,
+      ),
+    );
+    context.saveStatus.className = state.dirty ? "is-dirty" : "";
+    const runtimeReady = !!state.runtime?.selection?.digest;
+    for (const control of document.querySelectorAll("[data-busy-action]"))
+      control.disabled =
+        state.busy || (!!control.dataset.needsRuntime && !runtimeReady);
+    for (const control of document.querySelectorAll("[data-needs-runtime]"))
+      control.title = runtimeReady ? "" : "需先选择运行包";
+    if (context.runtimeHint) context.runtimeHint.hidden = runtimeReady;
+    // The save bar belongs to the editing pages; elsewhere only a pending
+    // change is announced.
+    const editing = ["site", "scenes", "projects"].includes(state.section);
+    if (context.saveBar) context.saveBar.hidden = !editing && !state.dirty;
+    if (context.saveActions) context.saveActions.hidden = !editing;
+  }
+  async function building(action) {
+    if (state.busy) throw new Error("正在处理，请稍后");
+    const epoch = state.sessionEpoch;
+    state.busy = true;
+    updateStatus();
+    try {
+      return await action();
+    } finally {
+      if (epoch === state.sessionEpoch) {
+        state.busy = false;
+        updateStatus();
+      }
     }
-    function create(context) {
-      const { state, document, window, node, api } = context;
-      let runtimeRequestSequence = 0;
-      let viewSequence = 0;
-      // A continuation belongs to one session, render, section and content mount.
-      // Capturing only the section is insufficient when a user leaves and returns.
-      function captureView() {
-        const epoch = state.sessionEpoch,
-          sequence = viewSequence;
-        const section = state.section,
-          content = context.content;
-        return () =>
-          epoch === state.sessionEpoch &&
-          sequence === viewSequence &&
-          section === state.section &&
-          content === context.content;
-      }
-      function invalidateView() {
-        viewSequence++;
-        invalidateRuntime();
-        context.closeDialogs?.();
-      }
-      function invalidateRuntime() {
-        runtimeRequestSequence++;
-      }
-      function dirty() {
-        state.dirty = true;
-        updateStatus();
-      }
-      function updateStatus() {
-        if (!context.saveStatus) return;
-        context.saveStatus.replaceChildren(
-          node("span", "", "status-dot"),
-          node(
-            "span",
-            state.busy
-              ? "正在处理，请稍后"
-              : state.dirty
-                ? "有未保存的修改"
-                : "草稿已保存 · 修订 " + state.revision,
-          ),
-        );
-        context.saveStatus.className = state.dirty ? "is-dirty" : "";
-        const runtimeReady = !!state.runtime?.selection?.digest;
-        for (const control of document.querySelectorAll("[data-busy-action]"))
-          control.disabled =
-            state.busy || (!!control.dataset.needsRuntime && !runtimeReady);
-        for (const control of document.querySelectorAll("[data-needs-runtime]"))
-          control.title = runtimeReady ? "" : "需先选择运行包";
-        if (context.runtimeHint) context.runtimeHint.hidden = runtimeReady;
-        // The save bar belongs to the editing pages; elsewhere only a pending
-        // change is announced.
-        const editing = ["site", "scenes", "projects"].includes(state.section);
-        if (context.saveBar) context.saveBar.hidden = !editing && !state.dirty;
-        if (context.saveActions) context.saveActions.hidden = !editing;
-      }
-      async function building(action) {
-        if (state.busy) throw new Error("正在处理，请稍后");
-        const epoch = state.sessionEpoch;
-        state.busy = true;
-        updateStatus();
-        try {
-          return await action();
-        } finally {
-          if (epoch === state.sessionEpoch) {
-            state.busy = false;
-            updateStatus();
-          }
-        }
-      }
-      function validRevision(value) {
-        return Number.isSafeInteger(value) && value >= 0;
-      }
-      function validRuntime(value) {
-        return (
-          value &&
-          value.selection &&
-          validRevision(value.selection.generation) &&
-          (value.selection.digest === null ||
-            /^[a-f0-9]{64}$/.test(value.selection.digest)) &&
-          Array.isArray(value.bundles)
-        );
-      }
-      async function refreshRuntime() {
-        const sequence = ++runtimeRequestSequence,
-          epoch = state.sessionEpoch;
-        const current = context.captureView?.() || (() => true);
-        const result = await api("/runtime");
-        if (
-          sequence !== runtimeRequestSequence ||
-          epoch !== state.sessionEpoch ||
-          !current()
-        )
-          return false;
-        if (!validRuntime(result)) throw new Error("运行包状态响应无效");
-        state.runtime = result;
-        updateStatus();
-        return true;
-      }
-      window.addEventListener("beforeunload", (event) => {
-        if (state.dirty) {
-          event.preventDefault();
-          event.returnValue = "";
-        }
-      });
-      return {
-        dirty,
-        updateStatus,
-        building,
-        validRevision,
-        validRuntime,
-        refreshRuntime,
-        invalidateRuntime,
-        captureView,
-        invalidateView,
-      };
+  }
+  function validRevision(value) {
+    return Number.isSafeInteger(value) && value >= 0;
+  }
+  function validRuntime(value) {
+    return (
+      value &&
+      value.selection &&
+      validRevision(value.selection.generation) &&
+      (value.selection.digest === null ||
+        /^[a-f0-9]{64}$/.test(value.selection.digest)) &&
+      Array.isArray(value.bundles)
+    );
+  }
+  async function refreshRuntime() {
+    const sequence = ++runtimeRequestSequence,
+      epoch = state.sessionEpoch;
+    const current = context.captureView?.() || (() => true);
+    const result = await api("/runtime");
+    if (
+      sequence !== runtimeRequestSequence ||
+      epoch !== state.sessionEpoch ||
+      !current()
+    )
+      return false;
+    if (!validRuntime(result)) throw new Error("运行包状态响应无效");
+    state.runtime = result;
+    updateStatus();
+    return true;
+  }
+  window.addEventListener("beforeunload", (event) => {
+    if (state.dirty) {
+      event.preventDefault();
+      event.returnValue = "";
     }
-    return { create, createState };
-  },
-);
+  });
+  return {
+    dirty,
+    updateStatus,
+    building,
+    validRevision,
+    validRuntime,
+    refreshRuntime,
+    invalidateRuntime,
+    captureView,
+    invalidateView,
+  };
+}

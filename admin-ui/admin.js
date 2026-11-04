@@ -1,146 +1,89 @@
-"use strict";
-// Composition root only. Modules own their focused behavior; session state is created once.
-function startAdmin(environment = globalThis) {
-  const modules =
-    environment.SiteAdminModules ||
-    (typeof require === "function"
-      ? {
-          helpers: require("./modules/helpers.js"),
-          state: require("./modules/state.js"),
-          api: require("./modules/api.js"),
-          dom: require("./modules/dom.js"),
-          session: require("./modules/session.js"),
-          actions: require("./modules/actions.js"),
-          overview: require("./modules/overview.js"),
-          site: require("./modules/site.js"),
-          scenes: require("./modules/scenes.js"),
-          projects: require("./modules/projects.js"),
-          resources: require("./modules/resources.js"),
-          storage: require("./modules/storage.js"),
-          versions: require("./modules/versions.js"),
-          security: require("./modules/security.js"),
-        }
-      : null);
-  if (!modules) throw new Error("管理模块加载失败，请刷新页面");
+// Composition root only. Modules own their focused behavior; session state is
+// created once. Shared validation (page-content, content-contract,
+// site-identity) arrives as classic scripts that set browser globals.
+import * as state from "./modules/state.js";
+import * as api from "./modules/api.js";
+import * as dom from "./modules/dom.js";
+import * as session from "./modules/session.js";
+import * as router from "./modules/router.js";
+import * as actions from "./modules/actions.js";
+import * as overview from "./modules/overview.js";
+import * as site from "./modules/site.js";
+import * as scenes from "./modules/scenes.js";
+import * as projects from "./modules/projects.js";
+import * as resources from "./modules/resources.js";
+import * as storage from "./modules/storage.js";
+import * as versions from "./modules/versions.js";
+import * as security from "./modules/security.js";
+import { wireModules } from "./modules/registry.js";
+
+export * from "./modules/helpers.js";
+
+const MODULES = {
+  state,
+  api,
+  dom,
+  session,
+  router,
+  actions,
+  overview,
+  site,
+  scenes,
+  projects,
+  resources,
+  storage,
+  versions,
+  security,
+};
+const SECTIONS = [
+  ["overview", "◈", "总览"],
+  ["site", "▤", "网站设置"],
+  ["scenes", "◇", "场景编辑"],
+  ["projects", "▦", "作品管理"],
+  ["resources", "▧", "资源库"],
+  ["storage", "◫", "存储设置"],
+  ["versions", "↶", "发布版本"],
+  ["security", "⊙", "账号安全"],
+];
+// Display order of the basic site fields; stored jsonb key order is not used.
+const LABELS = {
+  title: "网站标题",
+  navWork: "作品导航文字",
+  navContact: "联系导航文字",
+  contactTitle: "联系页标题",
+  email: "邮箱显示文字",
+  emailLink: "联系邮箱",
+  cityLax: "联系页地点一（原 LA）",
+  cityNyc: "联系页地点二（原 NY）",
+  cityAms: "联系页地点三（原 AMS）",
+  labUrl: "底部展示区跳转链接",
+};
+
+/** @param {any} [environment] browser window, or a test double of it */
+export function startAdmin(environment = globalThis) {
+  if (!environment.SitePageContent)
+    throw new Error("页面内容策略加载失败，请刷新页面");
   const document = environment.document;
-  const state = modules.state.createState();
-  const sections = [
-    ["overview", "◈", "总览"],
-    ["site", "▤", "网站设置"],
-    ["scenes", "◇", "场景编辑"],
-    ["projects", "▦", "作品管理"],
-    ["resources", "▧", "资源库"],
-    ["storage", "◫", "存储设置"],
-    ["versions", "↶", "发布版本"],
-    ["security", "⊙", "账号安全"],
-  ];
-  // Display order of the basic site fields; stored jsonb key order is not used.
-  const labels = {
-    title: "网站标题",
-    navWork: "作品导航文字",
-    navContact: "联系导航文字",
-    contactTitle: "联系页标题",
-    email: "邮箱显示文字",
-    emailLink: "联系邮箱",
-    cityLax: "联系页地点一（原 LA）",
-    cityNyc: "联系页地点二（原 NY）",
-    cityAms: "联系页地点三（原 AMS）",
-    labUrl: "底部展示区跳转链接",
-  };
-  let services;
   const context = {
-    state,
-    sections,
-    labels,
+    state: state.createState(),
+    sections: SECTIONS,
+    labels: LABELS,
     document,
-    pageContent:
-      environment.SitePageContent ||
-      (typeof require === "function"
-        ? require("../shared/page-content.js")
-        : null),
+    pageContent: environment.SitePageContent,
     app: document.getElementById("app"),
     window: environment,
     fetch: environment.fetch.bind(environment),
     crypto: environment.crypto,
     content: null,
     saveStatus: null,
-    newProject: modules.helpers.newProject,
-    canPick: modules.helpers.canPick,
-    storageBody: modules.helpers.storageBody,
-    canConvert: modules.helpers.canConvert,
-    resourcePreviewURL: modules.helpers.resourcePreviewURL,
-    orderedSiteKeys: modules.helpers.orderedSiteKeys,
-    dirty: (...args) => services.state.dirty(...args),
-    updateStatus: (...args) => services.state.updateStatus(...args),
-    building: (...args) => services.state.building(...args),
-    validRevision: (...args) => services.state.validRevision(...args),
-    validRuntime: (...args) => services.state.validRuntime(...args),
-    refreshRuntime: (...args) => services.state.refreshRuntime(...args),
-    invalidateRuntime: (...args) => services.state.invalidateRuntime(...args),
-    captureView: (...args) => services.state.captureView(...args),
-    invalidateView: (...args) => services.state.invalidateView(...args),
-    mountDialog: (...args) => services.dom.mountDialog(...args),
-    closeDialogs: (...args) => services.dom.closeDialogs(...args),
-    api: (...args) => services.api.api(...args),
-    node: (...args) => services.dom.node(...args),
-    button: (...args) => services.dom.button(...args),
-    notify: (...args) => services.dom.notify(...args),
-    confirmAction: (...args) => services.dom.confirmAction(...args),
-    run: (...args) => services.dom.run(...args),
-    field: (...args) => services.dom.field(...args),
-    panel: (...args) => services.dom.panel(...args),
-    heading: (...args) => services.dom.heading(...args),
-    warning: (...args) => services.dom.warning(...args),
-    empty: (...args) => services.dom.empty(...args),
-    check: (...args) => services.dom.check(...args),
-    load: (...args) => services.session.load(...args),
-    login: (...args) => services.session.login(...args),
-    shell: (...args) => services.session.shell(...args),
-    logout: (...args) => services.session.logout(...args),
-    render: (...args) => services.session.render(...args),
-    init: (...args) => services.session.init(...args),
-    save: (...args) => services.actions.save(...args),
-    preview: (...args) => services.actions.preview(...args),
-    publish: (...args) => services.actions.publish(...args),
-    overviewView: (...args) => services.overview.overviewView(...args),
-    showRuntimePanel: (...args) => services.overview.showRuntimePanel(...args),
-    siteView: (...args) => services.site.siteView(...args),
-    scenesView: (...args) => services.scenes.scenesView(...args),
-    projectsView: (...args) => services.projects.projectsView(...args),
-    refreshResources: (...args) => services.resources.refreshResources(...args),
-    conversionEditor: (...args) => services.resources.conversionEditor(...args),
-    resourceCard: (...args) => services.resources.resourceCard(...args),
-    picker: (...args) => services.resources.picker(...args),
-    resourcesView: (...args) => services.resources.resourcesView(...args),
-    uploadFile: (...args) => services.resources.uploadFile(...args),
-    storageView: (...args) => services.storage.storageView(...args),
-    storageEditor: (...args) => services.storage.storageEditor(...args),
-    versionsView: (...args) => services.versions.versionsView(...args),
-    securityView: (...args) => services.security.securityView(...args),
   };
-  services = {
-    state: modules.state.create(context),
-    api: modules.api.create(context),
-    dom: modules.dom.create(context),
-    session: modules.session.create(context),
-    actions: modules.actions.create(context),
-    overview: modules.overview.create(context),
-    site: modules.site.create(context),
-    scenes: modules.scenes.create(context),
-    projects: modules.projects.create(context),
-    resources: modules.resources.create(context),
-    storage: modules.storage.create(context),
-    versions: modules.versions.create(context),
-    security: modules.security.create(context),
-  };
+  const services = wireModules(context, MODULES);
   const ready = services.session.init();
   return {
-    state,
+    state: context.state,
     ready,
     actions: services.actions,
-    render: services.session.render,
+    render: services.router.render,
   };
 }
-if (typeof module !== "undefined")
-  module.exports = { ...require("./modules/helpers.js"), startAdmin };
 if (typeof document !== "undefined") startAdmin();

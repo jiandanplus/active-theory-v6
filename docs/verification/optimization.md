@@ -52,7 +52,7 @@
 
 ## 未完成 / 未验证
 
-- **R1（后台改用 ES Modules）未实施。** 约 50 个后台测试依赖 UMD 加 vm 按源码切片加载函数，迁移到 ES Modules 需要先重写测试工具。建议作为单独 PR。U7 的局部重绘已经按 R1 的方向实现。
+- **R1（后台改用 ES Modules）已在单独分支 `claude/admin-esm` 完成**：`index.html` 只加载一个 `type="module"` 入口；`admin.js` 中的约 50 行转发样板改为各模块声明的 `provides` 与 `modules/registry.js`；页面调度移入 `modules/router.js`；安装向导 `setup.js` 也是 ES 模块。在本机演示实例上走完 安装 → 登录 → 选择运行包 → 编辑网站/场景/作品 → 保存 → 预览 → 发布 → 版本列表 → 退出，浏览器控制台无输出；全量 618 项测试通过（含公开输出黄金对比）。
 - **U5（作品上移/下移）待决策 D2**：`priority` 的排序方向需在前台确认。
 - **R4（清理根目录）已由 main 上的提交完成**（删除历史脚本、`editor.html` 与 `tools/legacy`），合并后 lint/format 配置已去掉对应的忽略项；仅剩 `generate-o-*.js` 两个历史生成脚本。
 - **D1（版本化资源加 HTTP 缓存）待所有者决策，未实施。**

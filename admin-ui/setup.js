@@ -1,4 +1,3 @@
-"use strict";
 function setupView(status, authorized) {
   if (status === "installed") return "login";
   if (status !== "uninstalled") return "maintenance";
@@ -23,7 +22,10 @@ const COUNT_LABELS = {
   storages: "存储配置",
   audit: "审计记录",
 };
+/** @typedef {{title: string, items: string[], open: boolean, severity?: string}} ReportGroup */
+/** @param {any} [report] */
 function summarizeReport(report = {}) {
+  /** @type {ReportGroup[]} */
   const groups = [
     {
       title: "缺少必需资源",
@@ -32,12 +34,14 @@ function summarizeReport(report = {}) {
       severity: "error",
     },
   ];
+  /** @type {Map<string, ReportGroup>} */
   const byTitle = new Map(
     WARNING_GROUPS.map(([, title]) => [
       title,
       { title, items: [], open: false },
     ]),
   );
+  /** @type {ReportGroup} */
   const other = { title: "其他警告", items: [], open: false };
   for (const warning of (report.warnings || []).map(String)) {
     const match = WARNING_GROUPS.find(([prefix]) => warning.startsWith(prefix));
@@ -184,9 +188,9 @@ function mount({ root, onInstalled }) {
       .json()
       .catch(() => ({ error: "服务器响应无效" }));
     if (!response.ok && path !== "/status") {
-      const error = new Error(data.error || "请求失败");
-      error.status = response.status;
-      throw error;
+      throw Object.assign(new Error(data.error || "请求失败"), {
+        status: response.status,
+      });
     }
     return data;
   }
@@ -510,6 +514,4 @@ function mount({ root, onInstalled }) {
   }
   run(refresh);
 }
-if (typeof module !== "undefined")
-  module.exports = { setupView, mount, summarizeReport };
-if (typeof window !== "undefined") window.SiteSetup = { mount };
+export { setupView, mount, summarizeReport };

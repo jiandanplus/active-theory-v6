@@ -1,8 +1,5 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
-const fs = require("node:fs");
-const path = require("node:path");
-const vm = require("node:vm");
 const helpers = require("../admin-ui/modules/helpers");
 
 function deferred() {
@@ -129,15 +126,11 @@ function fixture(settings = {}) {
       this.values.push(args);
     }
   }
-  const sandbox = { module: { exports: {} }, XMLHttpRequest, FormData };
-  vm.runInNewContext(
-    fs.readFileSync(
-      path.join(__dirname, "../admin-ui/modules/resources.js"),
-      "utf8",
-    ),
-    sandbox,
-  );
-  resources = sandbox.module.exports.create(context);
+  // The ES module reads these browser globals when an upload starts; each
+  // test file runs in its own process, so replacing them here is contained.
+  globalThis.XMLHttpRequest = XMLHttpRequest;
+  globalThis.FormData = FormData;
+  resources = require("../admin-ui/modules/resources.js").create(context);
   return {
     state,
     source,

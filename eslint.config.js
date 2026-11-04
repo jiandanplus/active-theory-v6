@@ -33,10 +33,18 @@ module.exports = [
     rules,
   },
   {
-    // UMD modules load in the browser and under Node tests.
-    files: ["admin-ui/**/*.js", "shared/**/*.js", "examples/**/*.js"],
+    // UMD scripts load in the browser and under Node tests.
+    files: ["shared/**/*.js", "examples/**/*.js"],
     languageOptions: {
       globals: { ...globals.browser, ...globals.node },
+    },
+  },
+  {
+    // The admin UI is native ES modules (admin-ui/package.json "type").
+    files: ["admin-ui/**/*.js"],
+    languageOptions: {
+      sourceType: "module",
+      globals: { ...globals.browser },
     },
   },
 ];
