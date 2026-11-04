@@ -10,10 +10,6 @@ cms
 !package.json
 !tsconfig.json
 index.html
-# Remaining historical root generators (generate-o-*.js) are not maintained code
-/*.js
-!/server.js
-!/eslint.config.js
 # Prose and SQL
 *.md
 docs

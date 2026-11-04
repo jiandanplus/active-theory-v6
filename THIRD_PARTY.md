@@ -4,7 +4,7 @@ This is an inventory guide, not a grant of rights or a complete legal clearance.
 
 | Material | Source / inventory | Distribution boundary |
 | --- | --- | --- |
-| Runtime npm dependencies | Exact versions and integrity in package-lock.json; AWS SDK, Smithy handler, axios, busboy, draco3d, Express, file-type, pg and transitive dependencies | Individual package licenses apply; inspect installed package LICENSE/NOTICE before distributing images |
+| Runtime npm dependencies | Exact versions and integrity in package-lock.json; AWS SDK S3 client, Smithy handler, busboy, draco3d, Express, file-type, pg and transitive dependencies | Individual package licenses apply; inspect installed package LICENSE/NOTICE before distributing images |
 | Development tools | ESLint, Prettier, TypeScript, Node type declarations in package-lock.json | Development-only; omitted by production npm ci |
 | Base images | node:24-bookworm-slim, postgres:18-alpine | Upstream Node, Debian, PostgreSQL, Alpine and bundled component terms apply; tags are updateable, not immutable digests |
 | New portfolio sample | examples/portfolio/, trusted portfolio-v1 profile | Newly authored demonstration; no original artwork or proprietary runtime required |
