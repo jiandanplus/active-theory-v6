@@ -7,6 +7,9 @@ const unavailable = () =>
   fail(503, "缺少前台运行资源或交付不可用，请由管理员检查交付状态");
 
 // Historical reads depend only on persisted identities, trusted origin and CAS.
+/**
+ * @param {{store: any, options: any, cas?: any, version?: any, preview?: any, admin?: any}} params
+ */
 async function resolveDelivery({ store, options, version, preview, admin }) {
   const state = await installationStatus(store);
   if (state.state !== "installed") throw unavailable();

@@ -1,0 +1,14 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "strict": false
+  },
+  "include": [
+    "admin-server/delivery/*.js",
+    "admin-server/repositories/*.js",
+    "admin-server/security.js",
+    "admin-server/postgres.js",
+    "admin-ui/modules/*.js",
+    "server.js"
+  ]
+}

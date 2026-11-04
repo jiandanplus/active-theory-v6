@@ -259,6 +259,10 @@ function contentRepository(db) {
         await db.query("SELECT * FROM personal_site.versions ORDER BY id DESC")
       ).rows.map(version);
     },
+    /**
+     * @param {any} snapshot
+     * @param {{id?: number, created?: string}} [options]
+     */
     async insertVersion(
       snapshot,
       { id, created = new Date().toISOString() } = {},

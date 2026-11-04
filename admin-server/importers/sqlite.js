@@ -76,14 +76,21 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
   // schema creation or writable legacy connection is permitted here.
   const actual = await fs.promises.realpath(legacyPath);
   const db = new DatabaseSync(actual, { readOnly: true });
-  let settings, versions, admins, audit;
+  /** @type {any} */
+  let settings;
+  /** @type {any[]} */
+  let versions;
+  /** @type {any[]} */
+  let admins;
+  /** @type {any[]} */
+  let audit;
   try {
     db.exec("BEGIN");
     settings = {};
     for (const row of db.prepare("SELECT key,value FROM settings").all())
-      if (KEYS.has(row.key)) {
+      if (typeof row.key === "string" && KEYS.has(row.key)) {
         try {
-          settings[row.key] = JSON.parse(row.value);
+          settings[String(row.key)] = JSON.parse(String(row.value));
         } catch {
           throw conflict(`Invalid legacy setting: ${row.key}`);
         }
@@ -93,7 +100,7 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
       .all()
       .map((row) => {
         try {
-          return { ...row, config: JSON.parse(row.config) };
+          return { ...row, config: JSON.parse(String(row.config)) };
         } catch {
           throw conflict("Invalid legacy version JSON");
         }

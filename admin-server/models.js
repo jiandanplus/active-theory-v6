@@ -29,7 +29,7 @@ function runWorker(job) {
     );
     child.on("error", () => finish(fail(422, "模型处理进程启动失败")));
     child.on("exit", () => finish(fail(422, "模型处理进程异常退出")));
-    child.on("message", (message) =>
+    child.on("message", (/** @type {any} */ message) =>
       finish(message.ok ? null : fail(422, message.error), message),
     );
     child.send(job);
@@ -78,7 +78,7 @@ function mountModels({ app, admin, store, options }) {
           );
         },
       });
-      const { Body } = await adapter.get(source.key);
+      const { Body } = /** @type {any} */ (await adapter.get(source.key));
       await pipeline(
         Body,
         limit,

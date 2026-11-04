@@ -1,6 +1,17 @@
 const crypto = require("node:crypto");
-const { promisify } = require("node:util");
-const scrypt = promisify(crypto.scrypt);
+/**
+ * @param {string} password
+ * @param {string} salt
+ * @param {number} length
+ * @param {import("node:crypto").ScryptOptions} options
+ * @returns {Promise<Buffer>}
+ */
+const scrypt = (password, salt, length, options) =>
+  new Promise((resolve, reject) =>
+    crypto.scrypt(password, salt, length, options, (error, key) =>
+      error ? reject(error) : resolve(key),
+    ),
+  );
 const { route } = require("./http");
 const { authRepository } = require("./repositories/auth");
 const { auditRepository } = require("./repositories/audit");

@@ -21,6 +21,11 @@ function resourceId(snapshot, url) {
 }
 
 // Database-only checks are repeated under the site lock after file validation.
+/**
+ * @param {any} store
+ * @param {any} snapshot
+ * @param {{references?: any, geometryIds?: any, policy?: any}} [captured]
+ */
 async function checkPublicationState(
   store,
   snapshot,

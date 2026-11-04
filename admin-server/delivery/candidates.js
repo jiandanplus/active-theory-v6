@@ -87,6 +87,9 @@ async function prepareDraftCandidate({
   });
 }
 // Both paths supply an owned consistent DB capture; all file I/O stays outside it.
+/**
+ * @param {{store: any, options: any, registry: any, cas: any, captured: any, target: any, referenceCeiling?: any}} params
+ */
 async function prepareCapturedCandidate({
   store,
   options,

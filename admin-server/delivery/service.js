@@ -4,6 +4,9 @@ const { buildArtifact } = require("./builder");
 const { registerRuntime, selectRuntime } = require("./registration");
 const { assertActor } = require("./candidates");
 const { fail } = require("../security");
+/**
+ * @param {{store: any, options?: any, registry?: any, build?: Function}} params
+ */
 function createDeliveryService({
   store,
   options = {},
@@ -44,7 +47,13 @@ function createDeliveryService({
         expectedGeneration,
         actor,
       }),
-    read: ({ version, preview, admin } = {}) =>
+    read: (
+      /** @type {{version?: any, preview?: any, admin?: any}} */ {
+        version,
+        preview,
+        admin,
+      } = {},
+    ) =>
       require("./reader").resolveDelivery({
         store,
         cas,

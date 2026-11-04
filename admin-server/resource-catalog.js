@@ -78,6 +78,9 @@ function localURL(value) {
     throw conflict("Resource path escapes allowed directory");
   return { raw, decoded };
 }
+/**
+ * @param {{root: string, manifest?: any, config?: any, template?: any, [key: string]: any}} params
+ */
 async function inventoryResources({
   root,
   config = {},

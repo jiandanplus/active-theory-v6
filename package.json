@@ -20,7 +20,7 @@
     "lint": "eslint .",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
-    "typecheck": "tsc --project tsconfig.json",
+    "typecheck": "tsc --project tsconfig.json && tsc --project tsconfig.server.json",
     "db:migrate": "node scripts/db-migrate.js",
     "runtime:register": "node scripts/runtime-bundle.js",
     "delivery:audit": "node scripts/delivery-audit.js",

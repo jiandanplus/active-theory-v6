@@ -14,6 +14,10 @@ const { mountContentRoutes } = require("./routes/content");
 const { mountOperationalHealth } = require("./operational-health");
 const { requestLogging } = require("./request-logging");
 
+/**
+ * @param {any} [options]
+ * @param {{deliveryService?: any}} [services]
+ */
 function createApp(options = {}, { deliveryService } = {}) {
   options = {
     root: path.resolve(__dirname, ".."),

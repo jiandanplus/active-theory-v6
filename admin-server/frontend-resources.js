@@ -7,6 +7,10 @@ const { storageRepository } = require("./repositories/storages");
 const { fail } = require("./security");
 const { localFile, externalUrl } = require("./storage");
 
+/**
+ * @param {any} store
+ * @param {{version?: any, preview?: any, admin?: any}} [target]
+ */
 async function resolveVersion(store, { version, preview, admin } = {}) {
   const repo = contentRepository(store);
   const selected =

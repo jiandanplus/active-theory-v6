@@ -123,6 +123,13 @@ async function saveDraft(
     return next;
   });
 }
+/**
+ * @param {any} store
+ * @param {number} revision
+ * @param {any} [options]
+ * @param {any} [actor]
+ * @param {{withWarnings?: boolean, deliveryService?: any}} [services]
+ */
 async function publish(
   store,
   revision,
@@ -147,6 +154,13 @@ async function restore(store, id, revision, actor = null) {
     true,
   );
 }
+/**
+ * @param {any} store
+ * @param {number} revision
+ * @param {any} options
+ * @param {any} actor
+ * @param {{deliveryService?: any}} [services]
+ */
 async function createPreview(
   store,
   revision,

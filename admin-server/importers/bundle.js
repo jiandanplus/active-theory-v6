@@ -251,6 +251,7 @@ async function complete({
     warnings.push(
       `Local resource unavailable (missing, unreadable or unsafe): legacy:${id}`,
     );
+  /** @type {any} */
   const report = {
     ...catalog.report,
     counts: {

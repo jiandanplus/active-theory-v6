@@ -1,5 +1,8 @@
 const { Pool } = require("pg");
 
+/**
+ * @param {{databaseUrl?: string, ssl?: any, max?: number}} [config]
+ */
 function openPostgres({ databaseUrl, ssl, max = 8 } = {}) {
   let pool;
   function getPool() {

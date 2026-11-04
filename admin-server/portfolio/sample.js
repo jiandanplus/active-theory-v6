@@ -95,6 +95,7 @@ async function demoBundle() {
     fontCoverage: {},
     readiness: { ready: true, missingRequired: [] },
   };
+  /** @type {any} */
   const report = {
     counts: {
       resources: resources.length,
