@@ -276,9 +276,21 @@ function mount({ root, onInstalled }) {
     });
     card.append(label, select);
     if (state.mode === "bundle")
-      card.append(el("p", "沿用服务器上的原前端程序和场景配置，导入作品等可管理内容，不替换为示例页面。", "muted"));
+      card.append(
+        el(
+          "p",
+          "沿用服务器上的原前端程序和场景配置，导入作品等可管理内容，不替换为示例页面。",
+          "muted",
+        ),
+      );
     if (state.mode === "demo")
-      card.append(el("p", "此选项使用不同的示例前端，不保留原站 3D 页面效果。仅用于另建独立示例网站；已有网站请保留原站页面。", "warning"));
+      card.append(
+        el(
+          "p",
+          "此选项使用不同的示例前端，不保留原站 3D 页面效果。仅用于另建独立示例网站；已有网站请保留原站页面。",
+          "warning",
+        ),
+      );
     if (state.mode === "empty")
       card.append(
         el(

@@ -1,6 +1,6 @@
 const fs = require("node:fs"),
   path = require("node:path");
-const {normalizeSite} = require('../../shared/site-identity');
+const { normalizeSite } = require("../../shared/site-identity");
 const SCENES = {
   Home: "开场 · Logo",
   About: "个人介绍",

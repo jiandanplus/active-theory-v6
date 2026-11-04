@@ -32,9 +32,15 @@ test("trusted legacy import preserves varied fixed visuals across draft and hist
   const base = structuredClone(f.config);
   base.scenes[0].fields.push(
     { key: "Home/uBrightness", label: "Brightness", type: "number", value: 1 },
-    { key: "Home_texture", label: "Texture", type: "resource", value: "assets/images/image.png" },
+    {
+      key: "Home_texture",
+      label: "Texture",
+      type: "resource",
+      value: "assets/images/image.png",
+    },
   );
-  const draft = structuredClone(base), historical = structuredClone(base);
+  const draft = structuredClone(base),
+    historical = structuredClone(base);
   draft.scenes[0].fields[0].value = "assets/geometry/draft.bin";
   draft.scenes[0].fields[1].value = 2;
   draft.scenes[0].fields[2].value = "https://legacy.invalid/draft.png";
@@ -42,61 +48,153 @@ test("trusted legacy import preserves varied fixed visuals across draft and hist
   historical.scenes[0].fields[1].value = 0.5;
   historical.scenes[0].fields[2].value = "https://legacy.invalid/history.png";
   try {
-    for (const [key, value] of [["schema", base], ["draft", draft]])
-      db.prepare("UPDATE settings SET value=? WHERE key=?").run(JSON.stringify(value), key);
+    for (const [key, value] of [
+      ["schema", base],
+      ["draft", draft],
+    ])
+      db.prepare("UPDATE settings SET value=? WHERE key=?").run(
+        JSON.stringify(value),
+        key,
+      );
     db.prepare("UPDATE versions SET config=?").run(JSON.stringify(historical));
-  } finally { db.close(); }
-  const before = sourceHashes(f.root), bundle = await readLegacy(f);
+  } finally {
+    db.close();
+  }
+  const before = sourceHashes(f.root),
+    bundle = await readLegacy(f);
   assert.deepEqual(bundle.draft.config.scenes, draft.scenes);
-  assert(bundle.versions.every(v => JSON.stringify(v.snapshot.config.scenes) === JSON.stringify(historical.scenes)));
+  assert(
+    bundle.versions.every(
+      (v) =>
+        JSON.stringify(v.snapshot.config.scenes) ===
+        JSON.stringify(historical.scenes),
+    ),
+  );
   assert.deepEqual(sourceHashes(f.root), before);
 });
 
 test("legacy visual preservation still rejects invalid field shapes, types and unsafe URLs", async (t) => {
   const cases = [
-    ["unsafe scheme", config => { config.scenes[0].fields[0].value = "javascript:alert(1)"; }],
-    ["encoded traversal", config => { config.scenes[0].fields[0].value = "assets/%2e%2e/private.bin"; }],
-    ["unconverted geometry", config => { config.scenes[0].fields[0].value = "https://legacy.invalid/model.glb"; }],
-    ["nonstring geometry", config => { config.scenes[0].fields[0].value = 42; }],
-    ["changed type", config => { config.scenes[0].fields[0].type = "resource"; }],
-    ["extra field property", config => { config.scenes[0].fields[0].unexpected = true; }],
-    ["nonnumber parameter", config => { config.scenes[0].fields[1].value = "2"; }],
-    ["parameter above legacy range", config => { config.scenes[0].fields[1].value = 11; }],
-    ["negative parameter", config => { config.scenes[0].fields[1].value = -1; }],
+    [
+      "unsafe scheme",
+      (config) => {
+        config.scenes[0].fields[0].value = "javascript:alert(1)";
+      },
+    ],
+    [
+      "encoded traversal",
+      (config) => {
+        config.scenes[0].fields[0].value = "assets/%2e%2e/private.bin";
+      },
+    ],
+    [
+      "unconverted geometry",
+      (config) => {
+        config.scenes[0].fields[0].value = "https://legacy.invalid/model.glb";
+      },
+    ],
+    [
+      "nonstring geometry",
+      (config) => {
+        config.scenes[0].fields[0].value = 42;
+      },
+    ],
+    [
+      "changed type",
+      (config) => {
+        config.scenes[0].fields[0].type = "resource";
+      },
+    ],
+    [
+      "extra field property",
+      (config) => {
+        config.scenes[0].fields[0].unexpected = true;
+      },
+    ],
+    [
+      "nonnumber parameter",
+      (config) => {
+        config.scenes[0].fields[1].value = "2";
+      },
+    ],
+    [
+      "parameter above legacy range",
+      (config) => {
+        config.scenes[0].fields[1].value = 11;
+      },
+    ],
+    [
+      "negative parameter",
+      (config) => {
+        config.scenes[0].fields[1].value = -1;
+      },
+    ],
   ];
   for (const target of ["draft", "version"])
-    for (const [name, mutate] of cases) await t.test(`${target}: ${name}`, async t => {
-    const f = importFixture(t), db = new DatabaseSync(f.legacyPath);
-    const schema = structuredClone(f.config);
-    schema.scenes[0].fields.push({ key: "Home/uBrightness", label: "Brightness", type: "number", value: 1 });
-    const config = structuredClone(schema);
-    mutate(config);
-    try {
-      db.prepare("UPDATE settings SET value=? WHERE key='schema'").run(JSON.stringify(schema));
-      db.prepare("UPDATE settings SET value=? WHERE key='draft'").run(JSON.stringify(target === "draft" ? config : schema));
-      db.prepare("UPDATE versions SET config=?").run(JSON.stringify(target === "version" ? config : schema));
-    } finally { db.close(); }
-    await assert.rejects(readLegacy(f), { status: 409 });
-  });
+    for (const [name, mutate] of cases)
+      await t.test(`${target}: ${name}`, async (t) => {
+        const f = importFixture(t),
+          db = new DatabaseSync(f.legacyPath);
+        const schema = structuredClone(f.config);
+        schema.scenes[0].fields.push({
+          key: "Home/uBrightness",
+          label: "Brightness",
+          type: "number",
+          value: 1,
+        });
+        const config = structuredClone(schema);
+        mutate(config);
+        try {
+          db.prepare("UPDATE settings SET value=? WHERE key='schema'").run(
+            JSON.stringify(schema),
+          );
+          db.prepare("UPDATE settings SET value=? WHERE key='draft'").run(
+            JSON.stringify(target === "draft" ? config : schema),
+          );
+          db.prepare("UPDATE versions SET config=?").run(
+            JSON.stringify(target === "version" ? config : schema),
+          );
+        } finally {
+          db.close();
+        }
+        await assert.rejects(readLegacy(f), { status: 409 });
+      });
 });
 
-test('legacy historical-only site image is inventoried without draft grants or source mutation',async t=>{
-  const f=importFixture(t), url='https://historical.invalid/share.png';
-  const db=new DatabaseSync(f.legacyPath);
+test("legacy historical-only site image is inventoried without draft grants or source mutation", async (t) => {
+  const f = importFixture(t),
+    url = "https://historical.invalid/share.png";
+  const db = new DatabaseSync(f.legacyPath);
   try {
-    const row=db.prepare('SELECT config FROM versions WHERE id=41').get();
-    const config=JSON.parse(row.config); config.site.socialImage=url;
-    db.prepare('UPDATE versions SET config=? WHERE id=41').run(JSON.stringify(config));
-  } finally { db.close(); }
-  const before=sourceHashes(f.root), bundle=await readLegacy(f);
-  assert.deepEqual(sourceHashes(f.root),before);
-  const image=bundle.resources.find(r=>r.url===url);
-  assert.ok(image); assert.equal(image.kind,'image');
-  assert.equal(bundle.versions.find(v=>v.id===41).snapshot.config.site.socialImage,url);
-  assert.equal(bundle.draft.config.site.socialImage,'');
-  const {collectReferences}=require('../admin-server/snapshots');
-  assert(!collectReferences(bundle.draft).some(r=>r.resourceId===image.id));
-  assert(collectReferences(bundle.versions.find(v=>v.id===41).snapshot).some(r=>r.resourceId===image.id&&r.slot==='config.site.socialImage'));
+    const row = db.prepare("SELECT config FROM versions WHERE id=41").get();
+    const config = JSON.parse(row.config);
+    config.site.socialImage = url;
+    db.prepare("UPDATE versions SET config=? WHERE id=41").run(
+      JSON.stringify(config),
+    );
+  } finally {
+    db.close();
+  }
+  const before = sourceHashes(f.root),
+    bundle = await readLegacy(f);
+  assert.deepEqual(sourceHashes(f.root), before);
+  const image = bundle.resources.find((r) => r.url === url);
+  assert.ok(image);
+  assert.equal(image.kind, "image");
+  assert.equal(
+    bundle.versions.find((v) => v.id === 41).snapshot.config.site.socialImage,
+    url,
+  );
+  assert.equal(bundle.draft.config.site.socialImage, "");
+  const { collectReferences } = require("../admin-server/snapshots");
+  assert(
+    !collectReferences(bundle.draft).some((r) => r.resourceId === image.id),
+  );
+  assert(
+    collectReferences(bundle.versions.find((v) => v.id === 41).snapshot).some(
+      (r) => r.resourceId === image.id && r.slot === "config.site.socialImage",
+    ),
+  );
 });
 
 test("legacy private bytes are checked read-only with checksums and required geometry readiness", async (t) => {
@@ -776,10 +874,27 @@ test("read-only imported bundle persists twice-retained versions and credential 
     (await repo.listVersions()).map((v) => v.id),
     [42, 41],
   );
-  assert.deepEqual((await store.query('SELECT version_id,mode,artifact_digest,generation FROM personal_site.delivery_bindings ORDER BY version_id')).rows,[
-    {version_id:'41',mode:'legacy',artifact_digest:null,generation:0},
-    {version_id:'42',mode:'legacy',artifact_digest:null,generation:0},
-  ]);
+  assert.deepEqual(
+    (
+      await store.query(
+        "SELECT version_id,mode,artifact_digest,generation FROM personal_site.delivery_bindings ORDER BY version_id",
+      )
+    ).rows,
+    [
+      {
+        version_id: "41",
+        mode: "legacy",
+        artifact_digest: null,
+        generation: 0,
+      },
+      {
+        version_id: "42",
+        mode: "legacy",
+        artifact_digest: null,
+        generation: 0,
+      },
+    ],
+  );
   const rows = (
     await store.query(
       "SELECT credentials FROM personal_site.storages WHERE id=$1",
@@ -790,23 +905,29 @@ test("read-only imported bundle persists twice-retained versions and credential 
   assert.equal(hash(f.legacyPath), f.sourceHash);
 });
 
-test('legacy import and old-version restore preserve temporary source bytes and historical JSONB', async t=>{
-  const f=importFixture(t), {store}=await postgresFixture(t);
-  const before=sourceHashes(f.root);
-  const bundle=await readLegacy({...f,masterKey:f.masterKey});
-  await store.transaction(tx=>contentRepository(tx).importBundle(bundle));
-  const historySql='SELECT id,snapshot::text AS snapshot FROM personal_site.versions ORDER BY id';
-  const history=(await store.query(historySql)).rows;
-  assert.equal(history.length,2);
-  const repo=contentRepository(store);
-  await require('../admin-server/config').restore(store,41,(await repo.getDraft()).revision);
-  const draft=await repo.getDraft();
-  assert.equal(draft.config.site.description,'');
-  assert.equal(draft.config.site.language,'en');
-  assert.equal(draft.config.site.socialImage,'');
-  assert.deepEqual((await store.query(historySql)).rows,history);
-  assert.equal(hash(f.legacyPath),f.sourceHash);
-  assert.deepEqual(sourceHashes(f.root),before);
+test("legacy import and old-version restore preserve temporary source bytes and historical JSONB", async (t) => {
+  const f = importFixture(t),
+    { store } = await postgresFixture(t);
+  const before = sourceHashes(f.root);
+  const bundle = await readLegacy({ ...f, masterKey: f.masterKey });
+  await store.transaction((tx) => contentRepository(tx).importBundle(bundle));
+  const historySql =
+    "SELECT id,snapshot::text AS snapshot FROM personal_site.versions ORDER BY id";
+  const history = (await store.query(historySql)).rows;
+  assert.equal(history.length, 2);
+  const repo = contentRepository(store);
+  await require("../admin-server/config").restore(
+    store,
+    41,
+    (await repo.getDraft()).revision,
+  );
+  const draft = await repo.getDraft();
+  assert.equal(draft.config.site.description, "");
+  assert.equal(draft.config.site.language, "en");
+  assert.equal(draft.config.site.socialImage, "");
+  assert.deepEqual((await store.query(historySql)).rows, history);
+  assert.equal(hash(f.legacyPath), f.sourceHash);
+  assert.deepEqual(sourceHashes(f.root), before);
 });
 
 test("bundle mode inventories metadata images, but not contact or ordinary navigation URLs", async (t) => {

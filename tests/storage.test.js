@@ -337,7 +337,9 @@ test("unexpired preview blocks trash, expired preview is pruned and bundled reso
       owner: "admin",
       expires: new Date(Date.now() + 60000).toISOString(),
       snapshot: draft.snapshot,
-      references: require('../admin-server/snapshots').collectReferences(draft.snapshot),
+      references: require("../admin-server/snapshots").collectReferences(
+        draft.snapshot,
+      ),
     }),
   );
   const trash = (id) =>

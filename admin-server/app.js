@@ -8,13 +8,13 @@ const { route, publicError } = require("./http");
 const { mountFrontend } = require("./frontend");
 const { mountResources } = require("./resources");
 const { mountModels } = require("./models");
-const {mountDeliveryAdmin}=require('./delivery/admin-routes');
+const { mountDeliveryAdmin } = require("./delivery/admin-routes");
 
-const {mountContentRoutes} = require('./routes/content');
-const {mountOperationalHealth} = require('./operational-health');
-const {requestLogging} = require('./request-logging');
+const { mountContentRoutes } = require("./routes/content");
+const { mountOperationalHealth } = require("./operational-health");
+const { requestLogging } = require("./request-logging");
 
-function createApp(options = {}, {deliveryService} = {}) {
+function createApp(options = {}, { deliveryService } = {}) {
   options = {
     root: path.resolve(__dirname, ".."),
     production: false,
@@ -61,16 +61,19 @@ function createApp(options = {}, {deliveryService} = {}) {
         ssl: options.databaseSSL,
       });
   app.locals.store = store;
-  deliveryService ||= require('./delivery/service').createDeliveryService({store,options});
+  deliveryService ||= require("./delivery/service").createDeliveryService({
+    store,
+    options,
+  });
   app.locals.deliveryService = deliveryService;
   app.disable("x-powered-by");
-  app.disable('etag');
+  app.disable("etag");
   if (options.trustProxy) app.set("trust proxy", options.trustProxy);
   app.use(requestLogging(options));
   app.use((req, res, next) => {
     // Express res.send/json must never turn a non-program response into 304.
-    Object.defineProperty(req,'fresh',{get:()=>false});
-    res.set('Cache-Control','no-store');
+    Object.defineProperty(req, "fresh", { get: () => false });
+    res.set("Cache-Control", "no-store");
     res.set("X-Content-Type-Options", "nosniff");
     res.set("Referrer-Policy", "same-origin");
     res.set("X-Frame-Options", "SAMEORIGIN");
@@ -83,49 +86,81 @@ function createApp(options = {}, {deliveryService} = {}) {
       );
     if (options.production)
       res.set("Strict-Transport-Security", "max-age=31536000");
-    const targetSegment=/^\/api\/site\/([^/]+)(?:\/|$)/i.exec(req.path)?.[1];
-    let privateTarget=false;
-    if(targetSegment) {
-      try { privateTarget=decodeURIComponent(targetSegment).startsWith('preview-'); }
-      catch { /* Invalid encoding remains a non-cacheable error. */ }
+    const targetSegment = /^\/api\/site\/([^/]+)(?:\/|$)/i.exec(req.path)?.[1];
+    let privateTarget = false;
+    if (targetSegment) {
+      try {
+        privateTarget =
+          decodeURIComponent(targetSegment).startsWith("preview-");
+      } catch {
+        /* Invalid encoding remains a non-cacheable error. */
+      }
     }
-    const privateResponse = adminPage || /^\/api\/(?:admin|setup)(?:\/|$)/i.test(req.path) ||
-      privateTarget || Object.hasOwn(req.query,'preview');
-    if (privateResponse) res.set('Cache-Control','private, no-store').set('X-Robots-Tag','noindex, nofollow');
+    const privateResponse =
+      adminPage ||
+      /^\/api\/(?:admin|setup)(?:\/|$)/i.test(req.path) ||
+      privateTarget ||
+      Object.hasOwn(req.query, "preview");
+    if (privateResponse)
+      res
+        .set("Cache-Control", "private, no-store")
+        .set("X-Robots-Tag", "noindex, nofollow");
     next();
   });
-  mountOperationalHealth(app, {store});
-  app.get('/admin/page-content.js', (req, res) => res.type('js').sendFile(
-    path.join(__dirname, '../shared/page-content.js'), {cacheControl:false, etag:false, lastModified:false}));
-  app.get('/admin/content-contract.js', (req, res) => res.type('js').sendFile(
-    path.join(__dirname, '../shared/content-contract.js'), {cacheControl:false, etag:false, lastModified:false}));
+  mountOperationalHealth(app, { store });
+  app.get("/admin/page-content.js", (req, res) =>
+    res.type("js").sendFile(path.join(__dirname, "../shared/page-content.js"), {
+      cacheControl: false,
+      etag: false,
+      lastModified: false,
+    }),
+  );
+  app.get("/admin/content-contract.js", (req, res) =>
+    res
+      .type("js")
+      .sendFile(path.join(__dirname, "../shared/content-contract.js"), {
+        cacheControl: false,
+        etag: false,
+        lastModified: false,
+      }),
+  );
   mountInstallation(app, { store, options });
-  app.use('/admin',(req,res,next)=>{
-    delete req.headers['if-none-match'];
-    delete req.headers['if-modified-since'];
+  app.use("/admin", (req, res, next) => {
+    delete req.headers["if-none-match"];
+    delete req.headers["if-modified-since"];
     next();
   });
-  app.get('/admin/site-identity.js', (req, res) => res.type('js').sendFile(
-    path.join(__dirname, '../shared/site-identity.js'), { cacheControl: false,etag:false,lastModified:false }));
+  app.get("/admin/site-identity.js", (req, res) =>
+    res
+      .type("js")
+      .sendFile(path.join(__dirname, "../shared/site-identity.js"), {
+        cacheControl: false,
+        etag: false,
+        lastModified: false,
+      }),
+  );
   app.use(
     "/admin",
     express.static(path.join(__dirname, "../admin-ui"), {
       index: "index.html",
       dotfiles: "deny",
       cacheControl: false,
-      etag:false,
-      lastModified:false,
+      etag: false,
+      lastModified: false,
     }),
   );
   app.use(
     route(async (req, res, next) => {
-      const publicPage = /^(?:\/|\/(?:work(?:\/[^/]+)?|contact|basic(?:\/(?:work(?:\/[^/]+)?|contact))?|unsupported\.html)\/?)$/i.test(req.path);
+      const publicPage =
+        /^(?:\/|\/(?:work(?:\/[^/]+)?|contact|basic(?:\/(?:work(?:\/[^/]+)?|contact))?|unsupported\.html)\/?)$/i.test(
+          req.path,
+        );
       let state;
       try {
         state = await installationStatus(store);
       } catch (error) {
         if (!publicPage) throw error;
-        require('./delivery/response').noStore(res,{error:true});
+        require("./delivery/response").noStore(res, { error: true });
         return res
           .status(503)
           .type("html")
@@ -134,19 +169,23 @@ function createApp(options = {}, {deliveryService} = {}) {
           );
       }
       if (state.state !== "installed") {
-        require('./delivery/response').noStore(res,{error:true});
+        require("./delivery/response").noStore(res, { error: true });
         if (publicPage)
           return res
             .status(503)
             .type("html")
             .send(
-              state.state==='upgrade_required'
+              state.state === "upgrade_required"
                 ? '<!doctype html><meta charset="utf-8"><title>网站需要维护升级</title><p>网站需要维护升级，请由管理员在服务器备份后运行数据库升级命令</p><a href="/admin">管理后台</a>'
                 : '<!doctype html><meta charset="utf-8"><title>网站尚未就绪</title><p>网站尚未完成安装或暂时不可用，请通过管理后台检查状态。</p><a href="/admin">管理后台</a>',
             );
-        return res
-          .status(503)
-          .json({ error: state.state==='upgrade_required'?'网站需要维护升级':"网站尚未安装或暂时不可用", state: state.state });
+        return res.status(503).json({
+          error:
+            state.state === "upgrade_required"
+              ? "网站需要维护升级"
+              : "网站尚未安装或暂时不可用",
+          state: state.state,
+        });
       }
       next();
     }),
@@ -155,22 +194,22 @@ function createApp(options = {}, {deliveryService} = {}) {
   const { requireAuth, csrfGuard } = mountAuth(app, store, options);
   const admin = express.Router();
   app.use("/api/admin", requireAuth, csrfGuard, admin);
-  mountContentRoutes({admin, store, options, deliveryService});
+  mountContentRoutes({ admin, store, options, deliveryService });
   mountResources({ app, admin, store, options });
   mountModels({ app, admin, store, options });
-  mountDeliveryAdmin({admin,store,service:deliveryService});
+  mountDeliveryAdmin({ admin, store, service: deliveryService });
   app.use(["/api/projects", "/api/build"], requireAuth, (req, res) =>
     res.status(410).json({ error: "旧接口已停用，请使用 /admin" }),
   );
-  mountFrontend(app, store, options, {cas:deliveryService.cas});
+  mountFrontend(app, store, options, { cas: deliveryService.cas });
   app.use((req, res) => {
-    require('./delivery/response').noStore(res,{error:true});
+    require("./delivery/response").noStore(res, { error: true });
     res.status(404).json({ error: "未找到资源" });
   });
   app.use((err, req, res, next) => {
     if (res.headersSent) return next(err);
     const { status, message } = publicError(err);
-    require('./delivery/response').noStore(res,{error:true});
+    require("./delivery/response").noStore(res, { error: true });
     if (status === 500) console.error("[admin]", err.code || err.name);
     res.status(status).json({
       error: message,

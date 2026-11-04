@@ -1,22 +1,26 @@
 "use strict";
 // Composition root only. Modules own their focused behavior; session state is created once.
 function startAdmin(environment = globalThis) {
-  const modules = environment.SiteAdminModules || (typeof require === "function" ? {
-    helpers: require("./modules/helpers.js"),
-    state: require("./modules/state.js"),
-    api: require("./modules/api.js"),
-    dom: require("./modules/dom.js"),
-    session: require("./modules/session.js"),
-    actions: require("./modules/actions.js"),
-    overview: require("./modules/overview.js"),
-    site: require("./modules/site.js"),
-    scenes: require("./modules/scenes.js"),
-    projects: require("./modules/projects.js"),
-    resources: require("./modules/resources.js"),
-    storage: require("./modules/storage.js"),
-    versions: require("./modules/versions.js"),
-    security: require("./modules/security.js"),
-  } : null);
+  const modules =
+    environment.SiteAdminModules ||
+    (typeof require === "function"
+      ? {
+          helpers: require("./modules/helpers.js"),
+          state: require("./modules/state.js"),
+          api: require("./modules/api.js"),
+          dom: require("./modules/dom.js"),
+          session: require("./modules/session.js"),
+          actions: require("./modules/actions.js"),
+          overview: require("./modules/overview.js"),
+          site: require("./modules/site.js"),
+          scenes: require("./modules/scenes.js"),
+          projects: require("./modules/projects.js"),
+          resources: require("./modules/resources.js"),
+          storage: require("./modules/storage.js"),
+          versions: require("./modules/versions.js"),
+          security: require("./modules/security.js"),
+        }
+      : null);
   if (!modules) throw new Error("管理模块加载失败，请刷新页面");
   const document = environment.document;
   const state = modules.state.createState();
@@ -45,11 +49,21 @@ function startAdmin(environment = globalThis) {
   };
   let services;
   const context = {
-    state, sections, labels, document,
-    pageContent: environment.SitePageContent || (typeof require === "function" ? require("../shared/page-content.js") : null),
+    state,
+    sections,
+    labels,
+    document,
+    pageContent:
+      environment.SitePageContent ||
+      (typeof require === "function"
+        ? require("../shared/page-content.js")
+        : null),
     app: document.getElementById("app"),
-    window: environment, fetch: environment.fetch.bind(environment), crypto: environment.crypto,
-    content: null, saveStatus: null,
+    window: environment,
+    fetch: environment.fetch.bind(environment),
+    crypto: environment.crypto,
+    content: null,
+    saveStatus: null,
     newProject: modules.helpers.newProject,
     canPick: modules.helpers.canPick,
     storageBody: modules.helpers.storageBody,
@@ -120,7 +134,12 @@ function startAdmin(environment = globalThis) {
     security: modules.security.create(context),
   };
   const ready = services.session.init();
-  return { state, ready, actions: services.actions, render: services.session.render };
+  return {
+    state,
+    ready,
+    actions: services.actions,
+    render: services.session.render,
+  };
 }
 if (typeof module !== "undefined")
   module.exports = { ...require("./modules/helpers.js"), startAdmin };

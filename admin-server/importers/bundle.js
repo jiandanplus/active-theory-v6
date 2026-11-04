@@ -1,5 +1,5 @@
 const fs = require("node:fs");
-const {normalizeConfig} = require('../../shared/site-identity');
+const { normalizeConfig } = require("../../shared/site-identity");
 const path = require("node:path");
 const { initialConfig, baseUIL } = require("./disk");
 const { composeSnapshot, collectReferences } = require("../snapshots");
@@ -34,7 +34,7 @@ function emptyConfig(config) {
   for (const key of Object.keys(copy.site))
     if (!["navWork", "navContact"].includes(key))
       copy.site[key] = key === "title" ? "个人网站" : "";
-  copy.site.language = 'en';
+  copy.site.language = "en";
   copy.projects = [];
   copy.songs = [];
   for (const scene of copy.scenes)
@@ -131,7 +131,9 @@ async function complete({
   const catalog = await inventoryResources({
     root,
     config: combined,
-    siteImages: allConfigs.map(config => config.site?.socialImage).filter(Boolean),
+    siteImages: allConfigs
+      .map((config) => config.site?.socialImage)
+      .filter(Boolean),
     template,
   });
   const existing = new Map(resources.map((r) => [r.id, structuredClone(r)]));

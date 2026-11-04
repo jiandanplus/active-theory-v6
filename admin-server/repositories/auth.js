@@ -13,16 +13,30 @@ const session = (r) =>
 function authRepository(db) {
   return {
     async lockValidSession(actor, now) {
-      if (!actor || typeof actor.id !== 'string' || !/^[a-f0-9]{64}$/.test(actor.id) || typeof actor.username !== 'string')
-        throw fail(401, '登录已失效');
-      const result = await db.query(`SELECT s.id,s.username,s.created,s.touched
+      if (
+        !actor ||
+        typeof actor.id !== "string" ||
+        !/^[a-f0-9]{64}$/.test(actor.id) ||
+        typeof actor.username !== "string"
+      )
+        throw fail(401, "登录已失效");
+      const result = await db.query(
+        `SELECT s.id,s.username,s.created,s.touched
         FROM personal_site.sessions s JOIN personal_site.admins a ON a.username=s.username
-        WHERE s.id=$1 AND s.username=$2 FOR UPDATE OF s`, [actor.id, actor.username]);
+        WHERE s.id=$1 AND s.username=$2 FOR UPDATE OF s`,
+        [actor.id, actor.username],
+      );
       const row = result.rows[0];
       // Refresh after the locking query, which itself may have waited.
       now = Math.max(now, Date.now());
-      if (!row || now-Number(row.touched)>=12*60*60*1000 || now-Number(row.created)>=7*24*60*60*1000 ||
-          Number(row.touched)>now || Number(row.created)>now) throw fail(401, '登录已失效');
+      if (
+        !row ||
+        now - Number(row.touched) >= 12 * 60 * 60 * 1000 ||
+        now - Number(row.created) >= 7 * 24 * 60 * 60 * 1000 ||
+        Number(row.touched) > now ||
+        Number(row.created) > now
+      )
+        throw fail(401, "登录已失效");
       return row;
     },
     async getAdmin() {

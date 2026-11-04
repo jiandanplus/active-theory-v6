@@ -3,8 +3,8 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { baseline, complete } = require("./bundle");
 const { validateConfig, safeURL } = require("../config");
-const {normalizeConfig} = require('../../shared/site-identity');
-const { lockSchema } = require('../../shared/page-content');
+const { normalizeConfig } = require("../../shared/site-identity");
+const { lockSchema } = require("../../shared/page-content");
 const { decryptCredentials, localFile } = require("../storage");
 const { conflict, checksum } = require("../resource-catalog");
 const KEYS = new Set([
@@ -48,12 +48,16 @@ function validate(config, schema) {
             field.value < 0 ||
             field.value > (field.key.startsWith("__blackhole_") ? 3 : 10) ||
             (field.key === "__blackhole_size" && field.value < 0.2)
-          ) throw Error();
+          )
+            throw Error();
         } else if (["resource", "geometry"].includes(field.type)) {
           if (typeof field.value !== "string") throw Error();
           if (field.value !== base?.value) {
             safeURL(field.value, { empty: false });
-            if (field.type === "geometry" && !/\.bin(?:[?#]|$)|^\/media\//.test(field.value))
+            if (
+              field.type === "geometry" &&
+              !/\.bin(?:[?#]|$)|^\/media\//.test(field.value)
+            )
               throw Error();
           }
         } else if (field.type !== "text") throw Error();

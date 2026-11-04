@@ -12,13 +12,14 @@ const { hashPassword, fail } = require("./security");
 // Runtime authority deliberately does not fingerprint catalogs on every request.
 // A present schema with missing/broken tables throws; it is never a new site.
 async function installationStatus(store) {
-  return inspectInstallation(store,{verifyStructure:false});
+  return inspectInstallation(store, { verifyStructure: false });
 }
 async function preflight(options, mode) {
   if (!["empty", "bundle", "legacy", "demo"].includes(mode))
     throw fail(400, "安装模式无效");
   try {
-    if(mode === 'demo')return await require('./portfolio/sample').demoBundle();
+    if (mode === "demo")
+      return await require("./portfolio/sample").demoBundle();
     if (mode === "legacy")
       return await require("./importers/sqlite").readLegacy({
         root: options.root,
@@ -84,7 +85,7 @@ function mountInstallation(app, { store, options }) {
   const auth = require("./setup-auth").setupAuth(options);
   const router = express.Router();
   router.use((req, res, next) => {
-    if (!res.get('Cache-Control')) res.set("Cache-Control", "no-store");
+    if (!res.get("Cache-Control")) res.set("Cache-Control", "no-store");
     next();
   });
   router.use(express.json({ limit: "64kb" }));
@@ -100,7 +101,13 @@ function mountInstallation(app, { store, options }) {
         }
         if (state.state === "uninstalled")
           state = await inspectInstallation(store);
-        res.status(['incompatible','upgrade_required'].includes(state.state) ? 503 : 200).json(state);
+        res
+          .status(
+            ["incompatible", "upgrade_required"].includes(state.state)
+              ? 503
+              : 200,
+          )
+          .json(state);
       } catch {
         res.status(503).json({ state: "unavailable", schemaVersion: null });
       }
@@ -114,8 +121,12 @@ function mountInstallation(app, { store, options }) {
   async function notInstalled() {
     const state = await installationStatus(store);
     if (state.state !== "uninstalled")
-      throw fail(state.state==='installed'?409:503,
-        state.state==='upgrade_required'?'站点需要由服务器管理员显式升级':'站点不可初始化或暂时不可用');
+      throw fail(
+        state.state === "installed" ? 409 : 503,
+        state.state === "upgrade_required"
+          ? "站点需要由服务器管理员显式升级"
+          : "站点不可初始化或暂时不可用",
+      );
   }
   router.get(
     "/database",

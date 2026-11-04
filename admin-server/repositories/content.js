@@ -1,5 +1,5 @@
 const { randomUUID } = require("node:crypto");
-const {normalizeConfig} = require('../../shared/site-identity');
+const { normalizeConfig } = require("../../shared/site-identity");
 const { toSafeInteger } = require("../postgres");
 const { composeSnapshot, collectReferences } = require("../snapshots");
 const { resourceRepository } = require("./resources");
@@ -176,7 +176,10 @@ function contentRepository(db) {
         await resources.insert(resource);
         inserted.add(resource.id);
       }
-      const draft = {...bundle.draft,config:normalizeConfig(bundle.draft.config)};
+      const draft = {
+        ...bundle.draft,
+        config: normalizeConfig(bundle.draft.config),
+      };
       const schema = normalizeConfig(bundle.schema);
       const snapshot = composeSnapshot(draft);
       await db.query(
@@ -196,7 +199,10 @@ function contentRepository(db) {
           "INSERT INTO personal_site.versions(id,created,snapshot) VALUES($1,$2,$3)",
           [v.id, v.created, composeSnapshot(v.snapshot)],
         );
-        await db.query("INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES($1,'legacy')",[v.id]);
+        await db.query(
+          "INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES($1,'legacy')",
+          [v.id],
+        );
       }
       await db.query(
         "INSERT INTO personal_site.site_settings(id,site,revision,published,template_id,default_storage) VALUES(true,$1,$2,$3,$4,$5)",
@@ -280,19 +286,43 @@ function contentRepository(db) {
       return row;
     },
     async reserveVersionId() {
-      return toSafeInteger((await db.query("SELECT nextval(pg_get_serial_sequence('personal_site.versions','id')) AS id")).rows[0].id);
+      return toSafeInteger(
+        (
+          await db.query(
+            "SELECT nextval(pg_get_serial_sequence('personal_site.versions','id')) AS id",
+          )
+        ).rows[0].id,
+      );
     },
-    async insertReservedVersion({id,snapshot,references}) {
-      if (!Number.isSafeInteger(id) || id < 1) throw fail(400, '版本编号无效');
-      await db.query('SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE');
-      const r=await db.query('INSERT INTO personal_site.versions(id,snapshot) VALUES($1,$2) RETURNING *',[id,snapshot]);
-      await resources.replaceReferences({ownerType:'version',ownerId:id,references});
+    async insertReservedVersion({ id, snapshot, references }) {
+      if (!Number.isSafeInteger(id) || id < 1) throw fail(400, "版本编号无效");
+      await db.query(
+        "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+      );
+      const r = await db.query(
+        "INSERT INTO personal_site.versions(id,snapshot) VALUES($1,$2) RETURNING *",
+        [id, snapshot],
+      );
+      await resources.replaceReferences({
+        ownerType: "version",
+        ownerId: id,
+        references,
+      });
       return version(r.rows[0]);
     },
-    async insertPreview({id,owner,expires,snapshot,references}) {
-      await db.query('SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE');
-      const r=await db.query('INSERT INTO personal_site.previews(id,owner,expires,snapshot) VALUES($1,$2,$3,$4) RETURNING *',[id,owner,expires,snapshot]);
-      await resources.replaceReferences({ownerType:'preview',ownerId:id,references});
+    async insertPreview({ id, owner, expires, snapshot, references }) {
+      await db.query(
+        "SELECT id FROM personal_site.site_settings WHERE id=true FOR UPDATE",
+      );
+      const r = await db.query(
+        "INSERT INTO personal_site.previews(id,owner,expires,snapshot) VALUES($1,$2,$3,$4) RETURNING *",
+        [id, owner, expires, snapshot],
+      );
+      await resources.replaceReferences({
+        ownerType: "preview",
+        ownerId: id,
+        references,
+      });
       return preview(r.rows[0]);
     },
     async setPublished(id) {
