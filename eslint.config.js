@@ -14,14 +14,7 @@ const rules = {
 
 module.exports = [
   {
-    // Remaining historical root generators (generate-o-*.js) are not maintained.
-    ignores: [
-      "*.js",
-      "!server.js",
-      "!eslint.config.js",
-      ".deployment/**",
-      "data/**",
-    ],
+    ignores: [".deployment/**", "data/**"],
   },
   {
     files: ["**/*.js"],
