@@ -14,9 +14,8 @@ const rules = {
 
 module.exports = [
   {
-    // Historical operator tools are pending owner review (optimization plan R4).
+    // Remaining historical root generators (generate-o-*.js) are not maintained.
     ignores: [
-      "tools/legacy/**",
       "*.js",
       "!server.js",
       "!eslint.config.js",

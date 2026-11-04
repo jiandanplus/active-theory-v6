@@ -119,7 +119,7 @@ docker compose --env-file .env.deployment -p personal-site -f compose.yaml up -d
 # 经 HTTPS 代理访问 /admin/ 完成首次安装；不会自动创建管理员。
 ```
 
-应用端口仅映射宿主机回环地址，可通过 `SITE_PORT` 改变；数据库无宿主机端口映射。命名卷分别保存 `/app/data` 与 PostgreSQL 18 的 `/var/lib/postgresql`，资源目录只读挂载。**不要对真实部署执行 `docker compose down -v`，它会删除数据库和上传文件。** 本地隔离容器验收记录见 [实际验证](verification/postgresql-installation.md)，不能替代目标服务器验收。
+应用端口仅映射宿主机回环地址，可通过 `SITE_PORT` 改变；数据库无宿主机端口映射。命名卷分别保存 `/app/data` 与 PostgreSQL 18 的 `/var/lib/postgresql`，资源目录只读挂载。**不要对真实部署执行 `docker compose down -v`，它会删除数据库和上传文件。** 生产环境配置与验收步骤见 [生产部署指南](PRODUCTION.md)。
 
 备份时进入维护窗口停止应用写入/新构建并等待在途结束，对 PostgreSQL 执行 `pg_dump -Fc`，同时备份完整私有 data（含 delivery、uploads）、授权 bundled 媒体及原运行包/清单；独立加密保管主密钥。S3 对象备份/版本控制由存储服务负责。恢复必须先到新独立数据库及新目录，核对行数、CAS 摘要、账号登录、预览授权和媒体读取；上线后的 PostgreSQL 新写入不能被旧 SQLite 备份覆盖。`npm run delivery:audit` 不删除任何对象，孤立/非当前公开不等于可删，第一版无自动 GC。
 

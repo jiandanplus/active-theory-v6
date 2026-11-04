@@ -3,7 +3,6 @@ assets
 data
 .deployment
 output
-tools
 # Bytes served or hashed at runtime, data snapshots and generated fixtures
 examples
 cms
@@ -11,8 +10,7 @@ cms
 !package.json
 !tsconfig.json
 index.html
-editor.html
-# Historical root scripts pending owner review (optimization plan R4)
+# Remaining historical root generators (generate-o-*.js) are not maintained code
 /*.js
 !/server.js
 !/eslint.config.js

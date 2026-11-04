@@ -102,24 +102,18 @@ test(
   },
 );
 
-test("legacy archive is disabled without zip invocation or private filesystem writes", async () => {
-  const source = await fs.readFile(
-    path.join(repo, "tools/legacy/archive-deploy.js"),
+test("retired whole-project archive entry points stay absent from the repository", async () => {
+  for (const entry of ["tools/legacy/archive-deploy.js", "archive-deploy.js"]) {
+    await assert.rejects(fs.access(path.join(repo, entry)), { code: "ENOENT" });
+  }
+  const { scripts } = JSON.parse(
+    await fs.readFile(path.join(repo, "package.json"), "utf8"),
+  );
+  for (const command of Object.values(scripts))
+    assert.doesNotMatch(command, /archive-deploy|zip -r/);
+  const deployment = await fs.readFile(
+    path.join(repo, "DEPLOYMENT.md"),
     "utf8",
   );
-  // Do not invoke historical code until this static safety guard confirms removal.
-  assert.match(source, /disabled/i);
-  assert.doesNotMatch(
-    source,
-    /require\(|\bexec\(|\bspawn\(|writeFile|unlink|zip -r/,
-  );
-  for (const entry of ["tools/legacy/archive-deploy.js", "archive-deploy.js"]) {
-    const result = spawnSync(process.execPath, [entry], {
-      cwd: repo,
-      encoding: "utf8",
-    });
-    assert.equal(result.status, 1);
-    assert.match(result.stderr, /DEPLOYMENT\.md/);
-    assert.match(result.stderr, /backup|备份/);
-  }
+  assert.match(deployment, /不要递归压缩整个工程目录/);
 });
