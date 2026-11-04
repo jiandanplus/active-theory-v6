@@ -11,18 +11,22 @@ function create(context) {
     const p = panel(context.content, "基本信息"),
       grid = node("div", undefined, "grid");
     p.append(grid);
-    for (const [key, value] of Object.entries(state.config.site).filter(([key]) =>
-      !["description", "language", "socialImage", "labUrl", ...pageContent.PAGE_KEYS].includes(key)))
+    const orderedSiteKeys = context.orderedSiteKeys ||
+      (typeof require === "function" ? require("./helpers.js").orderedSiteKeys : window.SiteAdminModules.helpers.orderedSiteKeys);
+    const excluded = ["description", "language", "socialImage", "labUrl", ...pageContent.PAGE_KEYS];
+    for (const key of orderedSiteKeys(state.config.site, labels, excluded))
       field(
         grid,
         labels[key] || key,
-        value,
+        state.config.site[key],
         (v) => {
           state.config.site[key] = v;
           dirty();
         },
         {
-          help: key === "emailLink" ? "只填写邮箱地址，不需要 mailto:" : undefined,
+          help: key === "emailLink"
+            ? "只填写邮箱地址，不需要 mailto:"
+            : /^city/.test(key) ? "联系页显示的城市或地点文字" : undefined,
         },
       );
     const definitions = { ...pageContent.MEDIA_FIELDS, ...pageContent.TEXT_FIELDS, ...pageContent.LINK_FIELDS };

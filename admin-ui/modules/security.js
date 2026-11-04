@@ -4,7 +4,7 @@
   else (root.SiteAdminModules ||= {})["security"] = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
-  const { state, node, button, notify, confirmAction, run, api, dirty, field, panel, heading, warning, init } = context;
+  const { state, node, notify, confirmAction, run, api, field, panel, heading, warning, init } = context;
   function securityView() {
     heading("账号安全", "保护唯一管理员账号，定期更新密码。");
     const p = panel(context.content, "修改密码");

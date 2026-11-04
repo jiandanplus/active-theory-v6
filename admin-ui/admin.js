@@ -30,16 +30,17 @@ function startAdmin(environment = globalThis) {
     ["versions", "↶", "发布版本"],
     ["security", "⊙", "账号安全"],
   ];
+  // Display order of the basic site fields; stored jsonb key order is not used.
   const labels = {
     title: "网站标题",
     navWork: "作品导航文字",
     navContact: "联系导航文字",
     contactTitle: "联系页标题",
-    cityLax: "地点一",
-    cityNyc: "地点二",
-    cityAms: "地点三",
     email: "邮箱显示文字",
     emailLink: "联系邮箱",
+    cityLax: "联系页地点一（原 LA）",
+    cityNyc: "联系页地点二（原 NY）",
+    cityAms: "联系页地点三（原 AMS）",
     labUrl: "底部展示区跳转链接",
   };
   let services;
@@ -54,6 +55,7 @@ function startAdmin(environment = globalThis) {
     storageBody: modules.helpers.storageBody,
     canConvert: modules.helpers.canConvert,
     resourcePreviewURL: modules.helpers.resourcePreviewURL,
+    orderedSiteKeys: modules.helpers.orderedSiteKeys,
     dirty: (...args) => services.state.dirty(...args),
     updateStatus: (...args) => services.state.updateStatus(...args),
     building: (...args) => services.state.building(...args),

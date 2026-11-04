@@ -261,3 +261,35 @@ test('read-only inventory verifies root and ancestors without preparing director
   await assert.rejects(createCAS(dir).inspect({readOnly:true}));
   assert.deepEqual(await fs.readdir(path.join(dir,'real')),[]);
 });
+test('CAS write failure stays visible when the staging cleanup also fails', async t => {
+  const dir = await fixture(t), cas = createCAS(dir);
+  const link = fs.link;
+  t.after(() => { fs.link = link; });
+  fs.link = async source => {
+    // Replace the owned staging directory so the cleanup identity check fails too.
+    const staging = path.dirname(source);
+    await fs.rename(staging, staging + '-moved');
+    await fs.mkdir(staging);
+    throw Object.assign(new Error('disk full'), { code: 'ENOSPC' });
+  };
+  await assert.rejects(cas.put(Buffer.from('bytes')), error => {
+    assert.equal(error.code, 'ENOSPC');
+    assert.equal(error.cause?.message, 'Unsafe or changed delivery file');
+    return true;
+  });
+  fs.link = link;
+  const entry = await cas.put(Buffer.from('bytes'));
+  assert.equal((await cas.read(entry)).toString(), 'bytes');
+});
+test('CAS cleanup failure after a successful write still fails closed', async t => {
+  const dir = await fixture(t), cas = createCAS(dir);
+  const link = fs.link;
+  t.after(() => { fs.link = link; });
+  fs.link = async (source, destination) => {
+    await link(source, destination);
+    const staging = path.dirname(source);
+    await fs.rename(staging, staging + '-moved');
+    await fs.mkdir(staging);
+  };
+  await assert.rejects(cas.put(Buffer.from('other')), /Unsafe or changed delivery file/);
+});

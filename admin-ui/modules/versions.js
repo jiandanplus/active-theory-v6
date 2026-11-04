@@ -4,7 +4,7 @@
   else (root.SiteAdminModules ||= {})["versions"] = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
-  const { state, document, node, button, notify, confirmAction, api, dirty, updateStatus, building, validRevision, panel, heading, empty, render } = context;
+  const { state, document, node, button, notify, confirmAction, api, updateStatus, building, validRevision, panel, heading, empty, render } = context;
   async function versionsView() {
     const current = context.captureView?.() || (() => true);
     const data = await api("/versions");

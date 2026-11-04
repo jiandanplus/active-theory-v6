@@ -4,7 +4,7 @@
   else (root.SiteAdminModules ||= {})["session"] = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
-  const { state, document, window, fetch, app, sections, node, button, confirmAction, api, dirty, updateStatus, field, save, preview, publish, overviewView, siteView, scenesView, projectsView, resourcesView, storageView, versionsView, securityView, invalidateRuntime } = context;
+  const { state, document, window, fetch, app, sections, node, button, confirmAction, api, updateStatus, field, save, preview, publish, overviewView, siteView, scenesView, projectsView, resourcesView, storageView, versionsView, securityView, invalidateRuntime } = context;
   async function load() {
     const epoch = state.sessionEpoch;
     invalidateRuntime();

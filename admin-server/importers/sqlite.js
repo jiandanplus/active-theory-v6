@@ -104,7 +104,9 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
   } catch (error) {
     try {
       db.exec("ROLLBACK");
-    } catch {}
+    } catch {
+      // The original import error below is the one worth reporting.
+    }
     if (error.status) throw error;
     throw conflict("Legacy database format cannot be imported");
   } finally {
@@ -167,7 +169,9 @@ async function readLegacy({ root, legacyPath, masterKey, dataDir }) {
         try {
           const value = decryptCredentials(storage.credentials, { masterKey });
           storage.available = !!(value.accessKeyId && value.secretAccessKey);
-        } catch {}
+        } catch {
+          // Undecryptable credentials are reported as unavailable below.
+        }
       if (!storage.available) credentialsUnavailable.push(storage.id);
       // Plain credentials are never migrated as configuration or printed.
       if (

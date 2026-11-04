@@ -4,7 +4,7 @@
   else (root.SiteAdminModules ||= {})["resources"] = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
-  const { state, document, node, button, notify, confirmAction, api, field, panel, heading, warning, empty, load, preview, render, canPick, canConvert, resourcePreviewURL } = context;
+  const { state, document, node, button, notify, confirmAction, api, field, panel, heading, warning, empty, render, canPick, canConvert, resourcePreviewURL } = context;
   const pageContent = context.pageContent || (typeof require === "function" ? require("../../shared/page-content.js") : context.window.SitePageContent);
   let resourceRequestSequence = 0;
   async function refreshResources(current = context.captureView?.() || (() => true)) {

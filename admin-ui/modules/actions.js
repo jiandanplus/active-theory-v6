@@ -4,7 +4,7 @@
   else (root.SiteAdminModules ||= {})["actions"] = factory();
 })(typeof globalThis !== "undefined" ? globalThis : this, function () {
 function create(context) {
-  const { state, window, node, notify, confirmAction, api, dirty, updateStatus, building, validRevision, panel, render } = context;
+  const { state, window, node, notify, confirmAction, api, updateStatus, building, validRevision, panel, render } = context;
   async function save() {
     if (state.busy) throw new Error("正在处理，请稍后");
     state.busy = true;

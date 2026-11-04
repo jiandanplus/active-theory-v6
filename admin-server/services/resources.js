@@ -105,7 +105,7 @@ async function multipart(req, dir, max) {
         task = pipeline(
           file,
           fs.createWriteStream(filename, { flags: "wx", mode: 0o600 }),
-        ).catch((e) => {
+        ).catch(() => {
           error = S.fail("上传文件写入失败");
         });
       });

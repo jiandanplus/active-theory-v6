@@ -65,7 +65,7 @@ function applyAppPatch(id,source,config) {
   if(!rule)throw incompatible(id);
   return applyRule(source,rule);
 }
-function patchAppSource(source,config,contract) {
+function patchAppSource(source,config) {
   if(!config || !config.site || !Array.isArray(config.songs))throw incompatible('app.config');
   for(const name of ['Hydra','Assets'])classBody(source,name,code=>code);
   const starts=[...source.matchAll(/\bclass GLUIText\s*\{/g)];
@@ -78,7 +78,7 @@ function patchAppSource(source,config,contract) {
   classBody(source,'ContactUI',code=>{if(/await _this\.wait\(\(_ => _this\.\w+\.dimensions\.width\)\)/.test(code)||(!config.site.emailLink&&code.includes('mailto:'))||(!config.site.labUrl&&!config.site.contactQrImage&&code.includes('_this.initClass(MobileSync)')))throw incompatible('contact.postcondition');return code;});
   return {source,report};
 }
-function patchShaders(source,config,contract) {
+function patchShaders(source,config) {
   const fields=config.scenes.find(s=>s.id==='TreeScene')?.fields||[];
   const value=name=>fields.find(f=>f.key===`__blackhole_${name}`)?.value??1;
   const parts=source.split('{@}'),indices=[];

@@ -118,7 +118,7 @@ function initialConfig(root) {
           value,
         });
   }
-  const inner = (ref, otherwise = "") =>
+  const inner = (ref) =>
     source.match(
       new RegExp(`_innerText: ("(?:[^"\\\\]|\\\\.)*"), refName: "${ref}"`),
     )?.[1];

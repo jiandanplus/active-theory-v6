@@ -10,7 +10,7 @@ const { localFile, externalUrl } = require("./storage");
 async function resolveVersion(store, { version, preview, admin } = {}) {
   const repo = contentRepository(store);
   const selected=version||preview||(await store.query('SELECT published FROM personal_site.site_settings WHERE id=true')).rows[0]?.published;
-  if(!version&&!preview&&selected==null)throw fail(503,'网站尚未发布');
+  if(!version&&!preview&&(selected===null||selected===undefined))throw fail(503,'网站尚未发布');
   const id=String(selected);
   if (id.startsWith("preview-")) {
     if (!admin) throw fail(401, "预览需要登录");

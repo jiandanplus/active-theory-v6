@@ -424,3 +424,20 @@ test('publish rechecks selection and busy state after pending confirmation',asyn
     assert.equal(posts,0);
   }
 });
+test('site fields render in label order, not PostgreSQL jsonb key order', () => {
+  const {orderedSiteKeys}=require('../admin-ui/modules/helpers');
+  const labels={title:'',navWork:'',navContact:'',contactTitle:'',email:'',emailLink:'',cityLax:'',cityNyc:'',cityAms:'',labUrl:''};
+  // jsonb sorts keys by length, then bytes: this is how drafts come back from the database.
+  const stored={email:'',title:'',cityAms:'',cityLax:'',cityNyc:'',navWork:'',zeta:'',emailLink:'',navContact:'',alpha:'',contactTitle:'',labUrl:''};
+  assert.deepEqual(orderedSiteKeys(stored,labels,['labUrl']),
+    ['title','navWork','navContact','contactTitle','email','emailLink','cityLax','cityNyc','cityAms','alpha','zeta']);
+  const controls=[];
+  const node=()=>({append(){}});
+  const context={state:{config:{site:stored,songs:[]}},content:node(),labels,orderedSiteKeys,node,heading(){},warning(){},dirty(){},
+    window:{SiteIdentity:require('../shared/site-identity')},panel:()=>node(),
+    field(parent,label,value,onChange,options){controls.push({label,options});return {};},button:()=>node()};
+  require('../admin-ui/modules/site').create(context).siteView();
+  assert.deepEqual(controls.slice(0,11).map(c=>c.label),
+    ['title','navWork','navContact','contactTitle','email','emailLink','cityLax','cityNyc','cityAms','alpha','zeta'].map(k=>labels[k]||k));
+  assert.equal(controls.find(c=>c.label==='zeta').options.help,undefined);
+});

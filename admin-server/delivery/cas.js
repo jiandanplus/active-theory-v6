@@ -108,7 +108,28 @@ function createCAS(dataDir) {
     const tmp = await fs.mkdtemp(path.join(staging, 'put-'));
     const owned = await fs.lstat(tmp, { bigint: true });
     const temporary = path.join(tmp, 'object');
+    async function cleanup() {
+      // Never remove a destination, another call's temporary, or a replaced
+      // directory. Avoid recursive removal even within the owned temporary.
+      await unchangedDirectories(parents);
+      const current = await fs.lstat(tmp, { bigint: true });
+      if (!current.isDirectory() || !identity(current, owned)) throw unsafe();
+      try { await fs.unlink(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
+      await fs.rmdir(tmp);
+    }
+    let entryWritten;
     try {
+      entryWritten = await stage();
+    } catch (error) {
+      // A cleanup failure must not hide why the write itself failed.
+      try { await cleanup(); } catch (cleanupError) {
+        if (error && typeof error === 'object' && error.cause === undefined) error.cause = cleanupError;
+      }
+      throw error;
+    }
+    await cleanup();
+    return entryWritten;
+    async function stage() {
       await unchangedDirectories(parents);
       const handle = await fs.open(temporary, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
       try { await handle.writeFile(bytes); await handle.sync(); }
@@ -124,14 +145,6 @@ function createCAS(dataDir) {
       try { await directoryHandle.sync(); } finally { await directoryHandle.close(); }
       await read(entry);
       return entry;
-    } finally {
-      // Never remove a destination, another call's temporary, or a replaced
-      // directory. Avoid recursive removal even within the owned temporary.
-      await unchangedDirectories(parents);
-      const current = await fs.lstat(tmp, { bigint: true });
-      if (!current.isDirectory() || !identity(current, owned)) throw unsafe();
-      try { await fs.unlink(temporary); } catch (error) { if (error.code !== 'ENOENT') throw error; }
-      await fs.rmdir(tmp);
     }
   }
   async function inspect({ readOnly = false } = {}) {

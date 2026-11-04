@@ -47,11 +47,19 @@ function canConvert(resource) {
     !resource.trashed
   );
 }
+// PostgreSQL jsonb reorders object keys, so never render in stored key order.
+// Known keys follow the label definition order; unknown keys follow alphabetically.
+function orderedSiteKeys(site, labels, excluded = []) {
+  const skip = new Set(excluded);
+  const keys = Object.keys(site || {}).filter((key) => !skip.has(key));
+  const known = Object.keys(labels || {}).filter((key) => keys.includes(key));
+  return [...known, ...keys.filter((key) => !known.includes(key)).sort()];
+}
 function resourcePreviewURL(resource) {
   return resource.source === "bundled"
     ? "/media/" + encodeURIComponent(resource.id)
     : resource.url;
 }
 
-return { newProject, canPick, storageBody, canConvert, resourcePreviewURL };
+return { newProject, canPick, storageBody, canConvert, resourcePreviewURL, orderedSiteKeys };
 });
