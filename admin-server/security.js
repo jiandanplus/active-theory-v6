@@ -97,8 +97,7 @@ async function createAccount(
     );
   });
 }
-const PUBLIC_PAGE =
-  /^(?:\/|\/(?:work(?:\/[^/]+)?|contact|basic(?:\/(?:work(?:\/[^/]+)?|contact))?|unsupported\.html)\/?)$/i;
+const { PUBLIC_PAGE } = require("./middleware/request-policy");
 function sessionFree(req) {
   if (Object.hasOwn(req.query || {}, "preview")) return false;
   return (
