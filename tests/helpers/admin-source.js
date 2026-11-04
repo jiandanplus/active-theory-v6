@@ -8,6 +8,7 @@ module.exports = function adminSource() {
     "api",
     "dom",
     "session",
+    "router",
     "actions",
     "overview",
     "site",
@@ -26,9 +27,13 @@ module.exports = function adminSource() {
       "utf8",
     );
     const indent = /^( *)function create\(/m.exec(source)?.[1].length || 0;
+    // The modules are ES modules; the vm fixtures run plain scripts.
+    const script = source
+      .replace(/^import .*$/gm, "")
+      .replace(/^export (?=function|const)/gm, "");
     return indent
-      ? source.replace(new RegExp(`^ {1,${indent}}`, "gm"), "")
-      : source;
+      ? script.replace(new RegExp(`^ {1,${indent}}`, "gm"), "")
+      : script;
   });
   const functions = new Map();
   for (const source of sources) {

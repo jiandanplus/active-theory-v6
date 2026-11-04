@@ -20,16 +20,19 @@ test("setup shell loads before admin and removes terminal initialization instruc
     require.resolve("../admin-ui/index.html"),
     "utf8",
   );
-  assert.ok(html.indexOf("/admin/setup.js") < html.indexOf("/admin/admin.js"));
+  // site-identity is a classic script that must run before the module entry,
+  // which imports the installer through the session module.
   assert.ok(html.includes("/admin/site-identity.js"));
+  assert.match(html, /<script type="module" src="\/admin\/admin.js">/);
   assert.ok(
-    html.indexOf("/admin/site-identity.js") < html.indexOf("/admin/setup.js"),
+    html.indexOf("/admin/site-identity.js") < html.indexOf("/admin/admin.js"),
   );
   const admin = fs.readFileSync(
     require.resolve("../admin-ui/modules/session.js"),
     "utf8",
   );
-  assert.match(admin, /SiteSetup.mount/);
+  assert.match(admin, /import \{ mount as mountSetup \} from "..\/setup.js"/);
+  assert.match(admin, /mountSetup\(/);
   assert.doesNotMatch(admin, /npm run admin:init/);
 });
 test("wizard keeps secrets transient and renders safe accessible DOM", () => {
@@ -188,8 +191,11 @@ async function wizard({ hasAdmin = false, holdInstall = false } = {}) {
   };
   const vm = require("node:vm");
   const module = { exports: {} };
+  // Run the ES module source as a script so the fixture controls its globals.
   vm.runInNewContext(
-    fs.readFileSync(require.resolve("../admin-ui/setup.js"), "utf8"),
+    fs
+      .readFileSync(require.resolve("../admin-ui/setup.js"), "utf8")
+      .replace(/^export \{([^}]*)\};?\s*$/m, "module.exports = {$1};"),
     {
       document: tree.document,
       crypto: { randomUUID: () => String(Math.random()) },

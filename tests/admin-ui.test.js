@@ -255,6 +255,7 @@ test("site identity interactions update the existing draft and dirty state", () 
       changes++;
     },
     window: { SiteIdentity: require("../shared/site-identity") },
+    pageContent: require("../shared/page-content"),
     panel(parent, title) {
       panels.push(title);
       return node();
@@ -1130,12 +1131,12 @@ test("site fields render in label order, not PostgreSQL jsonb key order", () => 
     state: { config: { site: stored, songs: [] } },
     content: node(),
     labels,
-    orderedSiteKeys,
     node,
     heading() {},
     warning() {},
     dirty() {},
     window: { SiteIdentity: require("../shared/site-identity") },
+    pageContent: require("../shared/page-content"),
     panel: () => node(),
     field(parent, label, value, onChange, options) {
       controls.push({ label, options });

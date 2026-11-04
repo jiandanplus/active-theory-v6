@@ -2,7 +2,6 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
-const vm = require("node:vm");
 const root = path.join(__dirname, "../admin-ui");
 const names = [
   "helpers",
@@ -10,6 +9,7 @@ const names = [
   "api",
   "dom",
   "session",
+  "router",
   "actions",
   "overview",
   "site",
@@ -62,6 +62,7 @@ async function lifecycleAdmin() {
     addEventListener() {},
     SiteIdentity: require("../shared/site-identity"),
     SiteContentContract: require("../shared/content-contract"),
+    SitePageContent: require("../shared/page-content"),
     fetch: async (url) => {
       if (url === "/api/setup/status")
         return { ok: true, json: async () => ({ state: "installed" }) };
@@ -470,37 +471,59 @@ test("current navigation request still reports a real error and restores its tri
   );
   assert.equal(trigger.disabled, false);
 });
-test("admin modules load deterministically before a compatible boot with one explicit shared state", () => {
+test("admin boots from one ES module entry that imports every module once", () => {
   const html = fs.readFileSync(path.join(root, "index.html"), "utf8");
-  const files = [...html.matchAll(/<script defer src="([^"]+)"/g)].map(
+  const modules = [...html.matchAll(/<script type="module" src="([^"]+)"/g)];
+  assert.deepEqual(
+    modules.map((match) => match[1]),
+    ["/admin/admin.js"],
+  );
+  const classic = [...html.matchAll(/<script defer src="([^"]+)"/g)].map(
     (match) => match[1],
   );
-  assert.ok(files.includes("/admin/content-contract.js"));
-  for (const name of names) {
-    assert.ok(
-      files.indexOf(`/admin/modules/${name}.js`) <
-        files.indexOf("/admin/admin.js"),
-      name,
-    );
-    assert.ok(files.includes(`/admin/modules/${name}.js`), name);
-  }
-  const context = vm.createContext({});
-  for (const name of names)
-    vm.runInContext(
-      fs.readFileSync(path.join(root, "modules", `${name}.js`), "utf8"),
-      context,
-    );
-  assert.deepEqual(
-    Object.keys(context.SiteAdminModules).sort(),
-    [...names].sort(),
+  assert.deepEqual(classic, [
+    "/admin/site-identity.js",
+    "/admin/page-content.js",
+    "/admin/content-contract.js",
+  ]);
+  assert.ok(
+    html.indexOf("/admin/content-contract.js") <
+      html.indexOf("/admin/admin.js"),
   );
+  const entry = fs.readFileSync(path.join(root, "admin.js"), "utf8");
+  for (const name of names.filter((name) => name !== "helpers")) {
+    assert.match(entry, new RegExp(`from "./modules/${name}.js"`), name);
+    const module = require(`../admin-ui/modules/${name}.js`);
+    assert.equal(typeof module.create, "function", name);
+    assert.ok(Array.isArray(module.provides) && module.provides.length, name);
+  }
+  // No hand-written forwarding remains in the composition root.
+  assert.doesNotMatch(entry, /\(\.\.\.args\) =>/);
   const ui = require("../admin-ui/admin.js");
   assert.equal(typeof ui.startAdmin, "function");
   assert.equal(ui.newProject("module-test").id, "module-test");
-  const state = context.SiteAdminModules.state.createState();
+  const state = require("../admin-ui/modules/state.js").createState();
   assert.equal(state.section, "overview");
   assert.equal(state.dirty, false);
   assert.equal(state.runtime.selection.digest, null);
+});
+test("module registry rejects names that collide or disagree with create()", () => {
+  const { wireModules } = require("../admin-ui/modules/registry.js");
+  const ok = { provides: ["a"], create: () => ({ a: () => 1 }) };
+  const context = {};
+  wireModules(context, { ok });
+  assert.equal(context.a(), 1);
+  assert.throws(
+    () =>
+      wireModules(
+        {},
+        {
+          drift: { provides: ["a"], create: () => ({ a() {}, b() {} }) },
+        },
+      ),
+    /provides 与实现不一致/,
+  );
+  assert.throws(() => wireModules({ a: 1 }, { ok }), /冲突/);
 });
 test("API module sends same-origin CSRF only with mutations and invalidates expired sessions", async () => {
   const module = require("../admin-ui/modules/api");
@@ -675,6 +698,7 @@ test("real module boot reaches all eight sections without duplicating or losing 
     crypto: require("node:crypto").webcrypto,
     SiteIdentity: require("../shared/site-identity"),
     SiteContentContract: require("../shared/content-contract"),
+    SitePageContent: require("../shared/page-content"),
     addEventListener(type, fn) {
       listeners[type] = fn;
     },
@@ -873,6 +897,7 @@ async function validationAdmin(
     addEventListener() {},
     SiteIdentity: require("../shared/site-identity"),
     SiteContentContract: require("../shared/content-contract"),
+    SitePageContent: require("../shared/page-content"),
     fetch: async (url, options) => {
       calls.push({ url, options });
       let result;
@@ -1242,4 +1267,27 @@ test("preview and publish wait for a runtime and the save bar stays on editing p
     f.walk().find((element) => element.className === "savebar-actions").hidden,
     true,
   );
+});
+test("editing a field updates in place without redrawing the view", async () => {
+  const f = await lifecycleAdmin();
+  f.app.state.config.projects = ["one", "two"].map((id) => ({
+    ...require("../admin-ui/modules/helpers.js").newProject(id),
+    id,
+    slug: id,
+    name: id,
+  }));
+  await f.navigate("projects");
+  const card = f.walk().filter((element) => element.tagName === "DETAILS")[1];
+  card.open = true;
+  await card.dispatch("toggle");
+  const name = card.querySelector("input");
+  name.focus();
+  name.value = "renamed";
+  await name.dispatch("input");
+  assert.equal(name.isConnected, true, "same input element stays mounted");
+  assert.equal(f.document.activeElement, name);
+  assert.equal(card.open, true);
+  assert.equal(card.children[0].textContent, "renamed");
+  assert.equal(f.app.state.config.projects[1].name, "renamed");
+  assert.equal(f.app.state.dirty, true);
 });

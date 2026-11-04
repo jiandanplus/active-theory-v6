@@ -7,25 +7,12 @@
     <title>网站管理 · Studio</title>
     <link rel="stylesheet" href="/admin/admin.css" />
     <link rel="stylesheet" href="/admin/setup.css" />
+    <!-- Shared validation is plain scripts (also required by Node); they run
+         before the module entry, which imports every admin module. -->
     <script defer src="/admin/site-identity.js"></script>
-    <script defer src="/admin/setup.js"></script>
     <script defer src="/admin/page-content.js"></script>
     <script defer src="/admin/content-contract.js"></script>
-    <script defer src="/admin/modules/helpers.js"></script>
-    <script defer src="/admin/modules/state.js"></script>
-    <script defer src="/admin/modules/api.js"></script>
-    <script defer src="/admin/modules/dom.js"></script>
-    <script defer src="/admin/modules/session.js"></script>
-    <script defer src="/admin/modules/actions.js"></script>
-    <script defer src="/admin/modules/overview.js"></script>
-    <script defer src="/admin/modules/site.js"></script>
-    <script defer src="/admin/modules/scenes.js"></script>
-    <script defer src="/admin/modules/projects.js"></script>
-    <script defer src="/admin/modules/resources.js"></script>
-    <script defer src="/admin/modules/storage.js"></script>
-    <script defer src="/admin/modules/versions.js"></script>
-    <script defer src="/admin/modules/security.js"></script>
-    <script defer src="/admin/admin.js"></script>
+    <script type="module" src="/admin/admin.js"></script>
   </head>
   <body>
     <div id="app"><p class="loading">正在连接管理工作台…</p></div>

@@ -1,6 +1,7 @@
 const path = require("node:path");
 const express = require("express");
 const { mountInstallation } = require("./installation");
+const { noStore } = require("./delivery/response");
 
 const noCaching = { cacheControl: false, etag: false, lastModified: false };
 const shared = (name) => (req, res) =>
@@ -18,6 +19,11 @@ function mountAdminShell(app, { store, options }) {
     next();
   });
   app.get("/admin/site-identity.js", shared("site-identity.js"));
+  // admin-ui/package.json only tells Node the folder holds ES modules.
+  app.get("/admin/package.json", (req, res) => {
+    noStore(res, { error: true });
+    res.status(404).json({ error: "未找到资源" });
+  });
   app.use(
     "/admin",
     express.static(path.join(__dirname, "../admin-ui"), {
