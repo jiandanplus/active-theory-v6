@@ -103,6 +103,17 @@ function dom() {
     setAttribute(key, value) {
       this.attrs[key] = value;
     }
+    removeAttribute(key) {
+      delete this.attrs[key];
+    }
+    get isConnected() {
+      let node = this;
+      while (node.parent) node = node.parent;
+      return node.tag === "root";
+    }
+    querySelector(selector) {
+      return this.querySelectorAll(selector)[0] || null;
+    }
     addEventListener(name, fn) {
       this.events[name] = fn;
     }
@@ -361,4 +372,45 @@ test("double submit sends one install request until the pending install resolves
   w.releaseInstall();
   await settle();
   assert.match(w.root.textContent, /后台安装完成/);
+});
+test("preflight report is summarized in Chinese groups without losing items", () => {
+  const { summarizeReport } = require("../admin-ui/setup");
+  const warnings = [
+    "External resource is unverified (not fetched): metadata:ogImage",
+    "External resource is unverified (not fetched): project:1:image:url:a",
+    "Optional resource unavailable: pbr:lut",
+    "Unsupported resource URL: project:1:projectLogo:url:b",
+    "Something new happened",
+  ];
+  const report = {
+    missingRequired: ["font:bold", "runtime:app"],
+    warnings,
+    credentialsUnavailable: [],
+    counts: { resources: 84, assets: 93, projects: 16, custom: 2 },
+  };
+  const { groups, counts } = summarizeReport(report);
+  assert.deepEqual(
+    groups.map((g) => [g.title, g.items.length, g.open]),
+    [
+      ["缺少必需资源", 2, true],
+      ["外部资源未验证（安装时不抓取）", 2, false],
+      ["可选资源缺失", 1, false],
+      ["不支持的资源地址", 1, false],
+      ["其他警告", 1, false],
+    ],
+  );
+  const shown = groups.slice(1).reduce((sum, g) => sum + g.items.length, 0);
+  assert.equal(shown, warnings.length);
+  assert.ok(
+    groups.every((g) =>
+      g.items.every((item) => !/^External|^Optional|^Unsupported/.test(item)),
+    ),
+  );
+  assert.deepEqual(counts, [
+    ["资源记录", 84],
+    ["素材文件", 93],
+    ["作品", 16],
+    ["custom", 2],
+  ]);
+  assert.deepEqual(summarizeReport({}).groups, []);
 });

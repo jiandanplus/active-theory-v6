@@ -56,7 +56,13 @@
           p.classList.add("metric");
           p.append(
             node("small", label),
-            node("div", String(value), "number"),
+            node(
+              "div",
+              String(value),
+              typeof value === "number" || /^v\d+$/.test(String(value))
+                ? "number"
+                : "number is-text",
+            ),
             node("small", note),
           );
         }

@@ -1104,3 +1104,142 @@ test("canonical schema arriving after a session change cannot replace the newer 
   assert.equal(state.config, newer);
   assert.equal(state.validationSchema, newer);
 });
+test("project list keeps open cards, focuses new projects and filters without touching the draft", async () => {
+  const f = await lifecycleAdmin();
+  const project = (id, name, clientName = "") => ({
+    ...require("../admin-ui/modules/helpers").newProject(id),
+    id,
+    slug: id,
+    name,
+    clientName,
+  });
+  f.app.state.config.projects = [
+    project("p-alpha", "Alpha"),
+    project("p-beta", "Beta", "Studio X"),
+    project("p-gamma", "Gamma"),
+    project("p-delta", "Delta"),
+    project("p-eps", "Epsilon"),
+  ];
+  await f.navigate("projects");
+  const cards = () =>
+    f.walk().filter((element) => element.tagName === "DETAILS");
+  const title = (card) => card.children[0].textContent;
+  assert.deepEqual(
+    cards().map((card) => [title(card), !!card.open]),
+    [
+      ["Alpha", true],
+      ["Beta", false],
+      ["Gamma", false],
+      ["Delta", false],
+      ["Epsilon", false],
+    ],
+  );
+  const fifth = cards()[4];
+  fifth.open = true;
+  await fifth.dispatch("toggle");
+  await f
+    .walk()
+    .find((element) => element.textContent === "＋ 新建作品")
+    .dispatch("click");
+  assert.equal(title(cards()[0]), "新作品");
+  assert.equal(cards()[0].open, true);
+  assert.equal(cards()[5].open, true, "previously opened card stays open");
+  assert.equal(f.document.activeElement.closest("details"), cards()[0]);
+  const before = JSON.stringify(f.app.state.config.projects);
+  const search = f.walk().find((element) => element.type === "search");
+  search.value = "studio x";
+  await search.dispatch("input");
+  assert.deepEqual(cards().map(title), ["Beta"]);
+  search.value = "nothing";
+  await search.dispatch("input");
+  assert.equal(cards().length, 0);
+  assert.ok(f.walk().some((element) => /没有匹配/.test(element.textContent)));
+  assert.equal(JSON.stringify(f.app.state.config.projects), before);
+});
+test("project colour picker and text stay in sync and keep the stored hex format", async () => {
+  const f = await lifecycleAdmin();
+  f.app.state.config.projects = [
+    {
+      ...require("../admin-ui/modules/helpers").newProject("p-colour"),
+      id: "p-colour",
+      uiColor: "baffdf",
+    },
+  ];
+  await f.navigate("projects");
+  const picker = f.walk().find((element) => element.type === "color");
+  const text = picker.parent.children.find((element) => element !== picker);
+  assert.equal(picker.value, "#baffdf");
+  picker.value = "#12AB3c";
+  await picker.dispatch("input");
+  assert.equal(f.app.state.config.projects[0].uiColor, "12ab3c");
+  assert.equal(text.value, "12ab3c");
+  text.value = "FFEEDD";
+  await text.dispatch("input");
+  assert.equal(picker.value, "#ffeedd");
+  assert.equal(f.app.state.config.projects[0].uiColor, "FFEEDD");
+  assert.equal(f.app.state.dirty, true);
+});
+test("scene editor explains why it is empty", async () => {
+  const f = await lifecycleAdmin();
+  const message = () =>
+    f
+      .walk()
+      .filter((element) => element.className === "empty")
+      .map((element) => element.textContent)
+      .join("|");
+  f.app.state.config.scenes = [];
+  await f.navigate("scenes");
+  assert.match(message(), /尚未加载场景/);
+  assert.ok(f.walk().some((e) => e.textContent === "前往总览 › 运行包"));
+  f.app.state.config.scenes = [
+    {
+      id: "Tree",
+      label: "Tree",
+      fields: [{ key: "speed", type: "number", value: 1 }],
+    },
+  ];
+  await f.navigate("scenes");
+  assert.match(message(), /没有可编辑的场景文案/);
+  f.app.state.config.scenes = [
+    {
+      id: "Home",
+      label: "Home",
+      fields: [{ key: "title", label: "标题", type: "text", value: "Hello" }],
+    },
+  ];
+  await f.navigate("scenes");
+  const search = f.walk().find((element) => element.tagName === "INPUT");
+  search.value = "zzz";
+  await search.dispatch("input");
+  assert.match(message(), /没有匹配“zzz”的场景字段/);
+});
+test("preview and publish wait for a runtime and the save bar stays on editing pages", async () => {
+  const f = await lifecycleAdmin();
+  const find = (text) =>
+    f.walk().find((element) => element.textContent === text);
+  const bar = f.walk().find((element) => element.className === "savebar");
+  await f.navigate("overview");
+  assert.equal(bar.hidden, true, "no save bar on overview without changes");
+  await f.navigate("site");
+  assert.equal(bar.hidden, false);
+  assert.equal(find("预览草稿 ↗").disabled, true);
+  assert.equal(find("发布网站").disabled, true);
+  assert.equal(find("发布网站").title, "需先选择运行包");
+  assert.equal(find("保存草稿").disabled, false);
+  assert.equal(find("需先选择运行包").hidden, false);
+  f.app.state.runtime = {
+    selection: { digest: "a".repeat(64), generation: 1 },
+    bundles: [],
+  };
+  await f.navigate("site");
+  assert.equal(find("预览草稿 ↗").disabled, false);
+  assert.equal(find("发布网站").disabled, false);
+  assert.equal(find("需先选择运行包").hidden, true);
+  f.app.state.dirty = true;
+  await f.navigate("security");
+  assert.equal(bar.hidden, false, "pending changes stay visible");
+  assert.equal(
+    f.walk().find((element) => element.className === "savebar-actions").hidden,
+    true,
+  );
+});

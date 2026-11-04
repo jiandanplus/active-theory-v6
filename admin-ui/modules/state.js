@@ -67,8 +67,18 @@
           ),
         );
         context.saveStatus.className = state.dirty ? "is-dirty" : "";
+        const runtimeReady = !!state.runtime?.selection?.digest;
         for (const control of document.querySelectorAll("[data-busy-action]"))
-          control.disabled = state.busy;
+          control.disabled =
+            state.busy || (!!control.dataset.needsRuntime && !runtimeReady);
+        for (const control of document.querySelectorAll("[data-needs-runtime]"))
+          control.title = runtimeReady ? "" : "需先选择运行包";
+        if (context.runtimeHint) context.runtimeHint.hidden = runtimeReady;
+        // The save bar belongs to the editing pages; elsewhere only a pending
+        // change is announced.
+        const editing = ["site", "scenes", "projects"].includes(state.section);
+        if (context.saveBar) context.saveBar.hidden = !editing && !state.dirty;
+        if (context.saveActions) context.saveActions.hidden = !editing;
       }
       async function building(action) {
         if (state.busy) throw new Error("正在处理，请稍后");
@@ -110,6 +120,7 @@
           return false;
         if (!validRuntime(result)) throw new Error("运行包状态响应无效");
         state.runtime = result;
+        updateStatus();
         return true;
       }
       window.addEventListener("beforeunload", (event) => {

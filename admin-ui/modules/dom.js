@@ -167,12 +167,55 @@
         if (options.placeholder) input.placeholder = options.placeholder;
         if (options.readOnly) input.readOnly = true;
         if (options.autocomplete) input.autocomplete = options.autocomplete;
-        input.addEventListener(options.choices ? "change" : "input", () =>
+        // Image and video fields show a small live preview of the address.
+        const preview =
+          options.pick === "image" || options.pick === "video"
+            ? node("div", undefined, "media-preview")
+            : null;
+        function showPreview(url) {
+          if (!preview) return;
+          const text = (message) => node("span", message, "muted");
+          if (!url || !/^(?:\/(?!\/)|https:\/\/)/.test(String(url)))
+            return preview.replaceChildren(text("无预览"));
+          const media = node(options.pick === "video" ? "video" : "img");
+          if (options.pick === "video") {
+            media.muted = true;
+            media.preload = "metadata";
+          } else {
+            media.loading = "lazy";
+            media.alt = "";
+          }
+          media.addEventListener("error", () =>
+            preview.replaceChildren(text("无法预览")),
+          );
+          media.src = String(url);
+          preview.replaceChildren(media);
+        }
+        input.addEventListener(options.choices ? "change" : "input", () => {
           onChange(
             options.type === "number" ? Number(input.value) : input.value,
-          ),
-        );
-        if (options.pick) {
+          );
+          showPreview(input.value);
+        });
+        if (options.hexColor) {
+          // Stored as 6 hex digits without "#"; the picker and text stay in sync.
+          const pair = node("div", undefined, "color-pair"),
+            picker = node("input");
+          picker.type = "color";
+          picker.setAttribute("aria-label", label + "取色器");
+          const sync = () => {
+            if (/^[0-9a-f]{6}$/i.test(input.value))
+              picker.value = "#" + input.value.toLowerCase();
+          };
+          sync();
+          input.addEventListener("input", sync);
+          picker.addEventListener("input", () => {
+            input.value = picker.value.slice(1).toLowerCase();
+            onChange(input.value);
+          });
+          pair.append(input, picker);
+          wrap.append(pair);
+        } else if (options.pick) {
           const row = node("div", undefined, "field-row");
           row.append(
             input,
@@ -180,10 +223,13 @@
               picker(options.pick, (value) => {
                 input.value = value;
                 onChange(value);
+                showPreview(value);
               }),
             ),
           );
+          if (preview) row.append(preview);
           wrap.append(row);
+          showPreview(input.value);
         } else wrap.append(input);
         if (options.help)
           wrap.append(

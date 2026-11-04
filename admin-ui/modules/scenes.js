@@ -8,7 +8,17 @@
   ),
   function () {
     function create(context) {
-      const { state, node, dirty, field, heading, warning, empty } = context;
+      const {
+        state,
+        node,
+        button,
+        dirty,
+        field,
+        heading,
+        warning,
+        empty,
+        render,
+      } = context;
       const pageContent =
         context.pageContent ||
         (typeof require === "function"
@@ -122,7 +132,28 @@
             detail.append(body);
             list.append(detail);
           }
-          if (!list.children.length) empty(list, "没有匹配的场景字段");
+          if (!list.children.length) {
+            // Say why the list is empty instead of blaming the search box.
+            const editable = state.config.scenes.some((scene) =>
+              scene.fields.some((f) =>
+                pageContent.isEditableSceneField(scene, f),
+              ),
+            );
+            if (!state.config.scenes.length) {
+              empty(
+                list,
+                "尚未加载场景。请先由服务器管理员登记运行包，并在总览中选择运行包。",
+              );
+              list.append(
+                button("前往总览 › 运行包", async () => {
+                  state.section = "overview";
+                  await render();
+                }),
+              );
+            } else if (!editable) empty(list, "当前模板没有可编辑的场景文案。");
+            else
+              empty(list, "没有匹配“" + search.value.trim() + "”的场景字段。");
+          }
         }
         search.addEventListener("input", draw);
         draw();

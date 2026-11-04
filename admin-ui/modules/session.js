@@ -37,13 +37,16 @@
       async function load() {
         const epoch = state.sessionEpoch;
         invalidateRuntime();
-        const [cfg, canonical, res, stores, overview] = await Promise.all([
-          api("/config"),
-          api("/config/schema"),
-          api("/resources"),
-          api("/storages"),
-          api("/overview"),
-        ]);
+        const [cfg, canonical, res, stores, overview, runtime] =
+          await Promise.all([
+            api("/config"),
+            api("/config/schema"),
+            api("/resources"),
+            api("/storages"),
+            api("/overview"),
+            // Needed on every page to enable preview/publish; not fatal here.
+            api("/runtime").catch(() => null),
+          ]);
         if (epoch !== state.sessionEpoch) return;
         // Never substitute the mutable current draft for the template's legacy-URL baseline.
         let validationSchema;
@@ -65,6 +68,7 @@
         state.storages = stores.storages;
         state.defaultStorage = stores.defaultStorage;
         state.overview = overview;
+        if (context.validRuntime?.(runtime)) state.runtime = runtime;
         state.dirty = false;
         shell();
         await render();
@@ -137,21 +141,23 @@
         );
         const nav = node("nav", undefined, "nav");
         nav.setAttribute("aria-label", "管理导航");
-        for (const [id, icon, label] of sections) {
+        for (const [id, , label] of sections) {
           const b = button("", async () => {
             state.section = id;
             await render();
           });
           b.dataset.section = id;
-          b.append(node("span", icon, "nav-icon"), node("span", label));
+          // Icons are CSS-masked SVGs keyed by section, identical on every OS.
+          const glyph = node("span", "", "nav-icon");
+          glyph.dataset.icon = id;
+          glyph.setAttribute("aria-hidden", "true");
+          b.append(glyph, node("span", label));
           nav.append(b);
         }
         side.append(nav);
         const foot = node("div", undefined, "sidebar-foot");
-        foot.append(
-          node("div", "单管理员 · 私人工作空间"),
-          button("退出登录", logout),
-        );
+        // One sign-out control lives in the top bar, which stays visible on phones.
+        foot.append(node("div", "单管理员 · 私人工作空间"));
         side.append(foot);
         const workspace = node("div", undefined, "workspace"),
           top = node("header", undefined, "topbar");
@@ -160,7 +166,7 @@
         link.href = "/";
         link.target = "_blank";
         link.rel = "noopener";
-        top.append(link, button("退出", logout));
+        top.append(link, button("退出登录", logout));
         context.content = node("main", undefined, "content");
         workspace.append(top, context.content);
         root.append(side, workspace);
@@ -168,11 +174,21 @@
         const bar = node("footer", undefined, "savebar");
         context.saveStatus = node("div");
         const actions = node("div", undefined, "savebar-actions");
+        const previewButton = button("预览草稿 ↗", preview, undefined, true),
+          publishButton = button("发布网站", publish, undefined, true);
+        // Preview and publish need a selected runtime; updateStatus disables
+        // them and shows why until one is selected.
+        previewButton.dataset.needsRuntime = "true";
+        publishButton.dataset.needsRuntime = "true";
+        context.runtimeHint = node("span", "需先选择运行包", "savebar-hint");
         actions.append(
+          context.runtimeHint,
           button("保存草稿", save, "primary", true),
-          button("预览草稿 ↗", preview, undefined, true),
-          button("发布网站", publish, undefined, true),
+          previewButton,
+          publishButton,
         );
+        context.saveBar = bar;
+        context.saveActions = actions;
         bar.append(context.saveStatus, actions);
         app.append(bar);
         updateStatus();
@@ -197,6 +213,7 @@
         if (!state.config) return;
         context.invalidateView?.();
         context.content.replaceChildren();
+        context.updateStatus?.();
         for (const b of document.querySelectorAll("[data-section]")) {
           const active = b.dataset.section === state.section;
           b.classList.toggle("active", active);

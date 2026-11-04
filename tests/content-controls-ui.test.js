@@ -251,6 +251,9 @@ for (const injected of [true, false])
       /CORS/,
     ])
       assert.match(help, expected);
+    // Shared guidance is stated once per page/group, not under every field.
+    assert.equal((help.match(/留空(则)?继承原版/g) || []).length, 1);
+    assert.ok((help.match(/字形覆盖限制/g) || []).length <= 3);
   });
 
 test("existing optional values stay out of basic settings and edits preserve unrelated fields", async () => {
@@ -298,7 +301,11 @@ test("scene rendering and search expose only text and top Logo while retaining f
     .find((el) => el.getAttribute("aria-label") === "搜索场景字段");
   search.value = "fixed_texture";
   await search.dispatch("input");
-  assert.ok(f.walk().some((el) => el.textContent === "没有匹配的场景字段"));
+  assert.ok(
+    f
+      .walk()
+      .some((el) => el.textContent === "没有匹配“fixed_texture”的场景字段。"),
+  );
   assert.deepEqual(f.config.scenes, before);
   search.value = "";
   await search.dispatch("input");

@@ -28,7 +28,20 @@
           : window.SitePageContent);
       function siteView() {
         heading("网站设置", "维护网站标题、导航与联系信息。");
-        const p = panel(context.content, "基本信息"),
+        // Anchor navigation for this long page; filled as each panel is added.
+        const nav = node("nav", undefined, "section-nav");
+        nav.setAttribute?.("aria-label", "网站设置分组");
+        context.content.append(nav);
+        let sections = 0;
+        const section = (title) => {
+          const created = panel(context.content, title);
+          created.id = "site-section-" + ++sections;
+          const link = node("a", title);
+          link.href = "#" + created.id;
+          nav.append(link);
+          return created;
+        };
+        const p = section("基本信息"),
           grid = node("div", undefined, "grid");
         p.append(grid);
         const orderedSiteKeys =
@@ -70,6 +83,7 @@
           state.config.site[key] = value;
           dirty();
         };
+        /** @type {[string, string[]][]} */
         const groups = [
           ["开场与底部展示", ["heroVideo", "heroPoster", "labBackground"]],
           [
@@ -99,14 +113,31 @@
           ],
           ["微信二维码", ["contactQrImage", "contactQrText"]],
         ];
+        // Shared rules are stated once, not repeated under every field.
+        warning(
+          context.content,
+          "以下可选内容留空则继承原版展示。修改后先保存草稿并前台预览，确认效果后再发布。",
+        );
         for (const [title, keys] of groups) {
-          const section = panel(context.content, title),
+          const group = section(title),
             rows = node("div", undefined, "grid");
-          section.append(rows);
-          warning(
-            section,
-            "可选内容留空则继承原版展示。修改后先保存草稿并前台预览，确认效果后再发布。",
-          );
+          if (keys.some((key) => key in pageContent.TEXT_FIELDS))
+            group.append(
+              node(
+                "p",
+                "文字以原站 3D 字形显示，受原有字体字形覆盖限制，请在前台预览检查。",
+                "muted",
+              ),
+            );
+          if (keys.some((key) => definitions[key].kind))
+            group.append(
+              node(
+                "p",
+                "资源可从资源库选择或填写 HTTPS 地址；外部资源须允许跨域 CORS，公开可访问性仍需前台验证。",
+                "muted",
+              ),
+            );
+          group.append(rows);
           for (const key of keys) {
             const definition = definitions[key];
             field(
@@ -116,9 +147,10 @@
               (value) => update(key, value),
               {
                 pick: definition.kind,
-                help: definition.kind
-                  ? "选择资源或填写 HTTPS 地址；外部资源须允许跨域 CORS，公开可访问性仍需前台验证。"
-                  : "留空继承原版。3D 文字受原有字体字形覆盖限制，请在前台预览检查。",
+                help:
+                  key in pageContent.LINK_FIELDS
+                    ? "使用 HTTPS 链接"
+                    : undefined,
               },
             );
           }
@@ -131,7 +163,7 @@
               { help: "使用 HTTPS 链接" },
             );
           if (title === "社交媒体")
-            section.append(
+            group.append(
               node(
                 "p",
                 "图标建议使用 PNG / WebP 透明背景图片，保持清晰边缘与一致尺寸。",
@@ -139,7 +171,7 @@
               ),
             );
           if (title === "微信二维码")
-            section.append(
+            group.append(
               node(
                 "p",
                 "请上传方形微信二维码原图，保留完整边距与清晰度；在前台预览确认可识别后再发布。",
@@ -147,7 +179,7 @@
               ),
             );
         }
-        const identity = panel(context.content, "搜索与分享");
+        const identity = section("搜索与分享");
         field(
           identity,
           "网站描述",
@@ -200,7 +232,7 @@
             "muted",
           ),
         );
-        const songs = panel(context.content, "背景音乐");
+        const songs = section("背景音乐");
         warning(songs, "音乐由访客主动播放。添加资源前，请确保拥有使用授权。");
         state.config.songs.forEach((song, i) => {
           const row = node("div", undefined, "grid");

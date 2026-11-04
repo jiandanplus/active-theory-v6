@@ -68,6 +68,12 @@ module.exports = function adminDOM() {
       return this.dispatch("close");
     }
     scrollIntoView() {}
+    querySelector(selector) {
+      const tag = selector.toUpperCase();
+      const visit = (element) =>
+        element.children.flatMap((child) => [child, ...visit(child)]);
+      return visit(this).find((element) => element.tagName === tag) || null;
+    }
   }
   document.body = new Element("body");
   document.activeElement = document.body;
@@ -83,7 +89,13 @@ module.exports = function adminDOM() {
           ? element.dataset.section
           : selector.startsWith("[data-section=")
             ? element.dataset.section === selector.match(/"(.*?)"/)[1]
-            : false,
+            : /^\[data-[a-z-]+\]$/.test(selector)
+              ? !!element.dataset[
+                  selector
+                    .slice(6, -1)
+                    .replace(/-([a-z])/g, (_, c) => c.toUpperCase())
+                ]
+              : false,
     );
   document.querySelector = (selector) => document.querySelectorAll(selector)[0];
   document.addEventListener = (type, fn) => {
