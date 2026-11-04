@@ -30,6 +30,35 @@ function resourceRepository(db) {
         )
       ).rows.map(map);
     },
+    /**
+     * A resource together with its storage row in one statement.
+     * @param {string} id
+     */
+    async getLive(id) {
+      const row = (
+        await db.query(
+          `SELECT r.*, s.id AS s_id, s.type AS s_type, s.config AS s_config,
+            s.credentials AS s_credentials, s.available AS s_available
+          FROM personal_site.resources r
+          LEFT JOIN personal_site.storages s ON s.id = r.storage_id
+          WHERE r.id=$1`,
+          [id],
+        )
+      ).rows[0];
+      if (!row) return { resource: null, storage: null };
+      return {
+        resource: map(row),
+        storage: row.s_id
+          ? require("./storages").mapStorage({
+              id: row.s_id,
+              type: row.s_type,
+              config: row.s_config,
+              credentials: row.s_credentials,
+              available: row.s_available,
+            })
+          : null,
+      };
+    },
     async get(id) {
       return map(
         (

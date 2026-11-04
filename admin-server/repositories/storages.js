@@ -90,4 +90,4 @@ function storageRepository(db) {
     },
   };
 }
-module.exports = { storageRepository };
+module.exports = { storageRepository, mapStorage: map };

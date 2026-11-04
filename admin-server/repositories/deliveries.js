@@ -5,6 +5,7 @@ const {
   digestJSON,
   assertArtifactManifest,
   assertRuntimeManifest,
+  normalizeReferences,
 } = require("../delivery/contracts");
 const { resourceRepository } = require("./resources");
 const validDigest = (value) =>
@@ -26,16 +27,18 @@ function targetValue(target) {
   return { type: target.type, id: target.id };
 }
 const mismatch = () => fail(409, "交付身份不一致");
+// Binding, artifact and runtime bundle for one or many targets in one statement.
+const BINDING_CHAIN = `SELECT b.version_id, b.mode, b.artifact_digest, b.generation,
+    a.digest AS a_digest, a.runtime_digest AS a_runtime_digest, a.kind AS a_kind,
+    a.manifest AS a_manifest, a.created_at AS a_created_at,
+    r.digest AS r_digest, r.profile_id AS r_profile_id, r.manifest AS r_manifest
+  FROM personal_site.delivery_bindings b
+  LEFT JOIN personal_site.delivery_artifacts a ON a.digest = b.artifact_digest
+  LEFT JOIN personal_site.runtime_bundles r ON r.digest = a.manifest->>'runtimeDigest'`;
 // Caller owns the transaction spanning content, references, artifact and binding.
 function deliveryRepository(db) {
   const resources = resourceRepository(db);
-  async function checkRuntime(manifest) {
-    const row = (
-      await db.query(
-        "SELECT * FROM personal_site.runtime_bundles WHERE digest=$1",
-        [manifest.runtimeDigest],
-      )
-    ).rows[0];
+  function verifyRuntimeRow(row, manifest) {
     if (!row) throw mismatch();
     assertRuntimeManifest(row.manifest);
     if (
@@ -46,13 +49,41 @@ function deliveryRepository(db) {
     )
       throw mismatch();
   }
-  async function checkTarget(target, artifact, kind) {
+  async function checkRuntime(manifest) {
+    const row = (
+      await db.query(
+        "SELECT * FROM personal_site.runtime_bundles WHERE digest=$1",
+        [manifest.runtimeDigest],
+      )
+    ).rows[0];
+    verifyRuntimeRow(row, manifest);
+  }
+  function verifyArtifactRow(row) {
+    assertArtifactManifest(row.manifest);
+    if (
+      digestJSON(row.manifest) !== row.digest ||
+      row.runtime_digest !== row.manifest.runtimeDigest ||
+      row.kind !== row.manifest.kind
+    )
+      throw mismatch();
+    return {
+      digest: row.digest,
+      manifest: row.manifest,
+      runtimeDigest: row.runtime_digest,
+      kind: row.kind,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+  function assertTargetIdentity(target, artifact, kind) {
     if (
       !artifact ||
       artifact.kind !== kind ||
       canonicalJSON(artifact.manifest.target) !== canonicalJSON(target)
     )
       throw mismatch();
+  }
+  async function checkTarget(target, artifact, kind) {
+    assertTargetIdentity(target, artifact, kind);
     const table = target.type === "version" ? "versions" : "previews";
     const row = (
       await db.query(
@@ -65,6 +96,51 @@ function deliveryRepository(db) {
       digestJSON(row.snapshot) !== artifact.manifest.sourceSnapshotDigest ||
       digestJSON(await repo.references(target)) !==
         artifact.manifest.referencesDigest
+    )
+      throw mismatch();
+  }
+  function verifyChainHead(target, row) {
+    const binding = {
+      target,
+      mode: row.mode,
+      artifactDigest: row.artifact_digest,
+      generation: toSafeInteger(row.generation),
+    };
+    if (!row.artifact_digest) {
+      if (row.mode !== "legacy") throw mismatch();
+      return { binding, artifact: null };
+    }
+    if (!validDigest(row.artifact_digest)) throw fail(400, "交付标识无效");
+    if (!row.a_digest) throw mismatch();
+    const artifact = verifyArtifactRow({
+      digest: row.a_digest,
+      runtime_digest: row.a_runtime_digest,
+      kind: row.a_kind,
+      manifest: row.a_manifest,
+      created_at: row.a_created_at,
+    });
+    verifyRuntimeRow(
+      row.r_digest
+        ? {
+            digest: row.r_digest,
+            profile_id: row.r_profile_id,
+            manifest: row.r_manifest,
+          }
+        : null,
+      row.a_manifest,
+    );
+    assertTargetIdentity(
+      target,
+      artifact,
+      row.mode === "pinned" ? "pinned" : "legacy-render",
+    );
+    return { binding, artifact };
+  }
+  function verifySource(artifact, snapshot, references) {
+    if (
+      !snapshot ||
+      digestJSON(snapshot) !== artifact.manifest.sourceSnapshotDigest ||
+      digestJSON(references) !== artifact.manifest.referencesDigest
     )
       throw mismatch();
   }
@@ -85,21 +161,80 @@ function deliveryRepository(db) {
         )
       ).rows[0];
       if (!row) return null;
-      assertArtifactManifest(row.manifest);
-      if (
-        digestJSON(row.manifest) !== row.digest ||
-        row.runtime_digest !== row.manifest.runtimeDigest ||
-        row.kind !== row.manifest.kind
-      )
-        throw mismatch();
+      const artifact = verifyArtifactRow(row);
       await checkRuntime(row.manifest);
-      return {
-        digest: row.digest,
-        manifest: row.manifest,
-        runtimeDigest: row.runtime_digest,
-        kind: row.kind,
-        createdAt: row.created_at.toISOString(),
-      };
+      return artifact;
+    },
+    /**
+     * Read-only public path: the binding, its artifact and runtime in one
+     * statement, verified with exactly the getBinding/getArtifact checks.
+     * The caller passes the snapshot it already read for this request.
+     * @param {{type: string, id: string}} target
+     * @param {{snapshot: any}} source
+     */
+    async resolveTarget(target, { snapshot }) {
+      target = targetValue(target);
+      const column = target.type === "version" ? "version_id" : "preview_id";
+      const row = (
+        await db.query(`${BINDING_CHAIN} WHERE b.${column}=$1`, [target.id])
+      ).rows[0];
+      if (!row) return null;
+      const head = verifyChainHead(target, row);
+      if (!head.artifact) return head;
+      verifySource(head.artifact, snapshot, await repo.references(target));
+      return head;
+    },
+    /**
+     * Verify many versions with three statements instead of several per
+     * version. Each entry is the same verification resolveTarget performs.
+     * @param {{id: number, snapshot: any}[]} versions
+     * @returns {Promise<Map<number, {mode?: string, binding?: any, artifact?: any, error?: unknown}>>}
+     */
+    async verifyVersions(versions) {
+      const ids = versions.map((version) => String(version.id));
+      const rows = (
+        await db.query(
+          `${BINDING_CHAIN} WHERE b.version_id = ANY($1::bigint[])`,
+          [ids],
+        )
+      ).rows;
+      const references = new Map();
+      for (const row of (
+        await db.query(
+          "SELECT owner_id,resource_id,slot FROM personal_site.resource_references WHERE owner_type='version' AND owner_id = ANY($1::text[])",
+          [ids],
+        )
+      ).rows) {
+        if (!references.has(row.owner_id)) references.set(row.owner_id, []);
+        references
+          .get(row.owner_id)
+          .push({ resourceId: row.resource_id, slot: row.slot });
+      }
+      const byVersion = new Map(
+        rows.map((row) => [String(row.version_id), row]),
+      );
+      const result = new Map();
+      for (const version of versions) {
+        const row = byVersion.get(String(version.id));
+        if (!row) continue;
+        try {
+          const target = targetValue({
+            type: "version",
+            id: String(version.id),
+          });
+          const head = verifyChainHead(target, row);
+          if (head.artifact)
+            verifySource(
+              head.artifact,
+              version.snapshot,
+              normalizeReferences(references.get(String(version.id)) || []),
+            );
+          result.set(version.id, { mode: row.mode, ...head });
+        } catch (error) {
+          result.set(version.id, { mode: row.mode, error });
+        }
+      }
+      return result;
     },
     async putArtifact({ digest, manifest }) {
       assertArtifactManifest(manifest);

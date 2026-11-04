@@ -13,17 +13,25 @@ const { localFile, externalUrl } = require("./storage");
  */
 async function resolveVersion(store, { version, preview, admin } = {}) {
   const repo = contentRepository(store);
-  const selected =
-    version ||
-    preview ||
-    (
+  if (!version && !preview) {
+    // Current publication: pointer and snapshot in one statement.
+    const row = (
       await store.query(
-        "SELECT published FROM personal_site.site_settings WHERE id=true",
+        "SELECT s.published, v.id AS version_id, v.snapshot FROM personal_site.site_settings s LEFT JOIN personal_site.versions v ON v.id = s.published WHERE s.id=true",
       )
-    ).rows[0]?.published;
-  if (!version && !preview && (selected === null || selected === undefined))
-    throw fail(503, "网站尚未发布");
-  const id = String(selected);
+    ).rows[0];
+    if (row?.published === null || row?.published === undefined)
+      throw fail(503, "网站尚未发布");
+    const id = String(row.published);
+    if (
+      !/^[1-9]\d*$/.test(id) ||
+      !Number.isSafeInteger(Number(id)) ||
+      row.version_id === null
+    )
+      throw fail(404, "版本不存在");
+    return { id, snapshot: row.snapshot };
+  }
+  const id = String(version || preview);
   if (id.startsWith("preview-")) {
     if (!admin) throw fail(401, "预览需要登录");
     const row = await repo.getPreview(id, admin.username, new Date());
@@ -36,11 +44,17 @@ async function resolveVersion(store, { version, preview, admin } = {}) {
   if (!row) throw fail(404, "版本不存在");
   return { id, snapshot: row.snapshot };
 }
-async function resolvePublishedResource(store, { version, id, admin }) {
-  const { id: targetId, snapshot } = await resolveVersion(store, {
-    version,
-    admin,
-  });
+/**
+ * @param {any} store
+ * @param {{version?: any, id: string, admin?: any, resolved?: {id: string, snapshot: any}}} request
+ */
+async function resolvePublishedResource(
+  store,
+  { version, id, admin, resolved },
+) {
+  // Callers that already resolved this request's target pass it in (P2).
+  const { id: targetId, snapshot } =
+    resolved || (await resolveVersion(store, { version, admin }));
   const target = {
     type: targetId.startsWith("preview-") ? "preview" : "version",
     id: targetId,
@@ -51,8 +65,8 @@ async function resolvePublishedResource(store, { version, id, admin }) {
     )
   )
     throw fail(404, "资源不存在");
-  const resource = await resourceRepository(store).get(id);
-  await assertLiveResource(store, resource);
+  const { resource, storage } = await resourceRepository(store).getLive(id);
+  await assertLiveResource(store, resource, { storage });
   const asset = Object.values(snapshot.assets).find(
     (a) => a.resourceId === id && a.document,
   );
@@ -64,7 +78,12 @@ async function resolvePublishedResource(store, { version, id, admin }) {
     };
   return { ...resource, deliveryTarget: target };
 }
-async function assertLiveResource(store, resource) {
+/**
+ * @param {any} store
+ * @param {any} resource
+ * @param {{storage?: any}} [joined] storage row already read with the resource
+ */
+async function assertLiveResource(store, resource, joined) {
   if (
     !resource ||
     resource.trashed ||
@@ -72,7 +91,10 @@ async function assertLiveResource(store, resource) {
   )
     throw fail(404, "资源不存在");
   if (resource.storageId) {
-    const storage = await storageRepository(store).get(resource.storageId);
+    const storage =
+      joined && "storage" in joined
+        ? joined.storage
+        : await storageRepository(store).get(resource.storageId);
     if (!storage || !storage.available) throw fail(404, "资源不存在");
   }
 }

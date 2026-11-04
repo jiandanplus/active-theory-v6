@@ -33,9 +33,9 @@ test("canonical identity rejects non-JSON and hidden state without invoking toJS
     { a: undefined },
     1n,
     () => 1,
-    // eslint-disable-next-line no-sparse-arrays -- a hole must be rejected
     Symbol("x"),
     cycle,
+    // eslint-disable-next-line no-sparse-arrays -- a hole must be rejected
     [, 1],
     extra,
     { [Symbol("x")]: 1 },

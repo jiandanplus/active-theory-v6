@@ -191,6 +191,8 @@ function createApp(options = {}, { deliveryService } = {}) {
           state: state.state,
         });
       }
+      // Later handlers in this request reuse the gate's answer.
+      req.installationState = state;
       next();
     }),
   );

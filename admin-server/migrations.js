@@ -59,14 +59,15 @@ function knownPrefix(rows) {
 async function inspectInstallation(store, { verifyStructure = true } = {}) {
   if (store.configured === false)
     return { state: "unconfigured", schemaVersion: null };
-  if (!(await supportedPostgresVersion(store)))
-    return { state: "incompatible", schemaVersion: null };
-  const exists = (
+  // One round trip for both probes; this runs on every public request.
+  const probe = (
     await store.query(
-      "SELECT EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
+      "SELECT current_setting('server_version_num')::int AS server_version, EXISTS(SELECT 1 FROM pg_namespace WHERE nspname='personal_site') AS present",
     )
-  ).rows[0].present;
-  if (!exists) return { state: "uninstalled", schemaVersion: null };
+  ).rows[0];
+  if (!(probe.server_version >= 180000 && probe.server_version < 190000))
+    return { state: "incompatible", schemaVersion: null };
+  if (!probe.present) return { state: "uninstalled", schemaVersion: null };
   // Check catalog before reading tables: missing tables are incompatible here,
   // while the lightweight request guard still lets query failures propagate.
   let catalogSignature;

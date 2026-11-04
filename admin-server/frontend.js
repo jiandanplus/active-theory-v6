@@ -22,6 +22,7 @@ function mountFrontend(app, store, options, { cas }) {
       version: req.params.version,
       preview: req.query.preview,
       admin: req.adminSession,
+      installation: req.installationState,
     });
   const deliver = (lookup, { page = false } = {}) =>
     route(async (req, res) => {
@@ -50,18 +51,27 @@ function mountFrontend(app, store, options, { cas }) {
           );
       }
     });
+  /**
+   * @param {any} req
+   * @param {any} res
+   * @param {any} next
+   * @param {any} version
+   * @param {string} id
+   * @param {{explicitTarget?: boolean, resolved?: {id: string, snapshot: any}}} [options]
+   */
   async function resource(
     req,
     res,
     next,
     version,
     id,
-    { explicitTarget = true } = {},
+    { explicitTarget = true, resolved } = {},
   ) {
     const live = await resolvePublishedResource(store, {
       version,
       id,
       admin: req.adminSession,
+      resolved,
     });
     if (live.deliveryTarget.type === "preview") privateDelivery(res);
     if (live.document) {
@@ -72,6 +82,7 @@ function mountFrontend(app, store, options, { cas }) {
         options,
         version,
         admin: req.adminSession,
+        installation: req.installationState,
       });
       return sendDelivery(
         req,
@@ -118,14 +129,15 @@ function mountFrontend(app, store, options, { cas }) {
     route(async (req, res, next) => {
       // Legacy media names are aliases only, never a static program fallback.
       if (/\.(?:js|css|wasm)$/i.test(req.path)) throw fail(404, "资源不存在");
-      const { id, snapshot } = await resolveVersion(store, {
+      const resolved = await resolveVersion(store, {
         preview: req.query.preview,
         admin: req.adminSession,
       });
-      const asset = resourceAsset(snapshot, req.path);
+      const asset = resourceAsset(resolved.snapshot, req.path);
       if (!asset) throw fail(404, "资源不存在");
-      return resource(req, res, next, id, asset.resourceId, {
+      return resource(req, res, next, resolved.id, asset.resourceId, {
         explicitTarget: false,
+        resolved,
       });
     }),
   );

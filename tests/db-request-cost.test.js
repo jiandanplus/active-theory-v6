@@ -5,14 +5,16 @@ const { deliveryFixture } = require("./helpers/delivery");
 
 // SQL statements per request after warm-up. Budgets are ceilings; lower is fine.
 // Lower a budget when an optimization lands so regressions fail loudly.
+// Before the read-path work: page 17, endpoint/runtime 16, asset 10,
+// resource/media 8, and the version list cost 7 SQL per version.
 const BUDGET = {
-  page: 17,
-  endpoint: 16,
-  runtime: 16,
-  asset: 10,
-  resource: 8,
-  media: 8,
-  versions: 7,
+  page: 6,
+  endpoint: 6,
+  runtime: 6,
+  asset: 6,
+  resource: 6,
+  media: 6,
+  versions: 9,
 };
 
 function counter(store) {
@@ -72,27 +74,73 @@ test(
         `${name}: ${queries} SQL > budget ${BUDGET[name]}`,
       );
     }
-    // Admin version list must not grow per version beyond the budget.
-    for (let i = 0; i < 4; i++)
-      await f.service.publish({ revision: 3, actor: f.actor });
-    const versions = (
-      await f.store.query(
-        "SELECT count(*)::int AS n FROM personal_site.versions",
-      )
-    ).rows[0].n;
-    const list = await cost(f, log, "/api/admin/versions", {
-      headers: { Cookie: f.headers.Cookie },
-    });
-    assert.equal(list.status, 200);
-    assert.ok(
-      list.queries <= BUDGET.versions * versions + 2,
-      `versions: ${list.queries} SQL for ${versions} versions`,
+    // A logged-in admin browsing the public site costs no session lookup.
+    log.length = 0;
+    await (
+      await f.request("/", { headers: { Cookie: f.headers.Cookie } })
+    ).arrayBuffer();
+    assert.equal(
+      log.filter((text) => /personal_site\.sessions/.test(text)).length,
+      0,
     );
-    t.diagnostic(
-      JSON.stringify({
-        ...measured,
-        versions: { versions, queries: list.queries },
-      }),
-    );
+    // The admin version list is constant in the number of versions.
+    const sizes = [];
+    for (const extra of [0, 6]) {
+      for (let i = 0; i < extra; i++)
+        await f.service.publish({ revision: 3, actor: f.actor });
+      const list = await cost(f, log, "/api/admin/versions", {
+        headers: { Cookie: f.headers.Cookie },
+      });
+      assert.equal(list.status, 200);
+      sizes.push(list.queries);
+      assert.ok(
+        list.queries <= BUDGET.versions,
+        `versions: ${list.queries} SQL > budget ${BUDGET.versions}`,
+      );
+    }
+    assert.equal(sizes[0], sizes[1], "version list SQL must not grow");
+    t.diagnostic(JSON.stringify({ ...measured, versions: sizes }));
   },
 );
+
+test("saving a 16-project draft batches list writes and round-trips exactly", async (t) => {
+  const { httpFixture } = require("./helpers/http");
+  const { contentRepository } = require("../admin-server/repositories/content");
+  const f = await httpFixture(t);
+  const draft = await contentRepository(f.store).getDraft();
+  const config = structuredClone(draft.config);
+  const base = config.projects[0];
+  config.projects = Array.from({ length: 16 }, (_, i) => ({
+    ...structuredClone(base),
+    id: `p${i}`,
+    slug: `project-${i}`,
+    name: `Project ${i} "quoted" \\ back`,
+  }));
+  config.songs = [
+    { title: "A", src: "/media/audio" },
+    { title: "B, with comma", src: "/media/audio" },
+  ];
+  const log = [];
+  await f.store.transaction(async (tx) => {
+    const counted = {
+      query: (text, values) => {
+        if (/personal_site\.(scenes|projects|songs)\b/.test(text))
+          log.push(text);
+        return tx.query(text, values);
+      },
+    };
+    await contentRepository(counted).writeDraft(config, draft.revision);
+  });
+  assert.ok(log.length <= 8, `list statements ${log.length}`);
+  const saved = (await contentRepository(f.store).getDraft()).config;
+  assert.deepEqual(
+    saved.projects.map(({ id, slug, name }) => ({ id, slug, name })),
+    config.projects.map(({ id, slug, name }) => ({ id, slug, name })),
+  );
+  assert.deepEqual(saved.projects[3], config.projects[3]);
+  assert.deepEqual(
+    saved.songs.map(({ title, src }) => ({ title, src })),
+    config.songs,
+  );
+  assert.deepEqual(saved.scenes, config.scenes);
+});

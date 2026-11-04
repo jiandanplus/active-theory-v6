@@ -36,28 +36,24 @@ function contentRepository(db) {
     ).rows;
     for (const table of ["scenes", "projects", "songs"])
       await db.query(`DELETE FROM personal_site.${table}`);
-    for (const [ordinal, scene] of config.scenes.entries())
-      await db.query(
-        "INSERT INTO personal_site.scenes(id,ordinal,label,fields) VALUES($1,$2,$3,$4)",
-        [
-          scene.id || randomUUID(),
-          ordinal,
-          scene.label,
-          JSON.stringify(scene.fields),
-        ],
-      );
-    for (const [ordinal, project] of config.projects.entries()) {
-      const id =
-        project.id ||
+    // One INSERT per table; ids and ordinals are still decided here exactly as
+    // before, only the round trips are batched.
+    const scenes = config.scenes.map((scene, ordinal) => [
+      scene.id || randomUUID(),
+      ordinal,
+      scene.label,
+      JSON.stringify(scene.fields),
+    ]);
+    const projectRows = config.projects.map((project, ordinal) => [
+      project.id ||
         projects.find((p) => p.slug === project.slug)?.id ||
-        randomUUID();
-      await db.query(
-        "INSERT INTO personal_site.projects(id,slug,ordinal,content) VALUES($1,$2,$3,$4)",
-        [id, project.slug, ordinal, project],
-      );
-    }
+        randomUUID(),
+      project.slug,
+      ordinal,
+      JSON.stringify(project),
+    ]);
     const used = new Set();
-    for (const [ordinal, song] of config.songs.entries()) {
+    const songRows = config.songs.map((song, ordinal) => {
       const match =
         songs.find(
           (s) =>
@@ -66,11 +62,27 @@ function contentRepository(db) {
       const id =
         song.id || (match && !used.has(match.id) ? match.id : randomUUID());
       used.add(id);
-      await db.query(
-        "INSERT INTO personal_site.songs(id,ordinal,title,src) VALUES($1,$2,$3,$4)",
-        [id, ordinal, song.title, song.src],
+      return [id, ordinal, song.title, song.src];
+    });
+    const columns = (rows, count) =>
+      Array.from({ length: count }, (_, index) =>
+        rows.map((row) => row[index]),
       );
-    }
+    if (scenes.length)
+      await db.query(
+        "INSERT INTO personal_site.scenes(id,ordinal,label,fields) SELECT * FROM unnest($1::text[],$2::int[],$3::text[],$4::jsonb[])",
+        columns(scenes, 4),
+      );
+    if (projectRows.length)
+      await db.query(
+        "INSERT INTO personal_site.projects(id,slug,ordinal,content) SELECT * FROM unnest($1::text[],$2::text[],$3::int[],$4::jsonb[])",
+        columns(projectRows, 4),
+      );
+    if (songRows.length)
+      await db.query(
+        "INSERT INTO personal_site.songs(id,ordinal,title,src) SELECT * FROM unnest($1::text[],$2::int[],$3::text[],$4::text[])",
+        columns(songRows, 4),
+      );
   }
   async function draftSnapshot(config) {
     const row = (

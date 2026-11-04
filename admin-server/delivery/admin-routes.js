@@ -104,6 +104,8 @@ async function versionDeliverySummaries(store, versions, origin) {
   const repo = deliveryRepository(store),
     result = [];
   const selection = await runtimeRepository(store).getSelection();
+  // Every version is still fully verified; the reads are batched.
+  const verified = await repo.verifyVersions(versions);
   for (const version of versions) {
     const summary = {
       id: version.id,
@@ -113,36 +115,26 @@ async function versionDeliverySummaries(store, versions, origin) {
       artifactDigest: null,
       status: "缺失/损坏",
     };
-    try {
-      // A damaged binding must not erase the rest of the history.
-      const [binding] = await repo.summaries([version.id]);
-      if (binding) {
-        summary.mode = binding.mode;
-        summary.generation = binding.generation;
-        summary.artifactDigest = binding.artifactDigest;
-        if (binding.mode === "legacy" && !binding.artifactDigest)
-          summary.status = selection.digest ? "legacy待生成" : "未选包";
-        else if (!["pinned", "legacy"].includes(binding.mode))
-          summary.status = "不支持";
-        else if (!binding.artifactDigest) summary.status = "缺失/损坏";
-        else {
-          const artifact = await repo.getArtifact(binding.artifactDigest);
-          summary.status =
-            artifact.manifest.origin === origin ? "已固定" : "origin不匹配";
-        }
-      }
-    } catch {
+    const entry = verified.get(version.id);
+    if (entry?.error) {
       // Only a known mode is exposed; never include malformed database values.
-      const row = (
-        await store.query(
-          "SELECT mode FROM personal_site.delivery_bindings WHERE version_id=$1",
-          [version.id],
-        )
-      ).rows[0];
-      summary.status =
-        row && !["pinned", "legacy"].includes(row.mode)
-          ? "不支持"
-          : "缺失/损坏";
+      summary.status = !["pinned", "legacy"].includes(entry.mode)
+        ? "不支持"
+        : "缺失/损坏";
+    } else if (entry) {
+      // A damaged binding must not erase the rest of the history.
+      const binding = entry.binding;
+      summary.mode = binding.mode;
+      summary.generation = binding.generation;
+      summary.artifactDigest = binding.artifactDigest;
+      if (binding.mode === "legacy" && !binding.artifactDigest)
+        summary.status = selection.digest ? "legacy待生成" : "未选包";
+      else if (!["pinned", "legacy"].includes(binding.mode))
+        summary.status = "不支持";
+      else if (!binding.artifactDigest) summary.status = "缺失/损坏";
+      else
+        summary.status =
+          entry.artifact.manifest.origin === origin ? "已固定" : "origin不匹配";
     }
     result.push(summary);
   }

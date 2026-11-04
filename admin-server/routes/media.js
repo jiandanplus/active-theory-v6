@@ -9,7 +9,9 @@ function mountMediaRoutes({ app, store, options }) {
   app.get(
     "/media/:id",
     route(async (req, res, next) => {
-      const r = await resourceRepository(store).get(req.params.id);
+      const { resource: r, storage } = await resourceRepository(store).getLive(
+        req.params.id,
+      );
       if (
         !r ||
         r.trashed ||
@@ -19,7 +21,9 @@ function mountMediaRoutes({ app, store, options }) {
       )
         throw S.fail("资源不存在", 404);
       res.set("X-Content-Type-Options", "nosniff");
-      await require("../frontend-resources").assertLiveResource(store, r);
+      await require("../frontend-resources").assertLiveResource(store, r, {
+        storage,
+      });
       await require("../frontend-resources").rejectTargetlessDocument(
         store,
         r.id,
