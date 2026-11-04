@@ -4,3 +4,26 @@ data
 .deployment
 output
 tools
+# Bytes served or hashed at runtime, data snapshots and generated fixtures
+examples
+cms
+**/*.json
+!package.json
+!tsconfig.json
+index.html
+editor.html
+# Historical root scripts pending owner review (optimization plan R4)
+/*.js
+!/server.js
+!/eslint.config.js
+# Prose and SQL
+*.md
+docs
+# Compose and CI files are asserted textually by deployment tests
+*.yaml
+*.yml
+# Functions here are serialized with toString() into public program bytes
+admin-server/engine/program-paths.js
+# Served byte-for-byte as the public identity.js endpoint
+shared/site-identity.js
+shared/page-metadata-dom.js
