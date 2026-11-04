@@ -3,7 +3,11 @@ import {
   projectsByPriority,
   topPriority,
   moveProject,
+  tagChoices,
 } from "./helpers.js";
+
+// Value of the dropdown entry that switches to typing a new tag.
+const CUSTOM_TAG = "\u0000custom";
 
 // Functions this module adds to the shared context (see registry.js).
 export const provides = ["projectsView"];
@@ -149,7 +153,11 @@ export function create(context) {
         ["priority", "排序权重（越大越靠前）", "number"],
         ["projectURL", "项目链接"],
         ["caseStudyURL", "案例链接"],
-      ])
+      ]) {
+        if (key === "tags") {
+          tagField(grid, project);
+          continue;
+        }
         field(
           grid,
           label,
@@ -168,15 +176,14 @@ export function create(context) {
             help:
               key === "slug"
                 ? "唯一的小写字母、数字、短横线"
-                : key === "tags"
-                  ? "保留原有文本格式，多个标签可用逗号分隔"
-                  : key === "uiColor"
-                    ? "6 位十六进制颜色，可直接用取色器选择"
-                    : key === "priority"
-                      ? "0–100。一般用卡片旁的上移/下移调整；直接改数值后，列表在下次刷新时重新排序"
-                      : undefined,
+                : key === "uiColor"
+                  ? "6 位十六进制颜色，可直接用取色器选择"
+                  : key === "priority"
+                    ? "0–100。一般用卡片旁的上移/下移调整；直接改数值后，列表在下次刷新时重新排序"
+                    : undefined,
           },
         );
+      }
       body.append(grid);
       field(
         body,
@@ -240,6 +247,49 @@ export function create(context) {
       d.append(body);
       element.append(move, d);
       return { element, card: d, controls };
+    }
+    // Tags pick from the ones other projects already use, so the site's
+    // filters stay consistent; 自定义… reveals a text box for a new tag.
+    function tagField(parent, project) {
+      const current = project.tags || "";
+      const custom = node("input", undefined, "tag-custom");
+      custom.type = "text";
+      custom.placeholder = "输入新标签";
+      custom.setAttribute("aria-label", "自定义标签");
+      custom.value = current;
+      custom.hidden = true;
+      custom.addEventListener("input", () => {
+        project.tags = custom.value;
+        dirty();
+      });
+      const choices = [
+        { value: "", label: "（无标签）" },
+        ...tagChoices(state.config.projects).map((tag) => ({
+          value: tag,
+          label: tag,
+        })),
+        { value: CUSTOM_TAG, label: "自定义…" },
+      ];
+      field(
+        parent,
+        "标签",
+        current,
+        (v) => {
+          custom.hidden = v !== CUSTOM_TAG;
+          if (v === CUSTOM_TAG) {
+            custom.value = project.tags || "";
+            custom.focus();
+            return;
+          }
+          project.tags = v;
+          dirty();
+        },
+        {
+          choices,
+          after: custom,
+          help: "从已有标签中选择；选「自定义…」可输入新标签，多个标签可用逗号分隔",
+        },
+      );
     }
   }
   return { projectsView };
