@@ -235,6 +235,7 @@ export function create(context) {
       wrap.append(row);
       showPreview(input.value);
     } else wrap.append(input);
+    if (options.after) wrap.append(options.after);
     if (options.help)
       wrap.append(node("small", options.help, options.key ? "field-key" : ""));
     if (options.description)

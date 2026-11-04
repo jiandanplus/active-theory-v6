@@ -69,6 +69,16 @@ export function projectsByPriority(projects) {
     )
     .map(({ project }) => project);
 }
+// Distinct tag texts already used by projects, most used first, for the tag
+// dropdown. Values are kept verbatim so selecting one never rewrites it.
+export function tagChoices(projects) {
+  const counts = new Map();
+  for (const project of projects) {
+    const tag = typeof project.tags === "string" ? project.tags : "";
+    if (tag.trim()) counts.set(tag, (counts.get(tag) || 0) + 1);
+  }
+  return [...counts.keys()].sort((a, b) => counts.get(b) - counts.get(a));
+}
 // Priority for a new project so it is listed first.
 export function topPriority(projects) {
   return Math.min(100, Math.max(-1, ...projects.map(priorityOf)) + 1);

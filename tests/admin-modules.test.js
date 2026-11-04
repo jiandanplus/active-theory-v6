@@ -1386,3 +1386,50 @@ test("move buttons reorder cards by priority and keep keyboard focus", async () 
   await search.dispatch("input");
   assert.equal(button("上移「mid」").disabled, true, "no moves while filtered");
 });
+test("project tags are picked from a dropdown of existing tags", async () => {
+  const { tagChoices, newProject } = require("../admin-ui/modules/helpers.js");
+  // Most used first, verbatim text, blanks ignored.
+  assert.deepEqual(
+    tagChoices([
+      { tags: "兴趣" },
+      { tags: "AIGC作品" },
+      { tags: "AIGC作品" },
+      { tags: "  " },
+      {},
+    ]),
+    ["AIGC作品", "兴趣"],
+  );
+  const f = await lifecycleAdmin();
+  const make = (id, tags) => ({ ...newProject(id), name: id, tags });
+  f.app.state.config.projects = [make("a", "AIGC作品"), make("b", "兴趣")];
+  await f.navigate("projects");
+  const select = f
+    .walk()
+    .find(
+      (element) => element.tagName === "SELECT" && element.value === "AIGC作品",
+    );
+  assert.deepEqual(
+    select.children.map((option) => option.textContent),
+    ["（无标签）", "AIGC作品", "兴趣", "自定义…"],
+  );
+  const custom = f
+    .walk()
+    .find((element) => element.attributes?.["aria-label"] === "自定义标签");
+  assert.equal(custom.hidden, true);
+  select.value = "兴趣";
+  await select.dispatch("change");
+  assert.equal(f.app.state.config.projects[0].tags, "兴趣");
+  assert.equal(f.app.state.dirty, true);
+  select.value = select.children.at(-1).value;
+  await select.dispatch("change");
+  assert.equal(custom.hidden, false);
+  assert.equal(f.document.activeElement, custom);
+  assert.equal(
+    f.app.state.config.projects[0].tags,
+    "兴趣",
+    "unchanged until typed",
+  );
+  custom.value = "新标签";
+  await custom.dispatch("input");
+  assert.equal(f.app.state.config.projects[0].tags, "新标签");
+});
