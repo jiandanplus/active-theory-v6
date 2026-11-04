@@ -23,7 +23,8 @@ async function fixture(t, { installed = false } = {}) {
   );
   if (installed)
     await store.query(
-      "INSERT INTO personal_site.installation(source,schema_version) VALUES('bundle',3)",
+      "INSERT INTO personal_site.installation(source,schema_version) VALUES('bundle',$1)",
+      [require("../admin-server/migrations").currentSchemaVersion],
     );
   const runtime = testRuntime(t),
     dataDir = path.join(runtime.root, "data");

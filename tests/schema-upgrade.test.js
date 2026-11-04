@@ -2,7 +2,10 @@ const { test } = require("node:test");
 const assert = require("node:assert/strict");
 const { v1Fixture } = require("./helpers/v1");
 const { upgradeInstalled } = require("../scripts/db-migrate");
-const { inspectInstallation } = require("../admin-server/migrations");
+const {
+  inspectInstallation,
+  currentSchemaVersion,
+} = require("../admin-server/migrations");
 function inspectorWithSignatures(signatures) {
   const filename = require.resolve("../admin-server/migrations");
   const { createRequire } = require("node:module");
@@ -35,7 +38,8 @@ test("inspection accepts a known catalog signature assigned to the recorded vers
     "ALTER TABLE personal_site.site_settings ADD COLUMN signature_fixture text",
   );
   await store.query(
-    "INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',3)",
+    "INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',$1)",
+    [currentSchemaVersion],
   );
   const { signatureQuery } = require("../admin-server/migrations");
   const changed = require("node:crypto")
@@ -44,8 +48,7 @@ test("inspection accepts a known catalog signature assigned to the recorded vers
     .digest("hex");
   const registry = require("../admin-server/migration-registry");
   const inspect = inspectorWithSignatures([
-    registry.migrations[0].schemaSignature,
-    registry.migrations[1].schemaSignature,
+    ...registry.migrations.slice(0, -1).map((m) => m.schemaSignature),
     changed,
   ]).inspectInstallation;
   assert.equal((await inspect(store)).state, "installed");
@@ -53,12 +56,12 @@ test("inspection accepts a known catalog signature assigned to the recorded vers
 test("inspection rejects another known version catalog even when the prefix checksum matches", async (t) => {
   const { store } = await require("./helpers/postgres").postgresFixture(t);
   await store.query(
-    "INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',3)",
+    "INSERT INTO personal_site.installation(source,schema_version) VALUES('fixture',$1)",
+    [currentSchemaVersion],
   );
-  const { schemaSignature } = require("../admin-server/migrations");
+  const registry = require("../admin-server/migration-registry");
   const inspect = inspectorWithSignatures([
-    schemaSignature,
-    schemaSignature,
+    ...registry.migrations.slice(0, -1).map((m) => m.schemaSignature),
     "different-version-signature",
   ]).inspectInstallation;
   assert.equal((await inspect(store)).state, "incompatible");
@@ -164,7 +167,7 @@ test("V1 upgrades once, preserves history and serializes competitors", async (t)
   assert.equal(results.filter((r) => r.upgraded).length, 1);
   assert.deepEqual(await inspectInstallation(store), {
     state: "installed",
-    schemaVersion: 3,
+    schemaVersion: currentSchemaVersion,
   });
   assert.deepEqual(await preserved(store), before);
   assert.deepEqual((await store.query(historySql)).rows, beforeHistory);

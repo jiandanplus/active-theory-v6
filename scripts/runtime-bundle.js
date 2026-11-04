@@ -4,7 +4,10 @@ const { fail } = require("../admin-server/security");
 const { readSource, createCAS } = require("../admin-server/delivery/cas");
 const { assertRuntimeManifest } = require("../admin-server/delivery/contracts");
 const { registerRuntime } = require("../admin-server/delivery/registration");
-const { inspectInstallation } = require("../admin-server/migrations");
+const {
+  inspectInstallation,
+  currentSchemaVersion,
+} = require("../admin-server/migrations");
 const defaults = {
   loadOptions: require("../admin-server/options").loadOptions,
   openPostgres: require("../admin-server/postgres").openPostgres,
@@ -66,7 +69,10 @@ async function main(
   const store = openPostgres({ databaseUrl: options.databaseUrl });
   try {
     const state = await inspectInstallation(store);
-    if (state.state !== "installed" || state.schemaVersion !== 3)
+    if (
+      state.state !== "installed" ||
+      state.schemaVersion !== currentSchemaVersion
+    )
       throw fail(503, "请先完成站点安装及显式结构升级");
     const admin = (
       await store.query(

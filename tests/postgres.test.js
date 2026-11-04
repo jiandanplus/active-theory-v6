@@ -73,7 +73,7 @@ test("migration repeats safely and installation record is authoritative", async 
     ).rows[0].n,
     currentSchemaVersion,
   );
-  assert.equal(currentSchemaVersion, 3);
+  assert.equal(currentSchemaVersion, 4);
   assert.deepEqual(
     (
       await store.query(

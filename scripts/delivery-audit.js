@@ -6,7 +6,10 @@ const {
   digestJSON,
 } = require("../admin-server/delivery/contracts");
 const { runtimeRepository } = require("../admin-server/repositories/runtime");
-const { inspectInstallation } = require("../admin-server/migrations");
+const {
+  inspectInstallation,
+  currentSchemaVersion,
+} = require("../admin-server/migrations");
 const incomplete = () => new Error("Delivery audit could not complete safely");
 const MAX_OBJECT_BYTES = 256 * 1024 * 1024;
 
@@ -109,7 +112,10 @@ async function main(
   const store = openPostgres({ databaseUrl: options.databaseUrl });
   try {
     const state = await inspectInstallation(store);
-    if (state.state !== "installed" || state.schemaVersion !== 3)
+    if (
+      state.state !== "installed" ||
+      state.schemaVersion !== currentSchemaVersion
+    )
       throw incomplete();
     const report = await auditDelivery({
       store,

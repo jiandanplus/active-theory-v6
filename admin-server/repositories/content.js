@@ -84,6 +84,19 @@ function contentRepository(db) {
         columns(songRows, 4),
       );
   }
+  // Index the snapshot's document assets as stored, so public media routes
+  // need not expand every historical snapshot (migration 004).
+  async function recordDocuments(owner, id) {
+    const table = owner === "version" ? "versions" : "previews";
+    await db.query(
+      `INSERT INTO personal_site.document_assets(${owner}_id, resource_id)
+      SELECT DISTINCT s.id, a.value->>'resourceId'
+      FROM personal_site.${table} s
+      CROSS JOIN LATERAL jsonb_each(CASE WHEN jsonb_typeof(s.snapshot->'assets')='object' THEN s.snapshot->'assets' ELSE '{}'::jsonb END) a
+      WHERE s.id=$1 AND a.value ? 'document' AND a.value->>'resourceId' IS NOT NULL`,
+      [id],
+    );
+  }
   async function draftSnapshot(config) {
     const row = (
       await db.query(
@@ -211,6 +224,7 @@ function contentRepository(db) {
           "INSERT INTO personal_site.versions(id,created,snapshot) VALUES($1,$2,$3)",
           [v.id, v.created, composeSnapshot(v.snapshot)],
         );
+        await recordDocuments("version", v.id);
         await db.query(
           "INSERT INTO personal_site.delivery_bindings(version_id,mode) VALUES($1,'legacy')",
           [v.id],
@@ -294,6 +308,7 @@ function contentRepository(db) {
               [id, created, full],
             );
       const row = version(r.rows[0]);
+      await recordDocuments("version", row.id);
       await resources.replaceReferences({
         ownerType: "version",
         ownerId: row.id,
@@ -319,6 +334,7 @@ function contentRepository(db) {
         "INSERT INTO personal_site.versions(id,snapshot) VALUES($1,$2) RETURNING *",
         [id, snapshot],
       );
+      await recordDocuments("version", id);
       await resources.replaceReferences({
         ownerType: "version",
         ownerId: id,
@@ -334,6 +350,7 @@ function contentRepository(db) {
         "INSERT INTO personal_site.previews(id,owner,expires,snapshot) VALUES($1,$2,$3,$4) RETURNING *",
         [id, owner, expires, snapshot],
       );
+      await recordDocuments("preview", id);
       await resources.replaceReferences({
         ownerType: "preview",
         ownerId: id,

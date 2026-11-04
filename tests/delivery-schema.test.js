@@ -99,7 +99,10 @@ test("V2 adds explicit legacy bindings without changing revision or history", as
     )
   ).rows;
   await upgradeInstalled(store);
-  assert.equal((await inspectInstallation(store)).schemaVersion, 3);
+  assert.equal(
+    (await inspectInstallation(store)).schemaVersion,
+    require("../admin-server/migrations").currentSchemaVersion,
+  );
   assert.deepEqual(
     (
       await store.query(
@@ -207,7 +210,10 @@ test("failure midway through 003 rolls back tables, records and legacy data", as
     state: "upgrade_required",
     schemaVersion: 2,
   });
-  assert.equal((await upgradeInstalled(store)).schemaVersion, 3);
+  assert.equal(
+    (await upgradeInstalled(store)).schemaVersion,
+    require("../admin-server/migrations").currentSchemaVersion,
+  );
 });
 test("delivery constraints enforce targets, pinned artifacts, manifest versions and generations", async (t) => {
   const { store } = await v2Fixture(t);

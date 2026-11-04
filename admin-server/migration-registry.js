@@ -4,13 +4,21 @@ const { createHash } = require("node:crypto");
 // Frozen catalog signatures measured on isolated PostgreSQL 18; 002 changes data only.
 const historicalSignature =
   "d707b879563d88ac731f0e95982187542f1d260bec0ad866110bc3f155f90534";
-const schemaSignature =
+const engineDeliverySignature =
   "0b4bc29585cf5c4e05aa6ec8084386cef40e0178c7a358b8210abfb30d917c8c";
-const signatures = [historicalSignature, historicalSignature, schemaSignature];
+const schemaSignature =
+  "248b4da2187f71fd219c11640762af482cb5563049c3aaf135cc1c63cd4c74c4";
+const signatures = [
+  historicalSignature,
+  historicalSignature,
+  engineDeliverySignature,
+  schemaSignature,
+];
 const files = [
   "001-initial.sql",
   "002-site-identity.sql",
   "003-engine-delivery.sql",
+  "004-document-assets.sql",
 ];
 const migrations = Object.freeze(
   files.map((file, index) => {

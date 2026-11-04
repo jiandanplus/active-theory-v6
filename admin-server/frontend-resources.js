@@ -101,12 +101,9 @@ async function assertLiveResource(store, resource, joined) {
 async function rejectTargetlessDocument(store, id) {
   // The same identity can have different derived bytes per target. Without an
   // explicit target neither the current version nor an arbitrary grant wins.
+  // document_assets mirrors every stored version/preview snapshot (004).
   const result = await store.query(
-    `SELECT 1 FROM (
-      SELECT snapshot FROM personal_site.versions
-      UNION ALL SELECT snapshot FROM personal_site.previews
-    ) snapshots CROSS JOIN LATERAL jsonb_each(snapshots.snapshot->'assets') asset
-    WHERE asset.value->>'resourceId'=$1 AND asset.value ? 'document' LIMIT 1`,
+    "SELECT 1 FROM personal_site.document_assets WHERE resource_id=$1 LIMIT 1",
     [id],
   );
   if (result.rowCount) throw fail(404, "资源文档需要明确版本");
