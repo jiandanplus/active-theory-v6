@@ -92,6 +92,7 @@ npm run delivery:audit
 | unreferencedObjectCount | 物理清单减引用数；不是可删除许可 |
 | missingObjects | manifest 引用但清点中不存在的 digest，单独列出，不计入物理数 |
 | invalidObjects | 存在但摘要或声明大小不符的 digest，包括孤立对象；只输出摘要，不输出内容/绝对路径 |
+| orphanReferences | `resource_references` 中所属版本/预览/资源已不存在的行，按所有者汇总 `{ownerType, ownerId, references}`；只报告，不删除，也不改变退出码 |
 
 全部 artifact 包括历史、无 binding 和已过期/已删除预览留下的 artifact。共享摘要只计一次；相同摘要声明不同大小、坏 manifest/身份、DB 错误、危险路径/目录/文件名、扫描中消失的对象均失败关闭。对象逐个读取并核验，单个文件大于 256 MiB 直接拒绝，避免无限内存分配。已有 dataDir 必须安全存在；新站没有 delivery/objects 时报告空，不创建任何目录，也不清理 staging。
 

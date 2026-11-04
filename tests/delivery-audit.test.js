@@ -58,6 +58,7 @@ test("fresh installation audit does not create absent delivery, objects or stagi
       unreferencedObjectCount: 0,
       missingObjects: [],
       invalidObjects: [],
+      orphanReferences: [],
     });
     assert.deepEqual(await snapshot(path.join(f.root, "data")), before);
   }
@@ -68,7 +69,12 @@ test("audit retains all artifacts after expired previews and bindings are remove
   const before = await audit(f);
   await f.store.query("DELETE FROM personal_site.previews");
   await f.store.query("DELETE FROM personal_site.delivery_bindings");
-  assert.deepEqual(await audit(f), before);
+  const after = await audit(f);
+  // Raw deletes bypass prunePreviews, so the preview's grants are reported as
+  // orphans; artifact retention is unchanged.
+  assert.deepEqual({ ...after, orphanReferences: [] }, before);
+  assert.equal(after.orphanReferences.length, 1);
+  assert.equal(after.orphanReferences[0].ownerType, "preview");
   assert.equal(before.unreferencedObjectCount, 0);
 });
 test("audit lists corrupt referenced and orphan digests and missing references without exposing paths", async (t) => {
@@ -192,4 +198,26 @@ test("audit aborts an incomplete scan instead of classifying vanished objects as
   await assert.rejects(audit({ store: f.store, cas }), {
     message: "Delivery audit could not complete safely",
   });
+});
+test("audit reports orphaned resource references without deleting them", async (t) => {
+  const f = await deliveryFixture(t, { publish: true });
+  const cas = createCAS(path.join(f.root, "data"));
+  assert.deepEqual((await audit({ store: f.store, cas })).orphanReferences, []);
+  // owner_id has no foreign key; simulate a row left behind by an old bug.
+  await f.store.query(
+    "INSERT INTO personal_site.resource_references(resource_id,owner_type,owner_id,slot) VALUES('image','version','9999','orphan:slot'),('image','preview','preview-gone','orphan:slot')",
+  );
+  const report = await audit({ store: f.store, cas });
+  assert.deepEqual(report.orphanReferences, [
+    { ownerType: "preview", ownerId: "preview-gone", references: 1 },
+    { ownerType: "version", ownerId: "9999", references: 1 },
+  ]);
+  assert.equal(
+    (
+      await f.store.query(
+        "SELECT count(*)::int AS n FROM personal_site.resource_references WHERE slot='orphan:slot'",
+      )
+    ).rows[0].n,
+    2,
+  );
 });

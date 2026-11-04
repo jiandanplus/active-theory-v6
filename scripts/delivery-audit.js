@@ -15,8 +15,22 @@ const MAX_OBJECT_BYTES = 256 * 1024 * 1024;
 
 // Diagnostic only: the DB snapshot and filesystem cannot form an atomic GC
 // eligibility decision. All registered manifests survive binding expiry.
+// resource_references.owner_id is polymorphic and has no foreign key; list
+// rows whose owner no longer exists. Report only, never delete.
+const ORPHAN_REFERENCES = `SELECT r.owner_type, r.owner_id, count(*)::int AS references
+  FROM personal_site.resource_references r
+  WHERE (r.owner_type = 'version' AND NOT EXISTS (
+          SELECT 1 FROM personal_site.versions v WHERE v.id::text = r.owner_id))
+     OR (r.owner_type = 'preview' AND NOT EXISTS (
+          SELECT 1 FROM personal_site.previews p WHERE p.id = r.owner_id))
+     OR (r.owner_type = 'resource' AND NOT EXISTS (
+          SELECT 1 FROM personal_site.resources x WHERE x.id = r.owner_id))
+     OR (r.owner_type = 'draft' AND r.owner_id <> 'draft')
+  GROUP BY r.owner_type, r.owner_id
+  ORDER BY r.owner_type, r.owner_id`;
 async function auditDelivery({ store, cas }) {
   try {
+    let orphanReferences = [];
     const references = await store.transaction(async (tx) => {
       await tx.query(
         "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY",
@@ -63,6 +77,13 @@ async function auditDelivery({ store, cas }) {
           throw incomplete();
         retain(m.files);
       }
+      orphanReferences = (await tx.query(ORPHAN_REFERENCES)).rows.map(
+        (row) => ({
+          ownerType: row.owner_type,
+          ownerId: row.owner_id,
+          references: row.references,
+        }),
+      );
       return entries;
     });
     const inventory = await cas.inspect({ readOnly: true });
@@ -94,6 +115,7 @@ async function auditDelivery({ store, cas }) {
         .filter((digest) => !present.has(digest))
         .sort(),
       invalidObjects: invalidObjects.sort(),
+      orphanReferences,
     };
   } catch {
     throw incomplete();
